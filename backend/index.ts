@@ -14,6 +14,7 @@ import { errorMessage } from './utils/errors';
 import { createBillingRouter, createBillingWebhookHandler } from './routes/billing';
 import { requirePremium } from './middleware/premium';
 import { createAuthRouter } from './routes/auth';
+import { createBackupRouter } from './routes/backup';
 
 const prisma = new PrismaClient();
 const app = express();
@@ -42,6 +43,7 @@ app.use('/api/printer-scan', requirePremium(prisma), createPrinterScanRouter(pri
 
 app.use('/api/tags', createTagRouter(prisma));
 app.use('/api/billing', createBillingRouter(prisma));
+app.use('/api/backup', createBackupRouter(prisma));
 app.use('/api/documents', createDocumentRouter(prisma));
 app.use('/api/sync', createSyncRouter(prisma));
 app.use('/api', createMobileScanRouter(prisma));

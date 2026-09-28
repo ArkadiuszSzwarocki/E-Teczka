@@ -6,6 +6,7 @@ import DesktopTopBar from './components/DesktopTopBar';
 import BillingHistoryModal from './components/BillingHistoryModal';
 import AuthModal from './components/AuthModal';
 import BillingPlansModal from './components/BillingPlansModalV2';
+import BackupModal from './components/BackupModal';
 import TagManagerModal from './components/TagManagerModal';
 import RetentionModal, { type RetentionModalState } from './components/RetentionModal';
 import MoveDocumentModal from './components/MoveDocumentModal';
@@ -92,6 +93,7 @@ export default function App() {
   const [billingCancelBusy, setBillingCancelBusy] = useState(false);
   const [isBillingCancelOpen, setIsBillingCancelOpen] = useState(false);
   const [isBillingHistoryOpen, setIsBillingHistoryOpen] = useState(false);
+  const [isBackupOpen, setIsBackupOpen] = useState(false);
   const [billingHistory, setBillingHistory] = useState<BillingTransaction[]>([]);
   const [billingHistoryBusy, setBillingHistoryBusy] = useState(false);
   
@@ -666,6 +668,7 @@ export default function App() {
       {isBillingCancelOpen && <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"><div className="w-full max-w-md rounded-2xl border border-red-500/40 bg-[#0f172a] p-7 shadow-2xl"><h3 className="text-xl font-bold text-white">Anulować Premium?</h3><p className="mt-3 text-sm leading-6 text-slate-300">Dostęp Premium zostanie zakończony od razu. Bieżący rozpoczęty miesiąc pozostaje opłacony, a system zwróci środki za pełne niewykorzystane miesiące.</p><div className="mt-6 flex gap-3"><button disabled={billingCancelBusy} onClick={() => setIsBillingCancelOpen(false)} className="flex-1 rounded-lg bg-slate-700 py-3 font-bold text-white hover:bg-slate-600 disabled:opacity-50">Nie</button><button disabled={billingCancelBusy} onClick={() => void cancelBilling()} className="flex-1 rounded-lg bg-red-600 py-3 font-bold text-white hover:bg-red-500 disabled:opacity-50">{billingCancelBusy ? 'Rozliczanie…' : 'Anuluj i zwróć'}</button></div></div></div>}
 
       {isBillingHistoryOpen && <BillingHistoryModal transactions={billingHistory} loading={billingHistoryBusy} onClose={() => setIsBillingHistoryOpen(false)} />}
+      {isBackupOpen && <BackupModal apiUrl={API_URL} onClose={() => setIsBackupOpen(false)} onDone={() => { setIsBackupOpen(false); void fetchData(); }} />}
 
       <TagManagerModal
         isOpen={isTagManagerOpen}
@@ -744,6 +747,7 @@ export default function App() {
       {isAccessSettingsOpen && <DesktopAccessSettings onClose={() => setIsAccessSettingsOpen(false)} />}
       {isWiaScanOpen && <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/75 p-5 backdrop-blur-sm"><div className="w-full max-w-xl overflow-hidden rounded-2xl border border-slate-600 bg-[#1e293b] shadow-2xl"><div className="border-b border-slate-700 bg-[#0f172a] px-7 py-5"><h3 className="text-xl font-bold text-white">Skanuj z urządzenia</h3><p className="mt-1 text-sm text-slate-400">Wybór urządzenia i przebieg skanowania odbywają się w E‑Teczce.</p></div><div className="space-y-5 p-7"><div><label className="block text-sm font-semibold text-slate-200">1. Wybierz skaner</label><div className="mt-2 grid gap-2">{isWiaLoadingDevices && <div className="rounded-lg border border-slate-700 bg-[#111827] px-4 py-3 text-sm text-slate-400">Wyszukiwanie urządzeń…</div>}{!isWiaLoadingDevices && wiaDevices.map(device => <button key={device.id} onClick={() => setWiaDeviceId(device.id)} disabled={isWiaScanning} className={`flex items-center gap-3 rounded-lg border p-4 text-left transition-colors ${wiaDeviceId === device.id ? 'border-blue-400 bg-blue-500/15' : 'border-slate-600 bg-[#111827] hover:border-slate-400'}`}><span className="text-2xl">🖨️</span><span><span className="block font-semibold text-white">{device.name}</span>{device.manufacturer && <span className="mt-0.5 block text-xs text-slate-400">{device.manufacturer}</span>}</span>{wiaDeviceId === device.id && <span className="ml-auto text-blue-300">✓</span>}</button>)}{!isWiaLoadingDevices && wiaDevices.length === 0 && <div className="rounded-lg border border-amber-700/50 bg-amber-950/20 px-4 py-3 text-sm text-amber-200">Nie znaleziono skanera WIA. Upewnij się, że jest włączony i ma zainstalowany sterownik WIA.</div>}</div></div><div><label className="block text-sm font-semibold text-slate-200">2. Zapisz do podkartoteki</label><select value={wiaFolderId} disabled={isWiaScanning} onChange={(event) => setWiaFolderId(event.target.value)} className="mt-2 w-full rounded-lg border border-slate-600 bg-[#111827] p-3 text-white"><option value="">— wybierz podkartotekę —</option>{renderSelectOptions(null)}</select></div><div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-3"><p className="text-sm font-semibold text-blue-200">{isWiaScanning ? wiaStage : 'Gotowe do skanowania'}</p>{isWiaScanning && <div className="mt-3 h-1.5 overflow-hidden rounded bg-slate-700"><div className="h-full w-2/3 animate-pulse rounded bg-blue-400" /></div>}</div><div className="flex justify-end gap-3"><button onClick={() => { if (!isWiaScanning) setIsWiaScanOpen(false); }} disabled={isWiaScanning} className="px-4 py-2 text-slate-300 disabled:opacity-50">Anuluj</button><button onClick={() => void scanFromPrinter()} disabled={!wiaFolderId || !wiaDeviceId || isWiaScanning} className="rounded-lg bg-blue-600 px-5 py-2.5 font-bold text-white shadow-lg hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50">{isWiaScanning ? 'Trwa skanowanie…' : 'Skanuj dokument'}</button></div></div></div></div>}
       <div className="flex-1 flex flex-col overflow-hidden bg-[#0f172a]">
+        <button onClick={() => setIsBackupOpen(true)} className="fixed bottom-5 left-5 z-40 rounded-lg border border-slate-600 bg-[#1e293b] px-3 py-2 text-xs font-bold text-slate-200 shadow-xl hover:border-blue-400 hover:text-white">☁️ Kopia zapasowa</button>
         <DesktopTopBar
           activeView={activeView}
           searchQuery={searchQuery}
