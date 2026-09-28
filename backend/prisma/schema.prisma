@@ -1,0 +1,129 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./eteczka.db"
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  name      String?
+  passwordHash String?
+  role      String   @default("USER")
+  createdAt DateTime @default(now())
+  documents Document[]
+  folders   Folder[] @relation("FolderOwner")
+  sharedFolders FolderShare[]
+  sessions AuthSession[]
+}
+
+model AuthSession {
+  id        Int      @id @default(autoincrement())
+  tokenHash String   @unique
+  userId    Int
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Subscription {
+  id                     Int      @id @default(autoincrement())
+  ownerKey               String   @unique
+  provider               String   @default("stripe")
+  providerCustomerId     String?
+  providerSubscriptionId String?  @unique
+  plan                   String   @default("free")
+  status                 String   @default("inactive")
+  currentPeriodEnd       DateTime?
+  cancelAtPeriodEnd      Boolean  @default(false)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
+
+model BillingTransaction {
+  id                     Int      @id @default(autoincrement())
+  ownerKey               String
+  provider               String   @default("stripe")
+  providerReference      String   @unique
+  providerSubscriptionId String?
+  type                   String
+  status                 String
+  amount                 Int
+  currency               String   @default("pln")
+  description            String?
+  occurredAt             DateTime @default(now())
+  createdAt              DateTime @default(now())
+}
+
+model Folder {
+  id        Int      @id @default(autoincrement())
+  name      String
+  parentId  Int?
+  parent    Folder?  @relation("SubFolders", fields: [parentId], references: [id])
+  children  Folder[] @relation("SubFolders")
+  ownerId   Int
+  owner     User     @relation("FolderOwner", fields: [ownerId], references: [id])
+  documents Document[]
+  shares    FolderShare[]
+  createdAt DateTime @default(now())
+
+  order Int @default(0)
+
+  updatedAt DateTime @updatedAt @default(now())
+}
+
+model FolderShare {
+  folderId   Int
+  userId     Int
+  permission String @default("VIEW")
+  createdAt  DateTime @default(now())
+  folder     Folder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  user       User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([folderId, userId])
+}
+
+model Document {
+  thumbnail String?
+  ocrText   String?
+
+  id               Int       @id @default(autoincrement())
+  title            String
+  filePath         String
+  mimeType         String
+  folderId         Int
+  folder           Folder    @relation(fields: [folderId], references: [id])
+  tags             DocumentTag[]
+  userId Int?
+  user User? @relation(fields: [userId], references: [id])
+  retentionEnabled Boolean   @default(true)
+  retentionValue   Int       @default(5)
+  retentionUnit    String    @default("years")
+  isArchived       Boolean   @default(false)
+  isDeleted        Boolean   @default(false)
+  deletedAt        DateTime?
+  physicalLocation String?
+  createdAt        DateTime  @default(now())
+
+  updatedAt DateTime @updatedAt @default(now())
+}
+
+model Tag {
+  id        Int           @id @default(autoincrement())
+  name      String        @unique
+  color     String        @default("#2563eb")
+  documents DocumentTag[]
+  createdAt DateTime      @default(now())
+}
+
+model DocumentTag {
+  documentId Int
+  tagId      Int
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  tag        Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([documentId, tagId])
+}

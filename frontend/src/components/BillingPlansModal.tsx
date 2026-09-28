@@ -1,0 +1,26 @@
+type Props = { busy: boolean; onClose: () => void; onSelect: (interval: 'monthly' | 'yearly') => void };
+const features: Array<[string, string | boolean, string | boolean, string | boolean]> = [
+  ['Przechowywanie dokumentów', 'Do 25 dokumentów', 'Do 250 dokumentów', 'Bez limitu'],
+  ['Kartoteki i foldery', true, true, true],
+  ['Podgląd, zmiana nazwy i retencji', true, true, true],
+  ['Skanowanie aparatem telefonu', true, true, true],
+  ['Skanowanie z drukarki', false, false, true],
+  ['OCR i wyszukiwanie tekstu w skanach', false, true, true],
+  ['Scalanie i eksport wielu dokumentów do PDF', false, true, true],
+  ['Powiadomienia o terminach (6–1 mies. i 15–1 dni)', false, true, true],
+  ['Tagi i filtrowanie dokumentów', false, true, true],
+  ['Udostępnianie kartotek użytkownikom', false, true, true],
+  ['Sejf PIN/biometria', false, false, true],
+  ['Profile domowników', false, false, true],
+  ['Znak wodny na dokumentach', false, false, true],
+  ['Wygasające linki udostępniania', false, false, true],
+  ['Automatyczny backup do chmury', false, false, true],
+];
+
+function FeatureValue({ value }: { value: string | boolean }) {
+  return typeof value === 'string' ? <span className="text-xs text-slate-300">{value}</span> : <span className={value ? 'text-emerald-300' : 'text-slate-600'}>{value ? '✓' : '✕'}</span>;
+}
+
+export default function BillingPlansModal({ busy, onClose, onSelect }: Props) {
+  return <div className="fixed inset-0 z-[115] flex items-center justify-center overflow-y-auto bg-black/80 p-4 backdrop-blur-sm"><div className="my-6 w-full max-w-6xl rounded-2xl border border-slate-600 bg-[#0f172a] p-6 shadow-2xl md:p-7"><div className="flex items-start justify-between gap-4"><div><h2 className="text-2xl font-bold text-white">Wybierz plan E‑Teczki</h2><p className="mt-1 text-sm text-slate-400">Porównaj dostępne funkcje i wybierz wariant dla siebie.</p></div><button onClick={onClose} className="text-2xl text-slate-400 hover:text-white">×</button></div><div className="mt-6 grid gap-3 md:grid-cols-3"><div className="rounded-xl border border-slate-700 bg-[#1e293b] p-4"><p className="text-sm font-semibold text-slate-300">Plan Darmowy</p><p className="mt-2 text-3xl font-bold text-white">0 zł</p><p className="mt-2 text-sm text-slate-400">Na początek, bez płatności.</p></div><div className="rounded-xl border border-blue-500/70 bg-blue-950/20 p-4"><p className="text-sm font-semibold text-blue-300">Plan Standard</p><p className="mt-2 text-3xl font-bold text-white">4,99 zł <span className="text-sm font-normal text-slate-400">/ mc</span></p><p className="text-sm text-slate-400">49,90 zł / rok</p><button disabled={busy} onClick={() => onSelect('monthly')} className="mt-4 w-full rounded-lg border border-blue-400 px-3 py-2 text-sm font-bold text-blue-200 hover:bg-blue-500/20 disabled:opacity-50">Wybierz Standard</button></div><div className="relative rounded-xl border-2 border-emerald-400 bg-emerald-950/30 p-4"><span className="absolute -top-3 right-3 rounded-full bg-emerald-400 px-2 py-1 text-[10px] font-black text-emerald-950">PEŁNY DOSTĘP</span><p className="text-sm font-semibold text-emerald-300">Plan Premium</p><p className="mt-2 text-3xl font-bold text-white">9,99 zł <span className="text-sm font-normal text-slate-400">/ mc</span></p><p className="text-sm text-slate-400">99,90 zł / rok</p><button disabled={busy} onClick={() => onSelect('monthly')} className="mt-4 w-full rounded-lg bg-emerald-500 px-3 py-2 text-sm font-bold text-emerald-950 hover:bg-emerald-400 disabled:opacity-50">Wybierz Premium</button></div></div><div className="mt-5 overflow-x-auto rounded-xl border border-slate-700"><div className="min-w-[700px]"><div className="grid grid-cols-[minmax(240px,1fr)_140px_140px_140px] border-b border-slate-700 bg-slate-800/70 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-400"><span>Funkcja</span><span className="text-center">Darmowy</span><span className="text-center">Standard</span><span className="text-center text-emerald-300">Premium</span></div>{features.map(([name, free, standard, premium]) => <div key={name} className="grid grid-cols-[minmax(240px,1fr)_140px_140px_140px] items-center border-b border-slate-800 px-4 py-3 text-sm last:border-b-0"><span className="text-slate-200">{name}</span><span className="text-center"><FeatureValue value={free} /></span><span className="text-center"><FeatureValue value={standard} /></span><span className="text-center"><FeatureValue value={premium} /></span></div>)}</div></div><div className="mt-5 rounded-xl border border-slate-700 bg-slate-900/60 p-4 text-sm leading-6 text-slate-300"><p className="font-semibold text-white">Co zawierają plany?</p><p className="mt-1"><strong>Darmowy</strong> pozwala przechowywać podstawowe dokumenty i korzystać ze skanera telefonu. <strong>Standard</strong> dodaje OCR, wyszukiwanie, tagi, terminy i operacje grupowe. <strong>Premium</strong> odblokowuje pełną ochronę, skanowanie z drukarki, sejf, profile rodzinne, backup i bezpieczne udostępnianie.</p></div><p className="mt-4 text-center text-xs text-slate-500">Płatność jest obsługiwana przez Stripe. Możesz anulować subskrypcję; zwrot obejmuje pełne niewykorzystane miesiące.</p></div></div>;
+}

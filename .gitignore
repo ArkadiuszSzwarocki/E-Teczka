@@ -1,0 +1,41 @@
+# Dependencies and build output
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+build/
+**/build/
+.expo/
+**/.expo/
+.tmp-pdf-aar/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Local data
+**/uploads/
+**/*.db
+**/*.db-journal
+
+# IDE and OS files
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Temporary/generated files
+*.log
+*.tsbuildinfo
+*.tmp
+**/.gradle/
+**/.git-nested-backup/
+
+# Runtime credentials and local pairing state
+backend/security/auth-secret
+backend/security/paired-devices.json
