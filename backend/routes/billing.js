@@ -84,7 +84,7 @@ function createBillingRouter(prisma) {
         const subscription = yield prisma.subscription.findUnique({ where: { ownerKey: ownerKey(request) } });
         const active = (subscription === null || subscription === void 0 ? void 0 : subscription.status) === 'active' || (subscription === null || subscription === void 0 ? void 0 : subscription.status) === 'trialing';
         response.json({
-            plan: active ? 'premium' : 'free',
+            plan: active ? ((subscription === null || subscription === void 0 ? void 0 : subscription.plan) === 'standard' ? 'standard' : 'premium') : 'free',
             status: (_a = subscription === null || subscription === void 0 ? void 0 : subscription.status) !== null && _a !== void 0 ? _a : 'inactive',
             currentPeriodEnd: (_b = subscription === null || subscription === void 0 ? void 0 : subscription.currentPeriodEnd) !== null && _b !== void 0 ? _b : null,
             cancelAtPeriodEnd: (_c = subscription === null || subscription === void 0 ? void 0 : subscription.cancelAtPeriodEnd) !== null && _c !== void 0 ? _c : false,
@@ -126,7 +126,7 @@ function createBillingRouter(prisma) {
         }
     }));
     router.get('/confirm', (request, response) => __awaiter(this, void 0, void 0, function* () {
-        var _a;
+        var _a, _b, _c;
         const stripe = stripeClient();
         const sessionId = typeof request.query.session_id === 'string' ? request.query.session_id : '';
         if (!stripe || !sessionId)
@@ -144,8 +144,8 @@ function createBillingRouter(prisma) {
             const customerId = typeof session.customer === 'string' ? session.customer : null;
             yield prisma.subscription.upsert({
                 where: { ownerKey: currentOwner },
-                create: { ownerKey: currentOwner, providerCustomerId: customerId, providerSubscriptionId: subscriptionId, plan: 'premium', status: 'active' },
-                update: { providerCustomerId: customerId, providerSubscriptionId: subscriptionId, plan: 'premium', status: 'active' },
+                create: { ownerKey: currentOwner, providerCustomerId: customerId, providerSubscriptionId: subscriptionId, plan: ((_b = session.metadata) === null || _b === void 0 ? void 0 : _b.plan) === 'standard' ? 'standard' : 'premium', status: 'active' },
+                update: { providerCustomerId: customerId, providerSubscriptionId: subscriptionId, plan: ((_c = session.metadata) === null || _c === void 0 ? void 0 : _c.plan) === 'standard' ? 'standard' : 'premium', status: 'active' },
             });
             yield recordTransaction(prisma, {
                 ownerKey: currentOwner,
@@ -159,7 +159,7 @@ function createBillingRouter(prisma) {
             });
             response.type('html').send('<!doctype html><meta charset="utf-8"><title>E‑Teczka — płatność potwierdzona</title><body style="font-family:Arial;background:#0f172a;color:#e2e8f0;padding:40px"><h1>Płatność potwierdzona</h1><p>Plan Premium jest aktywny. Możesz zamknąć tę kartę i wrócić do E‑Teczki.</p></body>');
         }
-        catch (_b) {
+        catch (_d) {
             response.status(400).send('Nie udało się potwierdzić płatności.');
         }
     }));
@@ -265,12 +265,15 @@ function createBillingRouter(prisma) {
         response.json(transactions);
     }));
     router.post('/checkout', (request, response) => __awaiter(this, void 0, void 0, function* () {
-        var _a;
+        var _a, _b;
         const stripe = stripeClient();
         if (!stripe)
             return response.status(503).json({ error: 'Płatności testowe nie są jeszcze skonfigurowane.' });
-        const interval = ((_a = request.body) === null || _a === void 0 ? void 0 : _a.interval) === 'yearly' ? 'yearly' : 'monthly';
-        const price = interval === 'yearly' ? process.env.STRIPE_PRICE_YEARLY : process.env.STRIPE_PRICE_MONTHLY;
+        const plan = ((_a = request.body) === null || _a === void 0 ? void 0 : _a.plan) === 'standard' ? 'standard' : 'premium';
+        const interval = ((_b = request.body) === null || _b === void 0 ? void 0 : _b.interval) === 'yearly' ? 'yearly' : 'monthly';
+        const price = plan === 'standard'
+            ? (interval === 'yearly' ? process.env.STRIPE_STANDARD_PRICE_YEARLY : process.env.STRIPE_STANDARD_PRICE_MONTHLY)
+            : (interval === 'yearly' ? process.env.STRIPE_PRICE_YEARLY : process.env.STRIPE_PRICE_MONTHLY);
         const testKey = (process.env.STRIPE_SECRET_KEY || '').startsWith('sk_test_');
         if (!price && !testKey)
             return response.status(503).json({ error: `Brak ceny dla planu ${interval}.` });
@@ -281,9 +284,9 @@ function createBillingRouter(prisma) {
             : {
                 price_data: {
                     currency: 'pln',
-                    unit_amount: interval === 'yearly' ? 9990 : 999,
+                    unit_amount: plan === 'standard' ? (interval === 'yearly' ? 4990 : 499) : (interval === 'yearly' ? 9990 : 999),
                     recurring: { interval: interval === 'yearly' ? 'year' : 'month' },
-                    product_data: { name: 'E‑Teczka Premium' },
+                    product_data: { name: `E‑Teczka ${plan === 'standard' ? 'Standard' : 'Premium'}` },
                 },
                 quantity: 1,
             };
@@ -292,8 +295,8 @@ function createBillingRouter(prisma) {
             line_items: [lineItem],
             success_url: process.env.ETECZKA_BILLING_SUCCESS_URL || 'http://localhost:3000/api/billing/confirm?session_id={CHECKOUT_SESSION_ID}',
             cancel_url: process.env.ETECZKA_BILLING_CANCEL_URL || 'http://localhost:3000/api/billing/cancel',
-            metadata: { ownerKey: ownerKey(request), plan: 'premium' },
-            subscription_data: { metadata: { ownerKey: ownerKey(request), plan: 'premium' } },
+            metadata: { ownerKey: ownerKey(request), plan },
+            subscription_data: { metadata: { ownerKey: ownerKey(request), plan } },
         };
         // Test accounts may have Managed Payments enabled globally. The local
         // Checkout flow does not use it, so explicitly disable it for this session.
@@ -305,7 +308,7 @@ function createBillingRouter(prisma) {
 }
 function createBillingWebhookHandler(prisma) {
     return (request, response) => __awaiter(this, void 0, void 0, function* () {
-        var _a, _b, _c;
+        var _a, _b, _c, _d, _e, _f, _g;
         const stripe = stripeClient();
         const signature = request.header('stripe-signature');
         const secret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -315,7 +318,7 @@ function createBillingWebhookHandler(prisma) {
         try {
             event = stripe.webhooks.constructEvent(request.body, signature, secret);
         }
-        catch (_d) {
+        catch (_h) {
             return response.status(400).json({ error: 'Nieprawidłowy podpis webhooka Stripe.' });
         }
         if (event.type === 'checkout.session.completed') {
@@ -326,8 +329,8 @@ function createBillingWebhookHandler(prisma) {
             if (key)
                 yield prisma.subscription.upsert({
                     where: { ownerKey: key },
-                    create: { ownerKey: key, providerCustomerId: customerId, providerSubscriptionId: subscriptionId, plan: 'premium', status: 'active' },
-                    update: { providerCustomerId: customerId, providerSubscriptionId: subscriptionId, plan: 'premium', status: 'active' },
+                    create: { ownerKey: key, providerCustomerId: customerId, providerSubscriptionId: subscriptionId, plan: ((_b = session.metadata) === null || _b === void 0 ? void 0 : _b.plan) === 'standard' ? 'standard' : 'premium', status: 'active' },
+                    update: { providerCustomerId: customerId, providerSubscriptionId: subscriptionId, plan: ((_c = session.metadata) === null || _c === void 0 ? void 0 : _c.plan) === 'standard' ? 'standard' : 'premium', status: 'active' },
                 });
             if (key)
                 yield recordTransaction(prisma, {
@@ -343,12 +346,12 @@ function createBillingWebhookHandler(prisma) {
         }
         if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
             const subscription = event.data.object;
-            const key = (_b = subscription.metadata) === null || _b === void 0 ? void 0 : _b.ownerKey;
+            const key = (_d = subscription.metadata) === null || _d === void 0 ? void 0 : _d.ownerKey;
             if (key)
                 yield prisma.subscription.upsert({
                     where: { ownerKey: key },
-                    create: { ownerKey: key, providerCustomerId: typeof subscription.customer === 'string' ? subscription.customer : null, providerSubscriptionId: subscription.id, plan: event.type.endsWith('deleted') ? 'free' : 'premium', status: event.type.endsWith('deleted') ? 'canceled' : subscription.status, currentPeriodEnd: periodEnd(subscription.current_period_end), cancelAtPeriodEnd: subscription.cancel_at_period_end },
-                    update: { providerCustomerId: typeof subscription.customer === 'string' ? subscription.customer : null, plan: event.type.endsWith('deleted') ? 'free' : 'premium', status: event.type.endsWith('deleted') ? 'canceled' : subscription.status, currentPeriodEnd: periodEnd(subscription.current_period_end), cancelAtPeriodEnd: subscription.cancel_at_period_end },
+                    create: { ownerKey: key, providerCustomerId: typeof subscription.customer === 'string' ? subscription.customer : null, providerSubscriptionId: subscription.id, plan: event.type.endsWith('deleted') ? 'free' : (((_e = subscription.metadata) === null || _e === void 0 ? void 0 : _e.plan) === 'standard' ? 'standard' : 'premium'), status: event.type.endsWith('deleted') ? 'canceled' : subscription.status, currentPeriodEnd: periodEnd(subscription.current_period_end), cancelAtPeriodEnd: subscription.cancel_at_period_end },
+                    update: { providerCustomerId: typeof subscription.customer === 'string' ? subscription.customer : null, plan: event.type.endsWith('deleted') ? 'free' : (((_f = subscription.metadata) === null || _f === void 0 ? void 0 : _f.plan) === 'standard' ? 'standard' : 'premium'), status: event.type.endsWith('deleted') ? 'canceled' : subscription.status, currentPeriodEnd: periodEnd(subscription.current_period_end), cancelAtPeriodEnd: subscription.cancel_at_period_end },
                 });
         }
         if (event.type === 'invoice.payment_failed') {
@@ -358,7 +361,7 @@ function createBillingWebhookHandler(prisma) {
             if (subscriptionId) {
                 try {
                     const subscription = yield stripe.subscriptions.retrieve(subscriptionId);
-                    const key = (_c = subscription.metadata) === null || _c === void 0 ? void 0 : _c.ownerKey;
+                    const key = (_g = subscription.metadata) === null || _g === void 0 ? void 0 : _g.ownerKey;
                     if (key)
                         yield prisma.subscription.upsert({
                             where: { ownerKey: key },
@@ -366,7 +369,7 @@ function createBillingWebhookHandler(prisma) {
                             update: { plan: 'free', status: 'past_due' },
                         });
                 }
-                catch (_e) {
+                catch (_j) {
                     // Stripe will retry delivery. A transient lookup failure must not
                     // cause the webhook endpoint to fail permanently.
                 }

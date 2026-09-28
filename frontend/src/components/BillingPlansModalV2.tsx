@@ -1,0 +1,27 @@
+type Plan = 'standard' | 'premium';
+type BillingInterval = 'monthly' | 'yearly';
+type Props = { busy: boolean; onClose: () => void; onSelect: (plan: Plan, interval: BillingInterval) => void };
+
+const features: Array<[string, string | boolean, string | boolean, string | boolean]> = [
+  ['Przechowywanie dokumentów', 'Do 25 dokumentów', 'Do 250 dokumentów', 'Bez limitu'],
+  ['Kartoteki i foldery', true, true, true], ['Podgląd, nazwa i retencja', true, true, true],
+  ['Skanowanie telefonem', true, true, true], ['Skanowanie z drukarki', false, false, true],
+  ['OCR i wyszukiwanie tekstu', false, true, true], ['Scalanie i eksport PDF', false, true, true],
+  ['Powiadomienia o terminach', false, true, true], ['Tagi i filtrowanie', false, true, true],
+  ['Udostępnianie kartotek', false, true, true], ['Sejf PIN/biometria', false, false, true],
+  ['Profile domowników', false, false, true], ['Znak wodny', false, false, true],
+  ['Wygasające linki', false, false, true], ['Backup do chmury', false, false, true],
+];
+
+function Value({ value }: { value: string | boolean }) {
+  return typeof value === 'string' ? <span className="text-xs text-slate-300">{value}</span> : <span className={value ? 'text-emerald-300' : 'text-slate-600'}>{value ? '✓' : '✕'}</span>;
+}
+
+function CheckoutButtons({ plan, busy, onSelect }: { plan: Plan; busy: boolean; onSelect: Props['onSelect'] }) {
+  const standard = plan === 'standard';
+  return <div className="mt-4 grid grid-cols-2 gap-2"><button disabled={busy} onClick={() => onSelect(plan, 'monthly')} className={`rounded-lg border px-2 py-2 text-xs font-bold disabled:opacity-50 ${standard ? 'border-blue-400 text-blue-200 hover:bg-blue-500/20' : 'border-emerald-400 text-emerald-200 hover:bg-emerald-500/20'}`}>Miesięcznie<br /><span className="font-normal">{standard ? '4,99 zł' : '9,99 zł'}</span></button><button disabled={busy} onClick={() => onSelect(plan, 'yearly')} className="rounded-lg bg-emerald-500 px-2 py-2 text-xs font-bold text-emerald-950 hover:bg-emerald-400 disabled:opacity-50">Rocznie<br /><span className="font-normal">{standard ? '49,90 zł' : '99,90 zł'}</span></button></div>;
+}
+
+export default function BillingPlansModalV2({ busy, onClose, onSelect }: Props) {
+  return <div className="fixed inset-0 z-[115] overflow-y-auto bg-black/80 p-3 backdrop-blur-sm"><div className="mx-auto my-3 w-full max-w-6xl rounded-2xl border border-slate-600 bg-[#0f172a] p-5 shadow-2xl md:my-6 md:p-7"><div className="flex items-start justify-between gap-4"><div><h2 className="text-2xl font-bold text-white">Wybierz plan E‑Teczki</h2><p className="mt-1 text-sm text-slate-400">Wybierz wariant i sposób rozliczenia.</p></div><button onClick={onClose} className="text-2xl text-slate-400 hover:text-white">×</button></div><div className="mt-5 grid gap-3 md:grid-cols-3"><div className="rounded-xl border border-slate-700 bg-[#1e293b] p-4"><p className="font-semibold text-slate-300">Plan Darmowy</p><p className="mt-2 text-3xl font-bold text-white">0 zł</p><p className="mt-2 text-sm text-slate-400">Bez płatności.</p></div><div className="rounded-xl border border-blue-500/70 bg-blue-950/20 p-4"><p className="font-semibold text-blue-300">Plan Standard</p><p className="mt-2 text-3xl font-bold text-white">4,99 zł <span className="text-sm font-normal text-slate-400">/ mc</span></p><p className="text-sm text-slate-400">49,90 zł / rok</p><CheckoutButtons plan="standard" busy={busy} onSelect={onSelect} /></div><div className="relative rounded-xl border-2 border-emerald-400 bg-emerald-950/30 p-4"><span className="absolute -top-3 right-3 rounded-full bg-emerald-400 px-2 py-1 text-[10px] font-black text-emerald-950">NAJLEPSZY</span><p className="font-semibold text-emerald-300">Plan Premium</p><p className="mt-2 text-3xl font-bold text-white">9,99 zł <span className="text-sm font-normal text-slate-400">/ mc</span></p><p className="text-sm text-slate-400">99,90 zł / rok</p><CheckoutButtons plan="premium" busy={busy} onSelect={onSelect} /></div></div><div className="mt-5 overflow-x-auto rounded-xl border border-slate-700"><div className="min-w-[680px]"><div className="grid grid-cols-[minmax(240px,1fr)_140px_140px_140px] border-b border-slate-700 bg-slate-800/70 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-400"><span>Funkcja</span><span className="text-center">Darmowy</span><span className="text-center">Standard</span><span className="text-center text-emerald-300">Premium</span></div>{features.map(([name, free, standard, premium]) => <div key={name} className="grid grid-cols-[minmax(240px,1fr)_140px_140px_140px] items-center border-b border-slate-800 px-4 py-3 text-sm last:border-b-0"><span className="text-slate-200">{name}</span><span className="text-center"><Value value={free} /></span><span className="text-center"><Value value={standard} /></span><span className="text-center"><Value value={premium} /></span></div>)}</div></div><div className="mt-5 rounded-xl border border-slate-700 bg-slate-900/60 p-4 text-sm leading-6 text-slate-300"><p className="font-semibold text-white">Opis planów</p><p className="mt-1"><strong>Darmowy</strong> — podstawowe dokumenty i skaner telefonu. <strong>Standard</strong> — OCR, terminy, tagi i operacje grupowe. <strong>Premium</strong> — pełny dostęp, skaner drukarki, sejf, profile rodzinne, backup i bezpieczne udostępnianie.</p></div><p className="mt-4 text-center text-xs text-slate-500">Płatność przez Stripe. Okno można przewijać na małym ekranie.</p></div></div>;
+}

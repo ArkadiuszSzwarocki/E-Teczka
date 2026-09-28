@@ -5,7 +5,7 @@ import DesktopSidebar from './components/DesktopSidebar';
 import DesktopTopBar from './components/DesktopTopBar';
 import BillingHistoryModal from './components/BillingHistoryModal';
 import AuthModal from './components/AuthModal';
-import BillingPlansModal from './components/BillingPlansModal';
+import BillingPlansModal from './components/BillingPlansModalV2';
 import TagManagerModal from './components/TagManagerModal';
 import RetentionModal, { type RetentionModalState } from './components/RetentionModal';
 import MoveDocumentModal from './components/MoveDocumentModal';
@@ -150,13 +150,13 @@ export default function App() {
     setIsAuthOpen(false); setIsUserMenuOpen(false); showToast(`Zalogowano jako ${user.email}.`, 'success'); void fetchData();
   }, [fetchData, showToast]);
 
-  const openBillingCheckout = useCallback(async (interval: 'monthly' | 'yearly') => {
+  const openBillingCheckout = useCallback(async (plan: 'standard' | 'premium', interval: 'monthly' | 'yearly') => {
     setBillingBusy(true);
     try {
       const response = await fetch(`${API_URL}/api/billing/checkout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ interval }),
+        body: JSON.stringify({ plan, interval }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || typeof payload.url !== 'string') {
@@ -984,7 +984,7 @@ export default function App() {
         </main>
       </div>
       {isAuthOpen && <AuthModal onClose={() => setIsAuthOpen(false)} onAuthenticated={handleAuthenticated} />}
-      {isBillingPlansOpen && <BillingPlansModal busy={billingBusy} onClose={() => setIsBillingPlansOpen(false)} onSelect={(interval) => { setIsBillingPlansOpen(false); void openBillingCheckout(interval); }} />}
+      {isBillingPlansOpen && <BillingPlansModal busy={billingBusy} onClose={() => setIsBillingPlansOpen(false)} onSelect={(plan, interval) => { setIsBillingPlansOpen(false); void openBillingCheckout(plan, interval); }} />}
 
       {isPairingGuideOpen && (
         <div className="fixed inset-0 z-[100] bg-slate-950/80 flex items-center justify-center p-6" onClick={() => setIsPairingGuideOpen(false)}>
