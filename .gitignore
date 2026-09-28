@@ -8,6 +8,9 @@ build/
 .expo/
 **/.expo/
 .tmp-pdf-aar/
+**/.tmp-pdf-aar/
+**/.expo-export-verify/
+**/.idea/
 
 # Local configuration and secrets
 .env

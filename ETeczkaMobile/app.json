@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "name": "E-Teczka Mobile",
+    "slug": "e-teczka-mobile",
+    "scheme": "eteczka",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "com.anonymous.eteczkamobile"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-navigation-bar",
+        {
+          "hidden": true,
+          "enforceContrast": false
+        }
+      ],
+      "expo-secure-store",
+      "expo-notifications",
+      [
+        "react-native-document-scanner-plugin",
+        {
+          "cameraPermission": "E-Teczka używa aparatu wyłącznie do skanowania dokumentów."
+        }
+      ]
+    ]
+  }
+}
