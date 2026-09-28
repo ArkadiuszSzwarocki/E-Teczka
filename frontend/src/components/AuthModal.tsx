@@ -8,10 +8,11 @@ export default function AuthModal({ onClose, onAuthenticated }: Props) {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const deviceId = localStorage.getItem('eteczka_device_id') || (() => { const value = crypto.randomUUID(); localStorage.setItem('eteczka_device_id', value); return value; })();
   const submit = async () => {
     setBusy(true); setError('');
     try {
-      const response = await fetch(`http://localhost:3000/api/auth/${mode}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
+      const response = await fetch(`http://localhost:3000/api/auth/${mode}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password, deviceId, deviceName: 'E‑Teczka Desktop' }) });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || typeof payload.token !== 'string') throw new Error(payload.error || 'Nie udało się zalogować.');
       localStorage.setItem('eteczka_auth_token', payload.token);

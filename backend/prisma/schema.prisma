@@ -26,6 +26,8 @@ model AuthSession {
   userId    Int
   expiresAt DateTime
   createdAt DateTime @default(now())
+  deviceId String?
+  deviceName String?
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
