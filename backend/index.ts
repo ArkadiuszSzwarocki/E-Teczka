@@ -15,6 +15,8 @@ import { createBillingRouter, createBillingWebhookHandler } from './routes/billi
 import { requirePremium } from './middleware/premium';
 import { createAuthRouter } from './routes/auth';
 import { createBackupRouter, createBackupOAuthCallbackRouter } from './routes/backup';
+import cron from 'node-cron';
+import { runScheduledCloudBackup } from './routes/backup';
 
 const prisma = new PrismaClient();
 const app = express();
@@ -37,6 +39,19 @@ void applyRetentionPolicy(prisma).catch((error: unknown) => console.error('[rete
 setInterval(() => {
   void applyRetentionPolicy(prisma).catch((error: unknown) => console.error('[retention] Błąd polityki terminu życia:', errorMessage(error)));
 }, 60_000);
+
+// Automated Premium backups run once a day at 02:15 server time.
+cron.schedule('15 2 * * *', async () => {
+  const destinations = await prisma.backupDestination.findMany({ where: { enabled: true, schedule: { in: ['daily', 'weekly'] } } });
+  for (const destination of destinations) {
+    if (destination.schedule === 'weekly' && new Date().getDay() !== 1) continue;
+    const subscription = await prisma.subscription.findUnique({ where: { ownerKey: destination.ownerKey } });
+    if (!subscription || !['active', 'trialing'].includes(subscription.status)) continue;
+    const ownerIdValue = destination.ownerKey.startsWith('user:') ? Number(destination.ownerKey.slice(5)) : 1;
+    try { await runScheduledCloudBackup(prisma, destination.ownerKey, Number.isFinite(ownerIdValue) ? ownerIdValue : 1); console.log(`[backup] Scheduled backup completed for ${destination.ownerKey}`); }
+    catch (error) { console.error(`[backup] Scheduled backup failed for ${destination.ownerKey}:`, errorMessage(error)); }
+  }
+});
 
 app.use('/api/folders', createFolderRouter(prisma));
 

@@ -56,6 +56,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.runScheduledCloudBackup = runScheduledCloudBackup;
 exports.createBackupRouter = createBackupRouter;
 exports.createBackupOAuthCallbackRouter = createBackupOAuthCallbackRouter;
 const express_1 = __importDefault(require("express"));
@@ -116,6 +117,57 @@ function refreshOAuthCredentials(prisma, destination) {
 }
 function isPremium(prisma, res) {
     return __awaiter(this, void 0, void 0, function* () { return (0, premium_1.hasPremium)(prisma, res); });
+}
+/** Executes a scheduled backup for an owner. ownerId is the document owner id. */
+function runScheduledCloudBackup(prisma, ownerKey, ownerIdValue) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const destination = yield prisma.backupDestination.findUnique({ where: { ownerKey } });
+        if (!(destination === null || destination === void 0 ? void 0 : destination.enabled) || !destination.schedule || destination.schedule === 'manual')
+            return false;
+        const folders = yield prisma.folder.findMany({ where: { ownerId: ownerIdValue }, orderBy: { id: 'asc' } });
+        const documents = yield prisma.document.findMany({ where: { folder: { ownerId: ownerIdValue } }, include: { tags: { include: { tag: true } } }, orderBy: { id: 'asc' } });
+        const manifest = { version: 1, exportedAt: new Date().toISOString(), folders, documents: documents.map((_a) => {
+                var { tags } = _a, document = __rest(_a, ["tags"]);
+                return (Object.assign(Object.assign({}, document), { tags: tags.map(({ tag }) => tag) }));
+            }) };
+        const pass = new stream_1.PassThrough();
+        const chunks = [];
+        pass.on('data', chunk => chunks.push(Buffer.from(chunk)));
+        const archive = archiver('zip', { zlib: { level: 6 } });
+        archive.pipe(pass);
+        archive.append(JSON.stringify(manifest), { name: 'manifest.json' });
+        for (const document of documents) {
+            const source = path_1.default.join(paths_1.uploadsDir, document.filePath);
+            if (fs_1.default.existsSync(source))
+                archive.file(source, { name: `files/${document.id}-${path_1.default.basename(document.filePath)}` });
+        }
+        const complete = new Promise((resolve, reject) => { pass.on('end', () => resolve()); pass.on('error', reject); });
+        yield archive.finalize();
+        yield complete;
+        const credentials = destination.provider === 'webdav' ? (destination.encryptedCredentials ? JSON.parse(decrypt(destination.encryptedCredentials)) : {}) : yield refreshOAuthCredentials(prisma, destination);
+        const data = encryptBackup(Buffer.concat(chunks));
+        const filename = `eteczka-${new Date().toISOString().slice(0, 10)}.zip.enc`;
+        let response;
+        if (destination.provider === 'webdav') {
+            const target = `${destination.endpoint.replace(/\/$/, '')}/${destination.remoteFolder ? `${destination.remoteFolder.replace(/^\/+|\/+$/g, '')}/` : ''}${filename}`;
+            response = yield fetch(target, { method: 'PUT', headers: { Authorization: `Basic ${Buffer.from(`${credentials.username || ''}:${credentials.password || ''}`).toString('base64')}`, 'Content-Type': 'application/zip' }, body: data });
+        }
+        else if (destination.provider === 'dropbox') {
+            response = yield fetch('https://content.dropboxapi.com/2/files/upload', { method: 'POST', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Dropbox-API-Arg': JSON.stringify({ path: `/${destination.remoteFolder ? `${destination.remoteFolder.replace(/^\/+|\/+$/g, '')}/` : ''}${filename}`, mode: 'overwrite', autorename: false }), 'Content-Type': 'application/octet-stream' }, body: data });
+        }
+        else if (destination.provider === 'onedrive') {
+            response = yield fetch(`https://graph.microsoft.com/v1.0/me/drive/special/approot:/${destination.remoteFolder ? `${destination.remoteFolder.replace(/^\/+|\/+$/g, '')}/` : ''}${filename}:/content`, { method: 'PUT', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Content-Type': 'application/zip' }, body: data });
+        }
+        else {
+            const metadata = JSON.stringify(Object.assign({ name: filename, mimeType: 'application/zip' }, (destination.remoteFolder ? { parents: [destination.remoteFolder] } : {})));
+            const multipart = `----EtecZkaBoundary${Date.now()}`;
+            const body = Buffer.concat([Buffer.from(`--${multipart}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${multipart}\r\nContent-Type: application/zip\r\n\r\n`), data, Buffer.from(`\r\n--${multipart}--`)]);
+            response = yield fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', { method: 'POST', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Content-Type': `multipart/related; boundary=${multipart}` }, body });
+        }
+        if (!response.ok)
+            throw new Error(`Cloud upload failed (${response.status}).`);
+        return true;
+    });
 }
 function createBackupRouter(prisma) {
     const router = express_1.default.Router();

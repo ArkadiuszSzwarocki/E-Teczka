@@ -49,6 +49,34 @@ async function refreshOAuthCredentials(prisma: PrismaClient, destination: { id: 
 }
 async function isPremium(prisma: PrismaClient, res: express.Response) { return hasPremium(prisma, res); }
 
+/** Executes a scheduled backup for an owner. ownerId is the document owner id. */
+export async function runScheduledCloudBackup(prisma: PrismaClient, ownerKey: string, ownerIdValue: number) {
+  const destination = await prisma.backupDestination.findUnique({ where: { ownerKey } });
+  if (!destination?.enabled || !destination.schedule || destination.schedule === 'manual') return false;
+  const folders = await prisma.folder.findMany({ where: { ownerId: ownerIdValue }, orderBy: { id: 'asc' } });
+  const documents = await prisma.document.findMany({ where: { folder: { ownerId: ownerIdValue } }, include: { tags: { include: { tag: true } } }, orderBy: { id: 'asc' } });
+  const manifest = { version: 1, exportedAt: new Date().toISOString(), folders, documents: documents.map(({ tags, ...document }) => ({ ...document, tags: tags.map(({ tag }) => tag) })) };
+  const pass = new PassThrough(); const chunks: Buffer[] = []; pass.on('data', chunk => chunks.push(Buffer.from(chunk)));
+  const archive = (archiver as any)('zip', { zlib: { level: 6 } }); archive.pipe(pass); archive.append(JSON.stringify(manifest), { name: 'manifest.json' });
+  for (const document of documents) { const source = path.join(uploadsDir, document.filePath); if (fs.existsSync(source)) archive.file(source, { name: `files/${document.id}-${path.basename(document.filePath)}` }); }
+  const complete = new Promise<void>((resolve, reject) => { pass.on('end', () => resolve()); pass.on('error', reject); }); await archive.finalize(); await complete;
+  const credentials: { username?: string; password?: string; accessToken?: string } = destination.provider === 'webdav' ? (destination.encryptedCredentials ? JSON.parse(decrypt(destination.encryptedCredentials)) : {}) : await refreshOAuthCredentials(prisma, destination);
+  const data = encryptBackup(Buffer.concat(chunks)); const filename = `eteczka-${new Date().toISOString().slice(0, 10)}.zip.enc`; let response: Response;
+  if (destination.provider === 'webdav') {
+    const target = `${destination.endpoint!.replace(/\/$/, '')}/${destination.remoteFolder ? `${destination.remoteFolder.replace(/^\/+|\/+$/g, '')}/` : ''}${filename}`;
+    response = await fetch(target, { method: 'PUT', headers: { Authorization: `Basic ${Buffer.from(`${credentials.username || ''}:${credentials.password || ''}`).toString('base64')}`, 'Content-Type': 'application/zip' }, body: data });
+  } else if (destination.provider === 'dropbox') {
+    response = await fetch('https://content.dropboxapi.com/2/files/upload', { method: 'POST', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Dropbox-API-Arg': JSON.stringify({ path: `/${destination.remoteFolder ? `${destination.remoteFolder.replace(/^\/+|\/+$/g, '')}/` : ''}${filename}`, mode: 'overwrite', autorename: false }), 'Content-Type': 'application/octet-stream' }, body: data });
+  } else if (destination.provider === 'onedrive') {
+    response = await fetch(`https://graph.microsoft.com/v1.0/me/drive/special/approot:/${destination.remoteFolder ? `${destination.remoteFolder.replace(/^\/+|\/+$/g, '')}/` : ''}${filename}:/content`, { method: 'PUT', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Content-Type': 'application/zip' }, body: data });
+  } else {
+    const metadata = JSON.stringify({ name: filename, mimeType: 'application/zip', ...(destination.remoteFolder ? { parents: [destination.remoteFolder] } : {}) }); const multipart = `----EtecZkaBoundary${Date.now()}`; const body = Buffer.concat([Buffer.from(`--${multipart}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${multipart}\r\nContent-Type: application/zip\r\n\r\n`), data, Buffer.from(`\r\n--${multipart}--`)]);
+    response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', { method: 'POST', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Content-Type': `multipart/related; boundary=${multipart}` }, body });
+  }
+  if (!response.ok) throw new Error(`Cloud upload failed (${response.status}).`);
+  return true;
+}
+
 export function createBackupRouter(prisma: PrismaClient) {
   const router = express.Router();
 
