@@ -129,8 +129,6 @@ function createBackupRouter(prisma) {
         const destination = yield prisma.backupDestination.findUnique({ where: { ownerKey: (0, premium_1.billingOwnerKey)(res) } });
         if (!(destination === null || destination === void 0 ? void 0 : destination.enabled))
             return res.status(400).json({ error: 'Najpierw skonfiguruj miejsce kopii zapasowej.' });
-        if (destination.provider !== 'webdav')
-            return res.status(501).json({ error: 'Ten dostawca wymaga jeszcze konfiguracji OAuth. QNAP/WebDAV jest dostępny od razu.' });
         try {
             const folders = yield prisma.folder.findMany({ where: { ownerId: ownerId(res) }, orderBy: { id: 'asc' } });
             const documents = yield prisma.document.findMany({ where: { folder: { ownerId: ownerId(res) } }, include: { tags: { include: { tag: true } } }, orderBy: { id: 'asc' } });
@@ -152,9 +150,26 @@ function createBackupRouter(prisma) {
             const complete = new Promise((resolve, reject) => { pass.on('end', () => resolve()); pass.on('error', reject); });
             yield archive.finalize();
             yield complete;
-            const credentials = destination.encryptedCredentials ? JSON.parse(decrypt(destination.encryptedCredentials)) : { username: '', password: '' };
-            const target = `${destination.endpoint.replace(/\/$/, '')}/eteczka-${new Date().toISOString().slice(0, 10)}.zip`;
-            const response = yield fetch(target, { method: 'PUT', headers: { Authorization: `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString('base64')}`, 'Content-Type': 'application/zip' }, body: Buffer.concat(chunks) });
+            const credentials = destination.encryptedCredentials ? JSON.parse(decrypt(destination.encryptedCredentials)) : {};
+            const data = Buffer.concat(chunks);
+            const filename = `eteczka-${new Date().toISOString().slice(0, 10)}.zip`;
+            let response;
+            if (destination.provider === 'webdav') {
+                const target = `${destination.endpoint.replace(/\/$/, '')}/${filename}`;
+                response = yield fetch(target, { method: 'PUT', headers: { Authorization: `Basic ${Buffer.from(`${credentials.username || ''}:${credentials.password || ''}`).toString('base64')}`, 'Content-Type': 'application/zip' }, body: data });
+            }
+            else if (destination.provider === 'dropbox') {
+                response = yield fetch('https://content.dropboxapi.com/2/files/upload', { method: 'POST', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Dropbox-API-Arg': JSON.stringify({ path: `/${filename}`, mode: 'overwrite', autorename: false }), 'Content-Type': 'application/octet-stream' }, body: data });
+            }
+            else if (destination.provider === 'onedrive') {
+                response = yield fetch(`https://graph.microsoft.com/v1.0/me/drive/special/approot:/${filename}:/content`, { method: 'PUT', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Content-Type': 'application/zip' }, body: data });
+            }
+            else {
+                const metadata = JSON.stringify({ name: filename, mimeType: 'application/zip' });
+                const multipart = `----EtecZkaBoundary${Date.now()}`;
+                const body = Buffer.concat([Buffer.from(`--${multipart}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${multipart}\r\nContent-Type: application/zip\r\n\r\n`), data, Buffer.from(`\r\n--${multipart}--`)]);
+                response = yield fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', { method: 'POST', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Content-Type': `multipart/related; boundary=${multipart}` }, body });
+            }
             if (!response.ok)
                 return res.status(502).json({ error: `QNAP/WebDAV odrzucił kopię (HTTP ${response.status}).` });
             res.json({ success: true, provider: destination.provider, uploadedAt: new Date().toISOString() });

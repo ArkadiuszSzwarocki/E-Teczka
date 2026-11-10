@@ -63,7 +63,6 @@ export function createBackupRouter(prisma: PrismaClient) {
     if (!await isPremium(prisma, res)) return res.status(402).json({ code: 'PREMIUM_REQUIRED', error: 'Automatyczny backup do chmury wymaga planu Premium.' });
     const destination = await prisma.backupDestination.findUnique({ where: { ownerKey: billingOwnerKey(res) } });
     if (!destination?.enabled) return res.status(400).json({ error: 'Najpierw skonfiguruj miejsce kopii zapasowej.' });
-    if (destination.provider !== 'webdav') return res.status(501).json({ error: 'Ten dostawca wymaga jeszcze konfiguracji OAuth. QNAP/WebDAV jest dostępny od razu.' });
     try {
       const folders = await prisma.folder.findMany({ where: { ownerId: ownerId(res) }, orderBy: { id: 'asc' } });
       const documents = await prisma.document.findMany({ where: { folder: { ownerId: ownerId(res) } }, include: { tags: { include: { tag: true } } }, orderBy: { id: 'asc' } });
@@ -73,9 +72,20 @@ export function createBackupRouter(prisma: PrismaClient) {
       for (const document of documents) { const source = path.join(uploadsDir, document.filePath); if (fs.existsSync(source)) archive.file(source, { name: `files/${document.id}-${path.basename(document.filePath)}` }); }
       const complete = new Promise<void>((resolve, reject) => { pass.on('end', () => resolve()); pass.on('error', reject); });
       await archive.finalize(); await complete;
-      const credentials = destination.encryptedCredentials ? JSON.parse(decrypt(destination.encryptedCredentials)) as { username: string; password: string } : { username: '', password: '' };
-      const target = `${destination.endpoint!.replace(/\/$/, '')}/eteczka-${new Date().toISOString().slice(0, 10)}.zip`;
-      const response = await fetch(target, { method: 'PUT', headers: { Authorization: `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString('base64')}`, 'Content-Type': 'application/zip' }, body: Buffer.concat(chunks) });
+      const credentials = destination.encryptedCredentials ? JSON.parse(decrypt(destination.encryptedCredentials)) as { username?: string; password?: string; accessToken?: string } : {};
+      const data = Buffer.concat(chunks); const filename = `eteczka-${new Date().toISOString().slice(0, 10)}.zip`;
+      let response: Response;
+      if (destination.provider === 'webdav') {
+        const target = `${destination.endpoint!.replace(/\/$/, '')}/${filename}`;
+        response = await fetch(target, { method: 'PUT', headers: { Authorization: `Basic ${Buffer.from(`${credentials.username || ''}:${credentials.password || ''}`).toString('base64')}`, 'Content-Type': 'application/zip' }, body: data });
+      } else if (destination.provider === 'dropbox') {
+        response = await fetch('https://content.dropboxapi.com/2/files/upload', { method: 'POST', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Dropbox-API-Arg': JSON.stringify({ path: `/${filename}`, mode: 'overwrite', autorename: false }), 'Content-Type': 'application/octet-stream' }, body: data });
+      } else if (destination.provider === 'onedrive') {
+        response = await fetch(`https://graph.microsoft.com/v1.0/me/drive/special/approot:/${filename}:/content`, { method: 'PUT', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Content-Type': 'application/zip' }, body: data });
+      } else {
+        const metadata = JSON.stringify({ name: filename, mimeType: 'application/zip' }); const multipart = `----EtecZkaBoundary${Date.now()}`; const body = Buffer.concat([Buffer.from(`--${multipart}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${multipart}\r\nContent-Type: application/zip\r\n\r\n`), data, Buffer.from(`\r\n--${multipart}--`)]);
+        response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', { method: 'POST', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Content-Type': `multipart/related; boundary=${multipart}` }, body });
+      }
       if (!response.ok) return res.status(502).json({ error: `QNAP/WebDAV odrzucił kopię (HTTP ${response.status}).` });
       res.json({ success: true, provider: destination.provider, uploadedAt: new Date().toISOString() });
     } catch { res.status(502).json({ error: 'Nie udało się wysłać kopii do chmury.' }); }
