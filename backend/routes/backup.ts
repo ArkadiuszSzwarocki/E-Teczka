@@ -1,17 +1,68 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
+import { PassThrough } from 'stream';
 import * as archiver from 'archiver';
 import AdmZip from 'adm-zip';
 import multer from 'multer';
 import type { PrismaClient } from '@prisma/client';
 import { uploadsDir } from '../config/paths';
+import { authSecret } from '../security/authSecret';
+import { hasPremium, billingOwnerKey } from '../middleware/premium';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 512 * 1024 * 1024 } });
 const ownerId = (res: express.Response) => Number(res.locals.userId || 1);
+const BACKUP_SECRET = crypto.createHash('sha256').update(authSecret()).digest();
+const allowedProviders = new Set(['webdav', 'google-drive', 'onedrive', 'dropbox']);
+
+function encrypt(value: string) { const iv = crypto.randomBytes(12); const cipher = crypto.createCipheriv('aes-256-gcm', BACKUP_SECRET, iv); const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]); return `${iv.toString('base64url')}.${cipher.getAuthTag().toString('base64url')}.${encrypted.toString('base64url')}`; }
+function decrypt(value: string) { const [ivRaw, tagRaw, dataRaw] = value.split('.'); const decipher = crypto.createDecipheriv('aes-256-gcm', BACKUP_SECRET, Buffer.from(ivRaw, 'base64url')); decipher.setAuthTag(Buffer.from(tagRaw, 'base64url')); return Buffer.concat([decipher.update(Buffer.from(dataRaw, 'base64url')), decipher.final()]).toString('utf8'); }
+async function isPremium(prisma: PrismaClient, res: express.Response) { return hasPremium(prisma, res); }
 
 export function createBackupRouter(prisma: PrismaClient) {
   const router = express.Router();
+
+  router.get('/destination', async (_req, res) => {
+    if (!await isPremium(prisma, res)) return res.status(402).json({ code: 'PREMIUM_REQUIRED', error: 'Backup do chmury wymaga planu Premium.' });
+    const destination = await prisma.backupDestination.findUnique({ where: { ownerKey: billingOwnerKey(res) } });
+    res.json(destination ? { provider: destination.provider, endpoint: destination.endpoint, enabled: destination.enabled, configured: true } : { configured: false });
+  });
+
+  router.put('/destination', async (req, res) => {
+    if (!await isPremium(prisma, res)) return res.status(402).json({ code: 'PREMIUM_REQUIRED', error: 'Backup do chmury wymaga planu Premium.' });
+    const provider = String(req.body?.provider || '');
+    const endpoint = typeof req.body?.endpoint === 'string' ? req.body.endpoint.trim().slice(0, 2000) : '';
+    const username = typeof req.body?.username === 'string' ? req.body.username : '';
+    const password = typeof req.body?.password === 'string' ? req.body.password : '';
+    if (!allowedProviders.has(provider)) return res.status(400).json({ error: 'Nieobsługiwany dostawca chmury.' });
+    if (provider === 'webdav' && (!endpoint || !/^https:\/\//i.test(endpoint))) return res.status(400).json({ error: 'QNAP/WebDAV wymaga adresu HTTPS.' });
+    const credentials = provider === 'webdav' ? encrypt(JSON.stringify({ username, password })) : null;
+    const destination = await prisma.backupDestination.upsert({ where: { ownerKey: billingOwnerKey(res) }, create: { ownerKey: billingOwnerKey(res), provider, endpoint: endpoint || null, encryptedCredentials: credentials }, update: { provider, endpoint: endpoint || null, encryptedCredentials: credentials, enabled: true } });
+    res.json({ provider: destination.provider, endpoint: destination.endpoint, enabled: destination.enabled, configured: true });
+  });
+
+  router.post('/cloud', async (_req, res) => {
+    if (!await isPremium(prisma, res)) return res.status(402).json({ code: 'PREMIUM_REQUIRED', error: 'Automatyczny backup do chmury wymaga planu Premium.' });
+    const destination = await prisma.backupDestination.findUnique({ where: { ownerKey: billingOwnerKey(res) } });
+    if (!destination?.enabled) return res.status(400).json({ error: 'Najpierw skonfiguruj miejsce kopii zapasowej.' });
+    if (destination.provider !== 'webdav') return res.status(501).json({ error: 'Ten dostawca wymaga jeszcze konfiguracji OAuth. QNAP/WebDAV jest dostępny od razu.' });
+    try {
+      const folders = await prisma.folder.findMany({ where: { ownerId: ownerId(res) }, orderBy: { id: 'asc' } });
+      const documents = await prisma.document.findMany({ where: { folder: { ownerId: ownerId(res) } }, include: { tags: { include: { tag: true } } }, orderBy: { id: 'asc' } });
+      const manifest = { version: 1, exportedAt: new Date().toISOString(), folders, documents: documents.map(({ tags, ...document }) => ({ ...document, tags: tags.map(({ tag }) => tag) })) };
+      const pass = new PassThrough(); const chunks: Buffer[] = []; pass.on('data', chunk => chunks.push(Buffer.from(chunk)));
+      const archive = (archiver as any)('zip', { zlib: { level: 6 } }); archive.pipe(pass); archive.append(JSON.stringify(manifest), { name: 'manifest.json' });
+      for (const document of documents) { const source = path.join(uploadsDir, document.filePath); if (fs.existsSync(source)) archive.file(source, { name: `files/${document.id}-${path.basename(document.filePath)}` }); }
+      const complete = new Promise<void>((resolve, reject) => { pass.on('end', () => resolve()); pass.on('error', reject); });
+      await archive.finalize(); await complete;
+      const credentials = destination.encryptedCredentials ? JSON.parse(decrypt(destination.encryptedCredentials)) as { username: string; password: string } : { username: '', password: '' };
+      const target = `${destination.endpoint!.replace(/\/$/, '')}/eteczka-${new Date().toISOString().slice(0, 10)}.zip`;
+      const response = await fetch(target, { method: 'PUT', headers: { Authorization: `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString('base64')}`, 'Content-Type': 'application/zip' }, body: Buffer.concat(chunks) });
+      if (!response.ok) return res.status(502).json({ error: `QNAP/WebDAV odrzucił kopię (HTTP ${response.status}).` });
+      res.json({ success: true, provider: destination.provider, uploadedAt: new Date().toISOString() });
+    } catch { res.status(502).json({ error: 'Nie udało się wysłać kopii do chmury.' }); }
+  });
 
   router.get('/export', async (req, res) => {
     const currentOwner = ownerId(res);
