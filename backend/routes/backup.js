@@ -137,24 +137,25 @@ function createBackupRouter(prisma) {
         if (!(yield isPremium(prisma, res)))
             return res.status(402).json({ code: 'PREMIUM_REQUIRED', error: 'Backup do chmury wymaga planu Premium.' });
         const destination = yield prisma.backupDestination.findUnique({ where: { ownerKey: (0, premium_1.billingOwnerKey)(res) } });
-        res.json(destination ? { provider: destination.provider, endpoint: destination.endpoint, remoteFolder: destination.remoteFolder, enabled: destination.enabled, configured: true } : { configured: false });
+        res.json(destination ? { provider: destination.provider, endpoint: destination.endpoint, remoteFolder: destination.remoteFolder, schedule: destination.schedule, enabled: destination.enabled, configured: true } : { configured: false });
     }));
     router.put('/destination', (req, res) => __awaiter(this, void 0, void 0, function* () {
-        var _a, _b, _c, _d, _e;
+        var _a, _b, _c, _d, _e, _f;
         if (!(yield isPremium(prisma, res)))
             return res.status(402).json({ code: 'PREMIUM_REQUIRED', error: 'Backup do chmury wymaga planu Premium.' });
         const provider = String(((_a = req.body) === null || _a === void 0 ? void 0 : _a.provider) || '');
         const endpoint = typeof ((_b = req.body) === null || _b === void 0 ? void 0 : _b.endpoint) === 'string' ? req.body.endpoint.trim().slice(0, 2000) : '';
         const remoteFolder = typeof ((_c = req.body) === null || _c === void 0 ? void 0 : _c.remoteFolder) === 'string' ? req.body.remoteFolder.trim().slice(0, 500) : '';
-        const username = typeof ((_d = req.body) === null || _d === void 0 ? void 0 : _d.username) === 'string' ? req.body.username : '';
-        const password = typeof ((_e = req.body) === null || _e === void 0 ? void 0 : _e.password) === 'string' ? req.body.password : '';
+        const schedule = ['manual', 'daily', 'weekly'].includes(String((_d = req.body) === null || _d === void 0 ? void 0 : _d.schedule)) ? String(req.body.schedule) : 'manual';
+        const username = typeof ((_e = req.body) === null || _e === void 0 ? void 0 : _e.username) === 'string' ? req.body.username : '';
+        const password = typeof ((_f = req.body) === null || _f === void 0 ? void 0 : _f.password) === 'string' ? req.body.password : '';
         if (!allowedProviders.has(provider))
             return res.status(400).json({ error: 'Nieobsługiwany dostawca chmury.' });
         if (provider === 'webdav' && (!endpoint || !/^https:\/\//i.test(endpoint)))
             return res.status(400).json({ error: 'QNAP/WebDAV wymaga adresu HTTPS.' });
         const credentials = provider === 'webdav' ? encrypt(JSON.stringify({ username, password })) : null;
-        const destination = yield prisma.backupDestination.upsert({ where: { ownerKey: (0, premium_1.billingOwnerKey)(res) }, create: { ownerKey: (0, premium_1.billingOwnerKey)(res), provider, endpoint: endpoint || null, remoteFolder: remoteFolder || null, encryptedCredentials: credentials }, update: { provider, endpoint: endpoint || null, remoteFolder: remoteFolder || null, encryptedCredentials: credentials, enabled: true } });
-        res.json({ provider: destination.provider, endpoint: destination.endpoint, enabled: destination.enabled, configured: true });
+        const destination = yield prisma.backupDestination.upsert({ where: { ownerKey: (0, premium_1.billingOwnerKey)(res) }, create: { ownerKey: (0, premium_1.billingOwnerKey)(res), provider, endpoint: endpoint || null, remoteFolder: remoteFolder || null, schedule, encryptedCredentials: credentials }, update: { provider, endpoint: endpoint || null, remoteFolder: remoteFolder || null, schedule, encryptedCredentials: credentials, enabled: true } });
+        res.json({ provider: destination.provider, endpoint: destination.endpoint, remoteFolder: destination.remoteFolder, schedule: destination.schedule, enabled: destination.enabled, configured: true });
     }));
     router.post('/cloud', (_req, res) => __awaiter(this, void 0, void 0, function* () {
         if (!(yield isPremium(prisma, res)))

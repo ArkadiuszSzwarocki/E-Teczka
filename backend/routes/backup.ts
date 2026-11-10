@@ -65,7 +65,7 @@ export function createBackupRouter(prisma: PrismaClient) {
   router.get('/destination', async (_req, res) => {
     if (!await isPremium(prisma, res)) return res.status(402).json({ code: 'PREMIUM_REQUIRED', error: 'Backup do chmury wymaga planu Premium.' });
     const destination = await prisma.backupDestination.findUnique({ where: { ownerKey: billingOwnerKey(res) } });
-    res.json(destination ? { provider: destination.provider, endpoint: destination.endpoint, remoteFolder: destination.remoteFolder, enabled: destination.enabled, configured: true } : { configured: false });
+    res.json(destination ? { provider: destination.provider, endpoint: destination.endpoint, remoteFolder: destination.remoteFolder, schedule: destination.schedule, enabled: destination.enabled, configured: true } : { configured: false });
   });
 
   router.put('/destination', async (req, res) => {
@@ -73,13 +73,14 @@ export function createBackupRouter(prisma: PrismaClient) {
     const provider = String(req.body?.provider || '');
     const endpoint = typeof req.body?.endpoint === 'string' ? req.body.endpoint.trim().slice(0, 2000) : '';
     const remoteFolder = typeof req.body?.remoteFolder === 'string' ? req.body.remoteFolder.trim().slice(0, 500) : '';
+    const schedule = ['manual', 'daily', 'weekly'].includes(String(req.body?.schedule)) ? String(req.body.schedule) : 'manual';
     const username = typeof req.body?.username === 'string' ? req.body.username : '';
     const password = typeof req.body?.password === 'string' ? req.body.password : '';
     if (!allowedProviders.has(provider)) return res.status(400).json({ error: 'Nieobsługiwany dostawca chmury.' });
     if (provider === 'webdav' && (!endpoint || !/^https:\/\//i.test(endpoint))) return res.status(400).json({ error: 'QNAP/WebDAV wymaga adresu HTTPS.' });
     const credentials = provider === 'webdav' ? encrypt(JSON.stringify({ username, password })) : null;
-    const destination = await prisma.backupDestination.upsert({ where: { ownerKey: billingOwnerKey(res) }, create: { ownerKey: billingOwnerKey(res), provider, endpoint: endpoint || null, remoteFolder: remoteFolder || null, encryptedCredentials: credentials }, update: { provider, endpoint: endpoint || null, remoteFolder: remoteFolder || null, encryptedCredentials: credentials, enabled: true } });
-    res.json({ provider: destination.provider, endpoint: destination.endpoint, enabled: destination.enabled, configured: true });
+    const destination = await prisma.backupDestination.upsert({ where: { ownerKey: billingOwnerKey(res) }, create: { ownerKey: billingOwnerKey(res), provider, endpoint: endpoint || null, remoteFolder: remoteFolder || null, schedule, encryptedCredentials: credentials }, update: { provider, endpoint: endpoint || null, remoteFolder: remoteFolder || null, schedule, encryptedCredentials: credentials, enabled: true } });
+    res.json({ provider: destination.provider, endpoint: destination.endpoint, remoteFolder: destination.remoteFolder, schedule: destination.schedule, enabled: destination.enabled, configured: true });
   });
 
   router.post('/cloud', async (_req, res) => {

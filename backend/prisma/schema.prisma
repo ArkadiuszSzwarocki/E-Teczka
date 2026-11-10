@@ -51,6 +51,7 @@ model BackupDestination {
   provider     String
   endpoint     String?
   remoteFolder String?
+  schedule     String?   @default("manual")
   encryptedCredentials String?
   enabled      Boolean  @default(true)
   createdAt    DateTime @default(now())
