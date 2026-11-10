@@ -83,6 +83,19 @@ const oauthCallbackUrl = () => process.env.ETECZKA_OAUTH_CALLBACK_URL || 'http:/
 function encrypt(value) { const iv = crypto_1.default.randomBytes(12); const cipher = crypto_1.default.createCipheriv('aes-256-gcm', BACKUP_SECRET, iv); const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]); return `${iv.toString('base64url')}.${cipher.getAuthTag().toString('base64url')}.${encrypted.toString('base64url')}`; }
 function decrypt(value) { const [ivRaw, tagRaw, dataRaw] = value.split('.'); const decipher = crypto_1.default.createDecipheriv('aes-256-gcm', BACKUP_SECRET, Buffer.from(ivRaw, 'base64url')); decipher.setAuthTag(Buffer.from(tagRaw, 'base64url')); return Buffer.concat([decipher.update(Buffer.from(dataRaw, 'base64url')), decipher.final()]).toString('utf8'); }
 function encryptBackup(data) { const iv = crypto_1.default.randomBytes(12); const cipher = crypto_1.default.createCipheriv('aes-256-gcm', BACKUP_SECRET, iv); const encrypted = Buffer.concat([cipher.update(data), cipher.final()]); return Buffer.concat([Buffer.from('ETECZKA-BACKUP-1\n'), iv, cipher.getAuthTag(), encrypted]); }
+function decryptBackup(data) {
+    const header = Buffer.from('ETECZKA-BACKUP-1\n');
+    if (!data.subarray(0, header.length).equals(header))
+        return data;
+    const ivStart = header.length;
+    const tagStart = ivStart + 12;
+    const payloadStart = tagStart + 16;
+    if (data.length <= payloadStart)
+        throw new Error('Uszkodzona zaszyfrowana kopia.');
+    const decipher = crypto_1.default.createDecipheriv('aes-256-gcm', BACKUP_SECRET, data.subarray(ivStart, tagStart));
+    decipher.setAuthTag(data.subarray(tagStart, payloadStart));
+    return Buffer.concat([decipher.update(data.subarray(payloadStart)), decipher.final()]);
+}
 function refreshOAuthCredentials(prisma, destination) {
     return __awaiter(this, void 0, void 0, function* () {
         const credentials = destination.encryptedCredentials ? JSON.parse(decrypt(destination.encryptedCredentials)) : {};
@@ -185,7 +198,7 @@ function createBackupRouter(prisma) {
                 response = yield fetch(`https://graph.microsoft.com/v1.0/me/drive/special/approot:/${destination.remoteFolder ? `${destination.remoteFolder.replace(/^\/+|\/+$/g, '')}/` : ''}${filename}:/content`, { method: 'PUT', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Content-Type': 'application/zip' }, body: data });
             }
             else {
-                const metadata = JSON.stringify({ name: filename, mimeType: 'application/zip' });
+                const metadata = JSON.stringify(Object.assign({ name: filename, mimeType: 'application/zip' }, (destination.remoteFolder ? { parents: [destination.remoteFolder] } : {})));
                 const multipart = `----EtecZkaBoundary${Date.now()}`;
                 const body = Buffer.concat([Buffer.from(`--${multipart}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${multipart}\r\nContent-Type: application/zip\r\n\r\n`), data, Buffer.from(`\r\n--${multipart}--`)]);
                 response = yield fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', { method: 'POST', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Content-Type': `multipart/related; boundary=${multipart}` }, body });
@@ -230,7 +243,7 @@ function createBackupRouter(prisma) {
         if (!req.file)
             return res.status(400).json({ error: 'Wybierz plik kopii zapasowej.' });
         try {
-            const zip = new adm_zip_1.default(req.file.buffer);
+            const zip = new adm_zip_1.default(decryptBackup(req.file.buffer));
             const manifestEntry = zip.getEntry('manifest.json');
             if (!manifestEntry)
                 return res.status(400).json({ error: 'Nieprawidłowa kopia: brak manifestu.' });
@@ -303,4 +316,3 @@ function createBackupOAuthCallbackRouter(prisma) {
     }));
     return router;
 }
-

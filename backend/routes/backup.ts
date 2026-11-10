@@ -26,6 +26,15 @@ const oauthCallbackUrl = () => process.env.ETECZKA_OAUTH_CALLBACK_URL || 'http:/
 function encrypt(value: string) { const iv = crypto.randomBytes(12); const cipher = crypto.createCipheriv('aes-256-gcm', BACKUP_SECRET, iv); const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]); return `${iv.toString('base64url')}.${cipher.getAuthTag().toString('base64url')}.${encrypted.toString('base64url')}`; }
 function decrypt(value: string) { const [ivRaw, tagRaw, dataRaw] = value.split('.'); const decipher = crypto.createDecipheriv('aes-256-gcm', BACKUP_SECRET, Buffer.from(ivRaw, 'base64url')); decipher.setAuthTag(Buffer.from(tagRaw, 'base64url')); return Buffer.concat([decipher.update(Buffer.from(dataRaw, 'base64url')), decipher.final()]).toString('utf8'); }
 function encryptBackup(data: Buffer) { const iv = crypto.randomBytes(12); const cipher = crypto.createCipheriv('aes-256-gcm', BACKUP_SECRET, iv); const encrypted = Buffer.concat([cipher.update(data), cipher.final()]); return Buffer.concat([Buffer.from('ETECZKA-BACKUP-1\n'), iv, cipher.getAuthTag(), encrypted]); }
+function decryptBackup(data: Buffer) {
+  const header = Buffer.from('ETECZKA-BACKUP-1\n');
+  if (!data.subarray(0, header.length).equals(header)) return data;
+  const ivStart = header.length; const tagStart = ivStart + 12; const payloadStart = tagStart + 16;
+  if (data.length <= payloadStart) throw new Error('Uszkodzona zaszyfrowana kopia.');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', BACKUP_SECRET, data.subarray(ivStart, tagStart));
+  decipher.setAuthTag(data.subarray(tagStart, payloadStart));
+  return Buffer.concat([decipher.update(data.subarray(payloadStart)), decipher.final()]);
+}
 async function refreshOAuthCredentials(prisma: PrismaClient, destination: { id: number; ownerKey: string; provider: string; encryptedCredentials: string | null }) {
   const credentials = destination.encryptedCredentials ? JSON.parse(decrypt(destination.encryptedCredentials)) as { accessToken?: string; refreshToken?: string; expiresAt?: number } : {};
   if (!credentials.refreshToken || !credentials.expiresAt || credentials.expiresAt > Date.now() + 60_000) return credentials;
@@ -86,7 +95,7 @@ export function createBackupRouter(prisma: PrismaClient) {
       for (const document of documents) { const source = path.join(uploadsDir, document.filePath); if (fs.existsSync(source)) archive.file(source, { name: `files/${document.id}-${path.basename(document.filePath)}` }); }
       const complete = new Promise<void>((resolve, reject) => { pass.on('end', () => resolve()); pass.on('error', reject); });
       await archive.finalize(); await complete;
-      const credentials = destination.provider === 'webdav' ? (destination.encryptedCredentials ? JSON.parse(decrypt(destination.encryptedCredentials)) as { username?: string; password?: string } : {}) : await refreshOAuthCredentials(prisma, destination);
+      const credentials: { username?: string; password?: string; accessToken?: string } = destination.provider === 'webdav' ? (destination.encryptedCredentials ? JSON.parse(decrypt(destination.encryptedCredentials)) as { username?: string; password?: string } : {}) : await refreshOAuthCredentials(prisma, destination);
       const data = encryptBackup(Buffer.concat(chunks)); const filename = `eteczka-${new Date().toISOString().slice(0, 10)}.zip.enc`;
       let response: Response;
       if (destination.provider === 'webdav') {
@@ -97,7 +106,7 @@ export function createBackupRouter(prisma: PrismaClient) {
       } else if (destination.provider === 'onedrive') {
         response = await fetch(`https://graph.microsoft.com/v1.0/me/drive/special/approot:/${destination.remoteFolder ? `${destination.remoteFolder.replace(/^\/+|\/+$/g, '')}/` : ''}${filename}:/content`, { method: 'PUT', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Content-Type': 'application/zip' }, body: data });
       } else {
-        const metadata = JSON.stringify({ name: filename, mimeType: 'application/zip' }); const multipart = `----EtecZkaBoundary${Date.now()}`; const body = Buffer.concat([Buffer.from(`--${multipart}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${multipart}\r\nContent-Type: application/zip\r\n\r\n`), data, Buffer.from(`\r\n--${multipart}--`)]);
+        const metadata = JSON.stringify({ name: filename, mimeType: 'application/zip', ...(destination.remoteFolder ? { parents: [destination.remoteFolder] } : {}) }); const multipart = `----EtecZkaBoundary${Date.now()}`; const body = Buffer.concat([Buffer.from(`--${multipart}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${multipart}\r\nContent-Type: application/zip\r\n\r\n`), data, Buffer.from(`\r\n--${multipart}--`)]);
         response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', { method: 'POST', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Content-Type': `multipart/related; boundary=${multipart}` }, body });
       }
       if (!response.ok) return res.status(502).json({ error: `QNAP/WebDAV odrzucił kopię (HTTP ${response.status}).` });
@@ -132,7 +141,7 @@ export function createBackupRouter(prisma: PrismaClient) {
   router.post('/restore', upload.single('backup'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'Wybierz plik kopii zapasowej.' });
     try {
-      const zip = new AdmZip(req.file.buffer);
+      const zip = new AdmZip(decryptBackup(req.file.buffer));
       const manifestEntry = zip.getEntry('manifest.json');
       if (!manifestEntry) return res.status(400).json({ error: 'Nieprawidłowa kopia: brak manifestu.' });
       const manifest = JSON.parse(manifestEntry.getData().toString('utf8')) as { version?: number; folders?: Array<Record<string, unknown>>; documents?: Array<Record<string, unknown> & { tags?: Array<Record<string, unknown>> }> };
