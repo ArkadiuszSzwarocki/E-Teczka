@@ -50,6 +50,7 @@ model BackupDestination {
   ownerKey     String   @unique
   provider     String
   endpoint     String?
+  remoteFolder String?
   encryptedCredentials String?
   enabled      Boolean  @default(true)
   createdAt    DateTime @default(now())

@@ -25,6 +25,19 @@ const oauthCallbackUrl = () => process.env.ETECZKA_OAUTH_CALLBACK_URL || 'http:/
 
 function encrypt(value: string) { const iv = crypto.randomBytes(12); const cipher = crypto.createCipheriv('aes-256-gcm', BACKUP_SECRET, iv); const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]); return `${iv.toString('base64url')}.${cipher.getAuthTag().toString('base64url')}.${encrypted.toString('base64url')}`; }
 function decrypt(value: string) { const [ivRaw, tagRaw, dataRaw] = value.split('.'); const decipher = crypto.createDecipheriv('aes-256-gcm', BACKUP_SECRET, Buffer.from(ivRaw, 'base64url')); decipher.setAuthTag(Buffer.from(tagRaw, 'base64url')); return Buffer.concat([decipher.update(Buffer.from(dataRaw, 'base64url')), decipher.final()]).toString('utf8'); }
+function encryptBackup(data: Buffer) { const iv = crypto.randomBytes(12); const cipher = crypto.createCipheriv('aes-256-gcm', BACKUP_SECRET, iv); const encrypted = Buffer.concat([cipher.update(data), cipher.final()]); return Buffer.concat([Buffer.from('ETECZKA-BACKUP-1\n'), iv, cipher.getAuthTag(), encrypted]); }
+async function refreshOAuthCredentials(prisma: PrismaClient, destination: { id: number; ownerKey: string; provider: string; encryptedCredentials: string | null }) {
+  const credentials = destination.encryptedCredentials ? JSON.parse(decrypt(destination.encryptedCredentials)) as { accessToken?: string; refreshToken?: string; expiresAt?: number } : {};
+  if (!credentials.refreshToken || !credentials.expiresAt || credentials.expiresAt > Date.now() + 60_000) return credentials;
+  const config = oauthConfig[destination.provider]; if (!config?.clientId || !config.clientSecret) return credentials;
+  const body = new URLSearchParams({ grant_type: 'refresh_token', refresh_token: credentials.refreshToken, client_id: config.clientId, client_secret: config.clientSecret });
+  const response = await fetch(config.token, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+  const tokens = await response.json() as { access_token?: string; refresh_token?: string; expires_in?: number };
+  if (!response.ok || !tokens.access_token) throw new Error('Nie udało się odświeżyć tokenu OAuth.');
+  const updated = { accessToken: tokens.access_token, refreshToken: tokens.refresh_token || credentials.refreshToken, expiresAt: Date.now() + Number(tokens.expires_in || 3600) * 1000 };
+  await prisma.backupDestination.update({ where: { id: destination.id }, data: { encryptedCredentials: encrypt(JSON.stringify(updated)) } });
+  return updated;
+}
 async function isPremium(prisma: PrismaClient, res: express.Response) { return hasPremium(prisma, res); }
 
 export function createBackupRouter(prisma: PrismaClient) {
@@ -43,19 +56,20 @@ export function createBackupRouter(prisma: PrismaClient) {
   router.get('/destination', async (_req, res) => {
     if (!await isPremium(prisma, res)) return res.status(402).json({ code: 'PREMIUM_REQUIRED', error: 'Backup do chmury wymaga planu Premium.' });
     const destination = await prisma.backupDestination.findUnique({ where: { ownerKey: billingOwnerKey(res) } });
-    res.json(destination ? { provider: destination.provider, endpoint: destination.endpoint, enabled: destination.enabled, configured: true } : { configured: false });
+    res.json(destination ? { provider: destination.provider, endpoint: destination.endpoint, remoteFolder: destination.remoteFolder, enabled: destination.enabled, configured: true } : { configured: false });
   });
 
   router.put('/destination', async (req, res) => {
     if (!await isPremium(prisma, res)) return res.status(402).json({ code: 'PREMIUM_REQUIRED', error: 'Backup do chmury wymaga planu Premium.' });
     const provider = String(req.body?.provider || '');
     const endpoint = typeof req.body?.endpoint === 'string' ? req.body.endpoint.trim().slice(0, 2000) : '';
+    const remoteFolder = typeof req.body?.remoteFolder === 'string' ? req.body.remoteFolder.trim().slice(0, 500) : '';
     const username = typeof req.body?.username === 'string' ? req.body.username : '';
     const password = typeof req.body?.password === 'string' ? req.body.password : '';
     if (!allowedProviders.has(provider)) return res.status(400).json({ error: 'Nieobsługiwany dostawca chmury.' });
     if (provider === 'webdav' && (!endpoint || !/^https:\/\//i.test(endpoint))) return res.status(400).json({ error: 'QNAP/WebDAV wymaga adresu HTTPS.' });
     const credentials = provider === 'webdav' ? encrypt(JSON.stringify({ username, password })) : null;
-    const destination = await prisma.backupDestination.upsert({ where: { ownerKey: billingOwnerKey(res) }, create: { ownerKey: billingOwnerKey(res), provider, endpoint: endpoint || null, encryptedCredentials: credentials }, update: { provider, endpoint: endpoint || null, encryptedCredentials: credentials, enabled: true } });
+    const destination = await prisma.backupDestination.upsert({ where: { ownerKey: billingOwnerKey(res) }, create: { ownerKey: billingOwnerKey(res), provider, endpoint: endpoint || null, remoteFolder: remoteFolder || null, encryptedCredentials: credentials }, update: { provider, endpoint: endpoint || null, remoteFolder: remoteFolder || null, encryptedCredentials: credentials, enabled: true } });
     res.json({ provider: destination.provider, endpoint: destination.endpoint, enabled: destination.enabled, configured: true });
   });
 
@@ -72,16 +86,16 @@ export function createBackupRouter(prisma: PrismaClient) {
       for (const document of documents) { const source = path.join(uploadsDir, document.filePath); if (fs.existsSync(source)) archive.file(source, { name: `files/${document.id}-${path.basename(document.filePath)}` }); }
       const complete = new Promise<void>((resolve, reject) => { pass.on('end', () => resolve()); pass.on('error', reject); });
       await archive.finalize(); await complete;
-      const credentials = destination.encryptedCredentials ? JSON.parse(decrypt(destination.encryptedCredentials)) as { username?: string; password?: string; accessToken?: string } : {};
-      const data = Buffer.concat(chunks); const filename = `eteczka-${new Date().toISOString().slice(0, 10)}.zip`;
+      const credentials = destination.provider === 'webdav' ? (destination.encryptedCredentials ? JSON.parse(decrypt(destination.encryptedCredentials)) as { username?: string; password?: string } : {}) : await refreshOAuthCredentials(prisma, destination);
+      const data = encryptBackup(Buffer.concat(chunks)); const filename = `eteczka-${new Date().toISOString().slice(0, 10)}.zip.enc`;
       let response: Response;
       if (destination.provider === 'webdav') {
-        const target = `${destination.endpoint!.replace(/\/$/, '')}/${filename}`;
+        const target = `${destination.endpoint!.replace(/\/$/, '')}/${destination.remoteFolder ? `${destination.remoteFolder.replace(/^\/+|\/+$/g, '')}/` : ''}${filename}`;
         response = await fetch(target, { method: 'PUT', headers: { Authorization: `Basic ${Buffer.from(`${credentials.username || ''}:${credentials.password || ''}`).toString('base64')}`, 'Content-Type': 'application/zip' }, body: data });
       } else if (destination.provider === 'dropbox') {
-        response = await fetch('https://content.dropboxapi.com/2/files/upload', { method: 'POST', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Dropbox-API-Arg': JSON.stringify({ path: `/${filename}`, mode: 'overwrite', autorename: false }), 'Content-Type': 'application/octet-stream' }, body: data });
+        response = await fetch('https://content.dropboxapi.com/2/files/upload', { method: 'POST', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Dropbox-API-Arg': JSON.stringify({ path: `/${destination.remoteFolder ? `${destination.remoteFolder.replace(/^\/+|\/+$/g, '')}/` : ''}${filename}`, mode: 'overwrite', autorename: false }), 'Content-Type': 'application/octet-stream' }, body: data });
       } else if (destination.provider === 'onedrive') {
-        response = await fetch(`https://graph.microsoft.com/v1.0/me/drive/special/approot:/${filename}:/content`, { method: 'PUT', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Content-Type': 'application/zip' }, body: data });
+        response = await fetch(`https://graph.microsoft.com/v1.0/me/drive/special/approot:/${destination.remoteFolder ? `${destination.remoteFolder.replace(/^\/+|\/+$/g, '')}/` : ''}${filename}:/content`, { method: 'PUT', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Content-Type': 'application/zip' }, body: data });
       } else {
         const metadata = JSON.stringify({ name: filename, mimeType: 'application/zip' }); const multipart = `----EtecZkaBoundary${Date.now()}`; const body = Buffer.concat([Buffer.from(`--${multipart}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${multipart}\r\nContent-Type: application/zip\r\n\r\n`), data, Buffer.from(`\r\n--${multipart}--`)]);
         response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', { method: 'POST', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Content-Type': `multipart/related; boundary=${multipart}` }, body });
