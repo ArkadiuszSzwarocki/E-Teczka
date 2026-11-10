@@ -87,6 +87,7 @@ export function createBackupRouter(prisma: PrismaClient) {
     const state = crypto.randomBytes(24).toString('base64url'); oauthStates.set(state, { ownerKey: billingOwnerKey(res), provider, expiresAt: Date.now() + 10 * 60_000 });
     const params = new URLSearchParams({ client_id: config.clientId, redirect_uri: oauthCallbackUrl(), response_type: 'code', state, scope: config.scope });
     if (provider === 'google-drive') params.set('access_type', 'offline');
+    if (provider === 'dropbox') params.set('token_access_type', 'offline');
     res.redirect(`${config.authorize}?${params.toString()}`);
   });
 
@@ -106,8 +107,9 @@ export function createBackupRouter(prisma: PrismaClient) {
     const password = typeof req.body?.password === 'string' ? req.body.password : '';
     if (!allowedProviders.has(provider)) return res.status(400).json({ error: 'Nieobsługiwany dostawca chmury.' });
     if (provider === 'webdav' && (!endpoint || !/^https:\/\//i.test(endpoint))) return res.status(400).json({ error: 'QNAP/WebDAV wymaga adresu HTTPS.' });
-    const credentials = provider === 'webdav' ? encrypt(JSON.stringify({ username, password })) : null;
-    const destination = await prisma.backupDestination.upsert({ where: { ownerKey: billingOwnerKey(res) }, create: { ownerKey: billingOwnerKey(res), provider, endpoint: endpoint || null, remoteFolder: remoteFolder || null, schedule, encryptedCredentials: credentials }, update: { provider, endpoint: endpoint || null, remoteFolder: remoteFolder || null, schedule, encryptedCredentials: credentials, enabled: true } });
+    const existing = await prisma.backupDestination.findUnique({ where: { ownerKey: billingOwnerKey(res) } });
+    const credentials = provider === 'webdav' ? encrypt(JSON.stringify({ username, password })) : existing?.encryptedCredentials || null;
+    const destination = await prisma.backupDestination.upsert({ where: { ownerKey: billingOwnerKey(res) }, create: { ownerKey: billingOwnerKey(res), provider, endpoint: endpoint || null, remoteFolder: remoteFolder || null, schedule, encryptedCredentials: credentials }, update: { provider, endpoint: endpoint || null, remoteFolder: remoteFolder || null, schedule, ...(credentials ? { encryptedCredentials: credentials } : {}), enabled: true } });
     res.json({ provider: destination.provider, endpoint: destination.endpoint, remoteFolder: destination.remoteFolder, schedule: destination.schedule, enabled: destination.enabled, configured: true });
   });
 

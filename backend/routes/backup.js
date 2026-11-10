@@ -183,6 +183,8 @@ function createBackupRouter(prisma) {
         const params = new URLSearchParams({ client_id: config.clientId, redirect_uri: oauthCallbackUrl(), response_type: 'code', state, scope: config.scope });
         if (provider === 'google-drive')
             params.set('access_type', 'offline');
+        if (provider === 'dropbox')
+            params.set('token_access_type', 'offline');
         res.redirect(`${config.authorize}?${params.toString()}`);
     }));
     router.get('/destination', (_req, res) => __awaiter(this, void 0, void 0, function* () {
@@ -205,8 +207,9 @@ function createBackupRouter(prisma) {
             return res.status(400).json({ error: 'Nieobsługiwany dostawca chmury.' });
         if (provider === 'webdav' && (!endpoint || !/^https:\/\//i.test(endpoint)))
             return res.status(400).json({ error: 'QNAP/WebDAV wymaga adresu HTTPS.' });
-        const credentials = provider === 'webdav' ? encrypt(JSON.stringify({ username, password })) : null;
-        const destination = yield prisma.backupDestination.upsert({ where: { ownerKey: (0, premium_1.billingOwnerKey)(res) }, create: { ownerKey: (0, premium_1.billingOwnerKey)(res), provider, endpoint: endpoint || null, remoteFolder: remoteFolder || null, schedule, encryptedCredentials: credentials }, update: { provider, endpoint: endpoint || null, remoteFolder: remoteFolder || null, schedule, encryptedCredentials: credentials, enabled: true } });
+        const existing = yield prisma.backupDestination.findUnique({ where: { ownerKey: (0, premium_1.billingOwnerKey)(res) } });
+        const credentials = provider === 'webdav' ? encrypt(JSON.stringify({ username, password })) : (existing === null || existing === void 0 ? void 0 : existing.encryptedCredentials) || null;
+        const destination = yield prisma.backupDestination.upsert({ where: { ownerKey: (0, premium_1.billingOwnerKey)(res) }, create: { ownerKey: (0, premium_1.billingOwnerKey)(res), provider, endpoint: endpoint || null, remoteFolder: remoteFolder || null, schedule, encryptedCredentials: credentials }, update: Object.assign(Object.assign({ provider, endpoint: endpoint || null, remoteFolder: remoteFolder || null, schedule }, (credentials ? { encryptedCredentials: credentials } : {})), { enabled: true }) });
         res.json({ provider: destination.provider, endpoint: destination.endpoint, remoteFolder: destination.remoteFolder, schedule: destination.schedule, enabled: destination.enabled, configured: true });
     }));
     router.post('/cloud', (_req, res) => __awaiter(this, void 0, void 0, function* () {
