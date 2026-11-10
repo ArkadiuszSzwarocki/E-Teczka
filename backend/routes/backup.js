@@ -60,14 +60,87 @@ exports.createBackupRouter = createBackupRouter;
 const express_1 = __importDefault(require("express"));
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
+const crypto_1 = __importDefault(require("crypto"));
+const stream_1 = require("stream");
 const archiver = __importStar(require("archiver"));
 const adm_zip_1 = __importDefault(require("adm-zip"));
 const multer_1 = __importDefault(require("multer"));
 const paths_1 = require("../config/paths");
+const authSecret_1 = require("../security/authSecret");
+const premium_1 = require("../middleware/premium");
 const upload = (0, multer_1.default)({ storage: multer_1.default.memoryStorage(), limits: { fileSize: 512 * 1024 * 1024 } });
 const ownerId = (res) => Number(res.locals.userId || 1);
+const BACKUP_SECRET = crypto_1.default.createHash('sha256').update((0, authSecret_1.authSecret)()).digest();
+const allowedProviders = new Set(['webdav', 'google-drive', 'onedrive', 'dropbox']);
+function encrypt(value) { const iv = crypto_1.default.randomBytes(12); const cipher = crypto_1.default.createCipheriv('aes-256-gcm', BACKUP_SECRET, iv); const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]); return `${iv.toString('base64url')}.${cipher.getAuthTag().toString('base64url')}.${encrypted.toString('base64url')}`; }
+function decrypt(value) { const [ivRaw, tagRaw, dataRaw] = value.split('.'); const decipher = crypto_1.default.createDecipheriv('aes-256-gcm', BACKUP_SECRET, Buffer.from(ivRaw, 'base64url')); decipher.setAuthTag(Buffer.from(tagRaw, 'base64url')); return Buffer.concat([decipher.update(Buffer.from(dataRaw, 'base64url')), decipher.final()]).toString('utf8'); }
+function isPremium(prisma, res) {
+    return __awaiter(this, void 0, void 0, function* () { return (0, premium_1.hasPremium)(prisma, res); });
+}
 function createBackupRouter(prisma) {
     const router = express_1.default.Router();
+    router.get('/destination', (_req, res) => __awaiter(this, void 0, void 0, function* () {
+        if (!(yield isPremium(prisma, res)))
+            return res.status(402).json({ code: 'PREMIUM_REQUIRED', error: 'Backup do chmury wymaga planu Premium.' });
+        const destination = yield prisma.backupDestination.findUnique({ where: { ownerKey: (0, premium_1.billingOwnerKey)(res) } });
+        res.json(destination ? { provider: destination.provider, endpoint: destination.endpoint, enabled: destination.enabled, configured: true } : { configured: false });
+    }));
+    router.put('/destination', (req, res) => __awaiter(this, void 0, void 0, function* () {
+        var _a, _b, _c, _d;
+        if (!(yield isPremium(prisma, res)))
+            return res.status(402).json({ code: 'PREMIUM_REQUIRED', error: 'Backup do chmury wymaga planu Premium.' });
+        const provider = String(((_a = req.body) === null || _a === void 0 ? void 0 : _a.provider) || '');
+        const endpoint = typeof ((_b = req.body) === null || _b === void 0 ? void 0 : _b.endpoint) === 'string' ? req.body.endpoint.trim().slice(0, 2000) : '';
+        const username = typeof ((_c = req.body) === null || _c === void 0 ? void 0 : _c.username) === 'string' ? req.body.username : '';
+        const password = typeof ((_d = req.body) === null || _d === void 0 ? void 0 : _d.password) === 'string' ? req.body.password : '';
+        if (!allowedProviders.has(provider))
+            return res.status(400).json({ error: 'Nieobsługiwany dostawca chmury.' });
+        if (provider === 'webdav' && (!endpoint || !/^https:\/\//i.test(endpoint)))
+            return res.status(400).json({ error: 'QNAP/WebDAV wymaga adresu HTTPS.' });
+        const credentials = provider === 'webdav' ? encrypt(JSON.stringify({ username, password })) : null;
+        const destination = yield prisma.backupDestination.upsert({ where: { ownerKey: (0, premium_1.billingOwnerKey)(res) }, create: { ownerKey: (0, premium_1.billingOwnerKey)(res), provider, endpoint: endpoint || null, encryptedCredentials: credentials }, update: { provider, endpoint: endpoint || null, encryptedCredentials: credentials, enabled: true } });
+        res.json({ provider: destination.provider, endpoint: destination.endpoint, enabled: destination.enabled, configured: true });
+    }));
+    router.post('/cloud', (_req, res) => __awaiter(this, void 0, void 0, function* () {
+        if (!(yield isPremium(prisma, res)))
+            return res.status(402).json({ code: 'PREMIUM_REQUIRED', error: 'Automatyczny backup do chmury wymaga planu Premium.' });
+        const destination = yield prisma.backupDestination.findUnique({ where: { ownerKey: (0, premium_1.billingOwnerKey)(res) } });
+        if (!(destination === null || destination === void 0 ? void 0 : destination.enabled))
+            return res.status(400).json({ error: 'Najpierw skonfiguruj miejsce kopii zapasowej.' });
+        if (destination.provider !== 'webdav')
+            return res.status(501).json({ error: 'Ten dostawca wymaga jeszcze konfiguracji OAuth. QNAP/WebDAV jest dostępny od razu.' });
+        try {
+            const folders = yield prisma.folder.findMany({ where: { ownerId: ownerId(res) }, orderBy: { id: 'asc' } });
+            const documents = yield prisma.document.findMany({ where: { folder: { ownerId: ownerId(res) } }, include: { tags: { include: { tag: true } } }, orderBy: { id: 'asc' } });
+            const manifest = { version: 1, exportedAt: new Date().toISOString(), folders, documents: documents.map((_a) => {
+                    var { tags } = _a, document = __rest(_a, ["tags"]);
+                    return (Object.assign(Object.assign({}, document), { tags: tags.map(({ tag }) => tag) }));
+                }) };
+            const pass = new stream_1.PassThrough();
+            const chunks = [];
+            pass.on('data', chunk => chunks.push(Buffer.from(chunk)));
+            const archive = archiver('zip', { zlib: { level: 6 } });
+            archive.pipe(pass);
+            archive.append(JSON.stringify(manifest), { name: 'manifest.json' });
+            for (const document of documents) {
+                const source = path_1.default.join(paths_1.uploadsDir, document.filePath);
+                if (fs_1.default.existsSync(source))
+                    archive.file(source, { name: `files/${document.id}-${path_1.default.basename(document.filePath)}` });
+            }
+            const complete = new Promise((resolve, reject) => { pass.on('end', () => resolve()); pass.on('error', reject); });
+            yield archive.finalize();
+            yield complete;
+            const credentials = destination.encryptedCredentials ? JSON.parse(decrypt(destination.encryptedCredentials)) : { username: '', password: '' };
+            const target = `${destination.endpoint.replace(/\/$/, '')}/eteczka-${new Date().toISOString().slice(0, 10)}.zip`;
+            const response = yield fetch(target, { method: 'PUT', headers: { Authorization: `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString('base64')}`, 'Content-Type': 'application/zip' }, body: Buffer.concat(chunks) });
+            if (!response.ok)
+                return res.status(502).json({ error: `QNAP/WebDAV odrzucił kopię (HTTP ${response.status}).` });
+            res.json({ success: true, provider: destination.provider, uploadedAt: new Date().toISOString() });
+        }
+        catch (_a) {
+            res.status(502).json({ error: 'Nie udało się wysłać kopii do chmury.' });
+        }
+    }));
     router.get('/export', (req, res) => __awaiter(this, void 0, void 0, function* () {
         const currentOwner = ownerId(res);
         const folders = yield prisma.folder.findMany({ where: { ownerId: currentOwner }, orderBy: { id: 'asc' } });
@@ -145,3 +218,4 @@ function createBackupRouter(prisma) {
     }));
     return router;
 }
+
