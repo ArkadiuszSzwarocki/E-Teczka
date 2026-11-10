@@ -15,6 +15,13 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 512
 const ownerId = (res: express.Response) => Number(res.locals.userId || 1);
 const BACKUP_SECRET = crypto.createHash('sha256').update(authSecret()).digest();
 const allowedProviders = new Set(['webdav', 'google-drive', 'onedrive', 'dropbox']);
+const oauthStates = new Map<string, { ownerKey: string; provider: string; expiresAt: number }>();
+const oauthConfig: Record<string, { authorize: string; token: string; scope: string; clientId?: string; clientSecret?: string }> = {
+  'google-drive': { authorize: 'https://accounts.google.com/o/oauth2/v2/auth', token: 'https://oauth2.googleapis.com/token', scope: 'https://www.googleapis.com/auth/drive.file', clientId: process.env.GOOGLE_CLIENT_ID, clientSecret: process.env.GOOGLE_CLIENT_SECRET },
+  dropbox: { authorize: 'https://www.dropbox.com/oauth2/authorize', token: 'https://api.dropboxapi.com/oauth2/token', scope: 'files.content.write files.content.read', clientId: process.env.DROPBOX_CLIENT_ID, clientSecret: process.env.DROPBOX_CLIENT_SECRET },
+  onedrive: { authorize: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize', token: 'https://login.microsoftonline.com/common/oauth2/v2.0/token', scope: 'Files.ReadWrite.AppFolder offline_access', clientId: process.env.ONEDRIVE_CLIENT_ID, clientSecret: process.env.ONEDRIVE_CLIENT_SECRET },
+};
+const oauthCallbackUrl = () => process.env.ETECZKA_OAUTH_CALLBACK_URL || 'http://localhost:3000/api/backup/oauth/callback';
 
 function encrypt(value: string) { const iv = crypto.randomBytes(12); const cipher = crypto.createCipheriv('aes-256-gcm', BACKUP_SECRET, iv); const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]); return `${iv.toString('base64url')}.${cipher.getAuthTag().toString('base64url')}.${encrypted.toString('base64url')}`; }
 function decrypt(value: string) { const [ivRaw, tagRaw, dataRaw] = value.split('.'); const decipher = crypto.createDecipheriv('aes-256-gcm', BACKUP_SECRET, Buffer.from(ivRaw, 'base64url')); decipher.setAuthTag(Buffer.from(tagRaw, 'base64url')); return Buffer.concat([decipher.update(Buffer.from(dataRaw, 'base64url')), decipher.final()]).toString('utf8'); }
@@ -22,6 +29,16 @@ async function isPremium(prisma: PrismaClient, res: express.Response) { return h
 
 export function createBackupRouter(prisma: PrismaClient) {
   const router = express.Router();
+
+  router.get('/oauth/:provider/start', async (req, res) => {
+    if (!await isPremium(prisma, res)) return res.status(402).json({ code: 'PREMIUM_REQUIRED', error: 'Integracje chmurowe wymagają Premium.' });
+    const provider = String(req.params.provider); const config = oauthConfig[provider];
+    if (!config || !config.clientId || !config.clientSecret) return res.status(503).json({ error: `Brak konfiguracji OAuth dla ${provider}.` });
+    const state = crypto.randomBytes(24).toString('base64url'); oauthStates.set(state, { ownerKey: billingOwnerKey(res), provider, expiresAt: Date.now() + 10 * 60_000 });
+    const params = new URLSearchParams({ client_id: config.clientId, redirect_uri: oauthCallbackUrl(), response_type: 'code', state, scope: config.scope });
+    if (provider === 'google-drive') params.set('access_type', 'offline');
+    res.redirect(`${config.authorize}?${params.toString()}`);
+  });
 
   router.get('/destination', async (_req, res) => {
     if (!await isPremium(prisma, res)) return res.status(402).json({ code: 'PREMIUM_REQUIRED', error: 'Backup do chmury wymaga planu Premium.' });
@@ -124,6 +141,26 @@ export function createBackupRouter(prisma: PrismaClient) {
       });
       res.json({ success: true, restoredFolders: manifest.folders.length, restoredDocuments: manifest.documents.length });
     } catch (error) { console.error('[backup] restore:', error); res.status(400).json({ error: 'Nie udało się przywrócić kopii zapasowej.' }); }
+  });
+  return router;
+}
+
+/** Public OAuth callback. Ownership is recovered from the short-lived state token. */
+export function createBackupOAuthCallbackRouter(prisma: PrismaClient) {
+  const router = express.Router();
+  router.get('/callback', async (req, res) => {
+    const state = String(req.query.state || ''); const context = oauthStates.get(state); oauthStates.delete(state);
+    if (!context || context.expiresAt < Date.now()) return res.status(400).send('Sesja OAuth wygasła. Wróć do E‑Teczki i spróbuj ponownie.');
+    const config = oauthConfig[context.provider]; const code = String(req.query.code || '');
+    if (!config || !code) return res.status(400).send('Brak kodu autoryzacji OAuth.');
+    try {
+      const body = new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: oauthCallbackUrl(), client_id: config.clientId!, client_secret: config.clientSecret! });
+      const tokenResponse = await fetch(config.token, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+      const tokens = await tokenResponse.json() as { access_token?: string; refresh_token?: string; expires_in?: number };
+      if (!tokenResponse.ok || !tokens.access_token) return res.status(502).send('Dostawca chmury odrzucił autoryzację.');
+      await prisma.backupDestination.upsert({ where: { ownerKey: context.ownerKey }, create: { ownerKey: context.ownerKey, provider: context.provider, encryptedCredentials: encrypt(JSON.stringify({ accessToken: tokens.access_token, refreshToken: tokens.refresh_token || null, expiresAt: Date.now() + Number(tokens.expires_in || 3600) * 1000 })), enabled: true }, update: { provider: context.provider, encryptedCredentials: encrypt(JSON.stringify({ accessToken: tokens.access_token, refreshToken: tokens.refresh_token || null, expiresAt: Date.now() + Number(tokens.expires_in || 3600) * 1000 })), enabled: true } });
+      res.type('html').send('<!doctype html><meta charset="utf-8"><title>E‑Teczka</title><h2>Chmura została połączona.</h2><p>Możesz zamknąć tę kartę i wrócić do E‑Teczki.</p>');
+    } catch { res.status(502).send('Nie udało się zapisać połączenia z chmurą.'); }
   });
   return router;
 }

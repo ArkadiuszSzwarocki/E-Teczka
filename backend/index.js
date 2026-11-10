@@ -28,6 +28,7 @@ app.use(express_1.default.urlencoded({ extended: true, limit: '50mb' }));
 (0, accessControl_1.registerPairingRoutes)(app);
 app.use('/api/auth', (0, auth_1.createAuthRouter)(prisma));
 app.post('/api/billing/webhook', express_1.default.raw({ type: 'application/json' }), (0, billing_1.createBillingWebhookHandler)(prisma));
+app.use('/api/backup/oauth', (0, backup_1.createBackupOAuthCallbackRouter)(prisma));
 app.use('/api', accessControl_1.requireAccess);
 app.use('/uploads', accessControl_1.requireAccess, express_1.default.static(paths_1.uploadsDir));
 app.use(accessControl_1.requireAccess, express_1.default.static(paths_1.uploadsDir));

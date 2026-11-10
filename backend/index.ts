@@ -14,7 +14,7 @@ import { errorMessage } from './utils/errors';
 import { createBillingRouter, createBillingWebhookHandler } from './routes/billing';
 import { requirePremium } from './middleware/premium';
 import { createAuthRouter } from './routes/auth';
-import { createBackupRouter } from './routes/backup';
+import { createBackupRouter, createBackupOAuthCallbackRouter } from './routes/backup';
 
 const prisma = new PrismaClient();
 const app = express();
@@ -27,6 +27,7 @@ registerPairingRoutes(app);
 app.use('/api/auth', createAuthRouter(prisma));
 
 app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), createBillingWebhookHandler(prisma));
+app.use('/api/backup/oauth', createBackupOAuthCallbackRouter(prisma));
 
 app.use('/api', requireAccess);
 app.use('/uploads', requireAccess, express.static(uploadsDir));
