@@ -267,6 +267,74 @@ function createBackupRouter(prisma) {
             res.status(502).json({ error: 'Nie udało się wysłać kopii do chmury.' });
         }
     }));
+    router.get('/cloud/latest', (_req, res) => __awaiter(this, void 0, void 0, function* () {
+        var _a, _b, _c, _d, _e, _f;
+        if (!(yield isPremium(prisma, res)))
+            return res.status(402).json({ code: 'PREMIUM_REQUIRED', error: 'Backup do chmury wymaga planu Premium.' });
+        const destination = yield prisma.backupDestination.findUnique({ where: { ownerKey: (0, premium_1.billingOwnerKey)(res) } });
+        if (!(destination === null || destination === void 0 ? void 0 : destination.enabled))
+            return res.status(400).json({ error: 'Najpierw skonfiguruj miejsce kopii zapasowej.' });
+        try {
+            const credentials = destination.provider === 'webdav' ? (destination.encryptedCredentials ? JSON.parse(decrypt(destination.encryptedCredentials)) : {}) : yield refreshOAuthCredentials(prisma, destination);
+            let filename = '';
+            if (destination.provider === 'dropbox') {
+                const response = yield fetch('https://api.dropboxapi.com/2/files/list_folder', { method: 'POST', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ path: destination.remoteFolder ? `/${destination.remoteFolder.replace(/^\/+|\/+$/g, '')}` : '', recursive: false }) });
+                const payload = yield response.json();
+                if (!response.ok)
+                    throw new Error('Dropbox list failed');
+                filename = ((_a = (payload.entries || []).filter(entry => { var _a; return (_a = entry.name) === null || _a === void 0 ? void 0 : _a.endsWith('.zip.enc'); }).sort((a, b) => String(b.server_modified).localeCompare(String(a.server_modified)))[0]) === null || _a === void 0 ? void 0 : _a.name) || '';
+            }
+            else if (destination.provider === 'onedrive') {
+                const folder = destination.remoteFolder ? `/${destination.remoteFolder.replace(/^\/+|\/+$/g, '')}` : '';
+                const response = yield fetch(`https://graph.microsoft.com/v1.0/me/drive/special/approot:${folder}:/children`, { headers: { Authorization: `Bearer ${credentials.accessToken}` } });
+                const payload = yield response.json();
+                if (!response.ok)
+                    throw new Error('OneDrive list failed');
+                filename = ((_b = (payload.value || []).filter(entry => { var _a; return (_a = entry.name) === null || _a === void 0 ? void 0 : _a.endsWith('.zip.enc'); }).sort((a, b) => String(b.lastModifiedDateTime).localeCompare(String(a.lastModifiedDateTime)))[0]) === null || _b === void 0 ? void 0 : _b.name) || '';
+            }
+            else if (destination.provider === 'google-drive') {
+                const q = `name contains '.zip.enc' and trashed = false${destination.remoteFolder ? ` and '${destination.remoteFolder}' in parents` : ''}`;
+                const response = yield fetch(`https://www.googleapis.com/drive/v3/files?orderBy=modifiedTime%20desc&pageSize=1&fields=files(name)&q=${encodeURIComponent(q)}`, { headers: { Authorization: `Bearer ${credentials.accessToken}` } });
+                const payload = yield response.json();
+                if (!response.ok)
+                    throw new Error('Google Drive list failed');
+                filename = ((_d = (_c = payload.files) === null || _c === void 0 ? void 0 : _c[0]) === null || _d === void 0 ? void 0 : _d.name) || '';
+            }
+            else {
+                const base = `${destination.endpoint.replace(/\/$/, '')}/${destination.remoteFolder ? `${destination.remoteFolder.replace(/^\/+|\/+$/g, '')}/` : ''}`;
+                const response = yield fetch(base, { method: 'PROPFIND', headers: { Depth: '1', Authorization: `Basic ${Buffer.from(`${credentials.username || ''}:${credentials.password || ''}`).toString('base64')}` } });
+                const text = yield response.text();
+                if (!response.ok)
+                    throw new Error('WebDAV list failed');
+                filename = [...text.matchAll(/(?:href|displayname)>?[^<]*([^<]*\.zip\.enc)/gi)].map(match => match[1]).sort().pop() || '';
+            }
+            if (!filename)
+                return res.status(404).json({ error: 'Nie znaleziono zaszyfrowanej kopii.' });
+            let response;
+            if (destination.provider === 'dropbox')
+                response = yield fetch('https://content.dropboxapi.com/2/files/download', { method: 'POST', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Dropbox-API-Arg': JSON.stringify({ path: `/${destination.remoteFolder ? `${destination.remoteFolder.replace(/^\/+|\/+$/g, '')}/` : ''}${filename}` }) } });
+            else if (destination.provider === 'onedrive')
+                response = yield fetch(`https://graph.microsoft.com/v1.0/me/drive/special/approot:/${destination.remoteFolder ? `${destination.remoteFolder.replace(/^\/+|\/+$/g, '')}/` : ''}${filename}:/content`, { headers: { Authorization: `Bearer ${credentials.accessToken}` } });
+            else if (destination.provider === 'google-drive') {
+                const search = yield fetch(`https://www.googleapis.com/drive/v3/files?fields=files(id)&pageSize=1&q=${encodeURIComponent(`name = '${filename.replace(/'/g, "\\'")}' and trashed = false`)}`, { headers: { Authorization: `Bearer ${credentials.accessToken}` } });
+                const found = yield search.json();
+                if (!search.ok || !((_f = (_e = found.files) === null || _e === void 0 ? void 0 : _e[0]) === null || _f === void 0 ? void 0 : _f.id))
+                    throw new Error('Google Drive file not found');
+                response = yield fetch(`https://www.googleapis.com/drive/v3/files/${found.files[0].id}?alt=media`, { headers: { Authorization: `Bearer ${credentials.accessToken}` } });
+            }
+            else
+                response = yield fetch(`${destination.endpoint.replace(/\/$/, '')}/${destination.remoteFolder ? `${destination.remoteFolder.replace(/^\/+|\/+$/g, '')}/` : ''}${filename}`, { headers: { Authorization: `Basic ${Buffer.from(`${credentials.username || ''}:${credentials.password || ''}`).toString('base64')}` } });
+            if (!response.ok)
+                return res.status(502).json({ error: `Nie udało się pobrać kopii (HTTP ${response.status}).` });
+            res.setHeader('Content-Type', 'application/octet-stream');
+            res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+            res.send(Buffer.from(yield response.arrayBuffer()));
+        }
+        catch (error) {
+            console.error('[backup] cloud download:', error);
+            res.status(502).json({ error: 'Nie udało się pobrać kopii z chmury.' });
+        }
+    }));
     router.get('/export', (req, res) => __awaiter(this, void 0, void 0, function* () {
         const currentOwner = ownerId(res);
         const folders = yield prisma.folder.findMany({ where: { ownerId: currentOwner }, orderBy: { id: 'asc' } });

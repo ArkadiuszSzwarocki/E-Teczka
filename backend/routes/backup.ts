@@ -145,6 +145,41 @@ export function createBackupRouter(prisma: PrismaClient) {
     } catch { res.status(502).json({ error: 'Nie udało się wysłać kopii do chmury.' }); }
   });
 
+  router.get('/cloud/latest', async (_req, res) => {
+    if (!await isPremium(prisma, res)) return res.status(402).json({ code: 'PREMIUM_REQUIRED', error: 'Backup do chmury wymaga planu Premium.' });
+    const destination = await prisma.backupDestination.findUnique({ where: { ownerKey: billingOwnerKey(res) } });
+    if (!destination?.enabled) return res.status(400).json({ error: 'Najpierw skonfiguruj miejsce kopii zapasowej.' });
+    try {
+      const credentials: { accessToken?: string; username?: string; password?: string } = destination.provider === 'webdav' ? (destination.encryptedCredentials ? JSON.parse(decrypt(destination.encryptedCredentials)) : {}) : await refreshOAuthCredentials(prisma, destination);
+      let filename = '';
+      if (destination.provider === 'dropbox') {
+        const response = await fetch('https://api.dropboxapi.com/2/files/list_folder', { method: 'POST', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ path: destination.remoteFolder ? `/${destination.remoteFolder.replace(/^\/+|\/+$/g, '')}` : '', recursive: false }) });
+        const payload = await response.json() as { entries?: Array<{ name?: string; server_modified?: string }> }; if (!response.ok) throw new Error('Dropbox list failed'); filename = (payload.entries || []).filter(entry => entry.name?.endsWith('.zip.enc')).sort((a, b) => String(b.server_modified).localeCompare(String(a.server_modified)))[0]?.name || '';
+      } else if (destination.provider === 'onedrive') {
+        const folder = destination.remoteFolder ? `/${destination.remoteFolder.replace(/^\/+|\/+$/g, '')}` : '';
+        const response = await fetch(`https://graph.microsoft.com/v1.0/me/drive/special/approot:${folder}:/children`, { headers: { Authorization: `Bearer ${credentials.accessToken}` } });
+        const payload = await response.json() as { value?: Array<{ name?: string; lastModifiedDateTime?: string }> }; if (!response.ok) throw new Error('OneDrive list failed'); filename = (payload.value || []).filter(entry => entry.name?.endsWith('.zip.enc')).sort((a, b) => String(b.lastModifiedDateTime).localeCompare(String(a.lastModifiedDateTime)))[0]?.name || '';
+      } else if (destination.provider === 'google-drive') {
+        const q = `name contains '.zip.enc' and trashed = false${destination.remoteFolder ? ` and '${destination.remoteFolder}' in parents` : ''}`;
+        const response = await fetch(`https://www.googleapis.com/drive/v3/files?orderBy=modifiedTime%20desc&pageSize=1&fields=files(name)&q=${encodeURIComponent(q)}`, { headers: { Authorization: `Bearer ${credentials.accessToken}` } });
+        const payload = await response.json() as { files?: Array<{ name?: string }> }; if (!response.ok) throw new Error('Google Drive list failed'); filename = payload.files?.[0]?.name || '';
+      } else {
+        const base = `${destination.endpoint!.replace(/\/$/, '')}/${destination.remoteFolder ? `${destination.remoteFolder.replace(/^\/+|\/+$/g, '')}/` : ''}`;
+        const response = await fetch(base, { method: 'PROPFIND', headers: { Depth: '1', Authorization: `Basic ${Buffer.from(`${credentials.username || ''}:${credentials.password || ''}`).toString('base64')}` } });
+        const text = await response.text(); if (!response.ok) throw new Error('WebDAV list failed'); filename = [...text.matchAll(/(?:href|displayname)>?[^<]*([^<]*\.zip\.enc)/gi)].map(match => match[1]).sort().pop() || '';
+      }
+      if (!filename) return res.status(404).json({ error: 'Nie znaleziono zaszyfrowanej kopii.' });
+      let response: Response;
+      if (destination.provider === 'dropbox') response = await fetch('https://content.dropboxapi.com/2/files/download', { method: 'POST', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Dropbox-API-Arg': JSON.stringify({ path: `/${destination.remoteFolder ? `${destination.remoteFolder.replace(/^\/+|\/+$/g, '')}/` : ''}${filename}` }) } });
+      else if (destination.provider === 'onedrive') response = await fetch(`https://graph.microsoft.com/v1.0/me/drive/special/approot:/${destination.remoteFolder ? `${destination.remoteFolder.replace(/^\/+|\/+$/g, '')}/` : ''}${filename}:/content`, { headers: { Authorization: `Bearer ${credentials.accessToken}` } });
+      else if (destination.provider === 'google-drive') {
+        const search = await fetch(`https://www.googleapis.com/drive/v3/files?fields=files(id)&pageSize=1&q=${encodeURIComponent(`name = '${filename.replace(/'/g, "\\'")}' and trashed = false`)}`, { headers: { Authorization: `Bearer ${credentials.accessToken}` } }); const found = await search.json() as { files?: Array<{ id?: string }> }; if (!search.ok || !found.files?.[0]?.id) throw new Error('Google Drive file not found'); response = await fetch(`https://www.googleapis.com/drive/v3/files/${found.files[0].id}?alt=media`, { headers: { Authorization: `Bearer ${credentials.accessToken}` } });
+      } else response = await fetch(`${destination.endpoint!.replace(/\/$/, '')}/${destination.remoteFolder ? `${destination.remoteFolder.replace(/^\/+|\/+$/g, '')}/` : ''}${filename}`, { headers: { Authorization: `Basic ${Buffer.from(`${credentials.username || ''}:${credentials.password || ''}`).toString('base64')}` } });
+      if (!response.ok) return res.status(502).json({ error: `Nie udało się pobrać kopii (HTTP ${response.status}).` });
+      res.setHeader('Content-Type', 'application/octet-stream'); res.setHeader('Content-Disposition', `attachment; filename="${filename}"`); res.send(Buffer.from(await response.arrayBuffer()));
+    } catch (error) { console.error('[backup] cloud download:', error); res.status(502).json({ error: 'Nie udało się pobrać kopii z chmury.' }); }
+  });
+
   router.get('/export', async (req, res) => {
     const currentOwner = ownerId(res);
     const folders = await prisma.folder.findMany({ where: { ownerId: currentOwner }, orderBy: { id: 'asc' } });
