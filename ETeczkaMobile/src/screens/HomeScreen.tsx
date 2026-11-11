@@ -7,6 +7,7 @@ import { io } from "socket.io-client";
 import { getApiUrl, getAuthHeaders, getLocalConnection } from "../services/localConnection";
 import type { FolderStackParamList, FolderSummary, MainTabParamList } from "../types/navigation";
 import { errorMessage } from "../utils/errors";
+import { loadCachedFolders, saveCachedFolders } from "../services/offlineCatalog";
 
 function isFolderSummary(value: unknown): value is FolderSummary {
   if (!value || typeof value !== "object") return false;
@@ -54,10 +55,13 @@ export default function HomeScreen() {
       }
       if (!res.ok) throw new Error("Błąd serwera");
       const data: unknown = await res.json();
-      setFolders(Array.isArray(data) ? data.filter(isFolderSummary) : []);
+      const nextFolders = Array.isArray(data) ? data.filter(isFolderSummary) : [];
+      setFolders(nextFolders);
+      await saveCachedFolders(nextFolders);
     } catch (error: unknown) {
-      setLoadError(error instanceof Error ? error.message : "Nie udało się pobrać kartotek z komputera.");
-      setNeedsSetup(true);
+      const cached = await loadCachedFolders();
+      if (cached.length) { setFolders(cached); setNeedsSetup(false); setLoadError("Tryb offline — pokazano ostatnio zapisaną listę kartotek."); }
+      else { setLoadError(error instanceof Error ? error.message : "Nie udało się pobrać kartotek z komputera."); setNeedsSetup(true); }
     } finally {
       setLoading(false);
       setRefreshing(false);

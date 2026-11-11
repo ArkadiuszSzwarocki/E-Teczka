@@ -9,6 +9,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { getApiUrl, getAuthHeaders } from "../services/localConnection";
 import { isRetentionDocument, type RetentionDocument } from "../services/retentionNotifications";
 import type { FolderStackParamList, MainTabParamList, RootStackParamList } from "../types/navigation";
+import { loadCachedDocuments, saveCachedDocuments } from "../services/offlineCatalog";
 
 type FolderDocument = RetentionDocument;
 
@@ -45,7 +46,7 @@ export default function FolderScreen() {
   const isFocused = useIsFocused();
   const isMainFolder = !folder.parentId;
   const [documents, setDocuments] = useState<FolderDocument[]>([]); const [loading, setLoading] = useState(true); const [refreshing, setRefreshing] = useState(false); const [selectedIds, setSelectedIds] = useState<number[]>([]);
-  const fetchDocuments = async () => { try { const res = await fetch(await getApiUrl(`/api/documents?folderId=${folder.id}`), { headers: await getAuthHeaders() }); const data: unknown = await res.json(); const active = Array.isArray(data) ? data.filter(isRetentionDocument) : []; setDocuments(active.filter((doc) => !doc.isArchived && !doc.isDeleted)); } catch { Alert.alert("Brak połączenia", "Nie udało się pobrać dokumentów z komputera."); } finally { setLoading(false); setRefreshing(false); } };
+  const fetchDocuments = async () => { try { const res = await fetch(await getApiUrl(`/api/documents?folderId=${folder.id}`), { headers: await getAuthHeaders() }); const data: unknown = await res.json(); const active = Array.isArray(data) ? data.filter(isRetentionDocument).filter((doc) => !doc.isArchived && !doc.isDeleted) : []; setDocuments(active); await saveCachedDocuments(folder.id, active); } catch { const cached = await loadCachedDocuments(folder.id); if (cached.length) setDocuments(cached); else Alert.alert("Brak połączenia", "Nie udało się pobrać dokumentów z komputera."); } finally { setLoading(false); setRefreshing(false); } };
   useEffect(() => { if (isFocused) void fetchDocuments(); }, [isFocused]);
   const updateDocument = async (id: number, data: Record<string, unknown>) => { await fetch(await getApiUrl(`/api/documents/${id}`), { method: "PATCH", headers: { "Content-Type": "application/json", ...await getAuthHeaders() }, body: JSON.stringify(data) }); await fetchDocuments(); };
   const openDocument = (doc: FolderDocument) => rootNavigation?.navigate("DocumentViewer", { document: doc });
