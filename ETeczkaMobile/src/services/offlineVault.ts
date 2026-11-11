@@ -11,6 +11,7 @@ const MODE = "eteczka.vault.mode";
 const BACKUP_MODE = "eteczka.vault.backup-mode";
 const ROOT = `${FileSystem.documentDirectory}eteczka-vault/`;
 const INDEX = `${ROOT}index.enc`;
+const SELECTED_FOLDERS = "eteczka.vault.offline-folders";
 
 const hashPin = (pin: string) => Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, `eteczka:${pin}`);
 async function key(): Promise<CryptoJS.lib.WordArray> {
@@ -62,6 +63,8 @@ export async function changeVaultAccess(secret: string, mode: VaultMode, backup?
   await SecureStore.setItemAsync(MODE, mode);
 }
 export async function unlockWithPin(pin: string) { return (await SecureStore.getItemAsync(PIN_HASH)) === await hashPin(pin); }
+export async function getOfflineFolderIds(): Promise<number[]> { try { return JSON.parse(await SecureStore.getItemAsync(SELECTED_FOLDERS) || "[]"); } catch { return []; } }
+export async function setOfflineFolderIds(ids: number[]) { await SecureStore.setItemAsync(SELECTED_FOLDERS, JSON.stringify([...new Set(ids)])); }
 
 export type OfflineDocument = MobileDocument & {
   isDeleted?: boolean;
@@ -99,7 +102,8 @@ export async function syncOfflineVault(onProgress?: (done: number, total: number
   if (!response.ok) throw new Error("Komputer nie udostępnił dokumentów.");
   const payload: unknown = await response.json();
   if (!Array.isArray(payload)) throw new Error("Komputer zwrócił nieprawidłową listę dokumentów.");
-  const docs = payload.filter(isOfflineDocument).filter((document) => !document.isDeleted);
+  const selectedFolders = await getOfflineFolderIds();
+  const docs = payload.filter(isOfflineDocument).filter((document) => !document.isDeleted && (!selectedFolders.length || (typeof document.folderId === "number" && selectedFolders.includes(document.folderId))));
   const current = await index(); const map = new Map(current.map((doc) => [doc.id, doc]));
   for (let i = 0; i < docs.length; i++) {
     const doc = docs[i]; const target = `${ROOT}${doc.id}.enc`;

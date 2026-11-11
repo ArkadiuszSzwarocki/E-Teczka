@@ -3,6 +3,7 @@ export type MobileDocument = {
   title: string;
   filePath: string;
   mimeType: string;
+  folderId?: number;
   thumbnail?: string | null;
 };
 

@@ -4,11 +4,12 @@ import { Ionicons } from "@expo/vector-icons";
 import axios from "axios";
 import type { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
 import { getApiUrl, getAuthHeaders, getLocalConnection, pairLocalComputer } from "../services/localConnection";
-import { changeVaultAccess, createVault, hasVault, syncOfflineVault, unlockWithPin, vaultMode as readVaultMode, SecretMode, VaultMode } from "../services/offlineVault";
+import { changeVaultAccess, createVault, getOfflineFolderIds, hasVault, setOfflineFolderIds, syncOfflineVault, unlockWithPin, vaultMode as readVaultMode, SecretMode, VaultMode } from "../services/offlineVault";
+import { getCatalogStorageBytes } from "../services/offlineCatalog";
 import * as LocalAuthentication from "expo-local-authentication";
 import { isRetentionDocument, retentionExpiresAt, scheduleRetentionNotifications, type RetentionDocument } from "../services/retentionNotifications";
 import { getAutoLockMinutes, setAutoLockMinutes } from "../services/appLock";
-import type { MainTabParamList } from "../types/navigation";
+import type { FolderSummary, MainTabParamList } from "../types/navigation";
 import { errorMessage } from "../utils/errors";
 import ConnectionSettingsCard from "../components/ConnectionSettingsCard";
 import RetentionAlertsCard, { type RetentionAlert } from "../components/RetentionAlertsCard";
@@ -41,6 +42,7 @@ export default function SyncScreen({ navigation, onPaired, onLock }: SyncScreenP
   const [lifeAlerts, setLifeAlerts] = useState<RetentionAlert[]>([]); const [alertsLoading, setAlertsLoading] = useState(false);
   const [section, setSection] = useState<"connection" | "alerts" | "security">("connection");
   const [autoLockMinutes, setAutoLockMinutesState] = useState(1);
+  const [offlineFolders, setOfflineFolders] = useState<FolderSummary[]>([]); const [offlineFolderIds, setOfflineFolderIdsState] = useState<number[]>([]); const [offlineBytes, setOfflineBytes] = useState(0);
 
   const loadLifeAlerts = async () => {
     try {
@@ -79,12 +81,17 @@ export default function SyncScreen({ navigation, onPaired, onLock }: SyncScreenP
       if (connection) {
         setServerUrl(connection.serverUrl);
         testConnection(connection.serverUrl);
+        void loadOfflineFolders();
       } else {
         setStatus("Dodaj komputer lokalny");
         setStatusColor("#94a3b8");
       }
     });
+    getOfflineFolderIds().then(setOfflineFolderIdsState); getCatalogStorageBytes().then(setOfflineBytes);
   }, []);
+
+  const loadOfflineFolders = async () => { try { const response = await fetch(await getApiUrl("/api/folders"), { headers: await getAuthHeaders() }); const data = await response.json(); if (Array.isArray(data)) setOfflineFolders(data); } catch { /* offline: keep the last choice */ } };
+  const toggleOfflineFolder = async (id: number) => { const next = offlineFolderIds.includes(id) ? offlineFolderIds.filter(value => value !== id) : [...offlineFolderIds, id]; setOfflineFolderIdsState(next); await setOfflineFolderIds(next); };
 
   const chooseAutoLock = async (minutes: number) => { await setAutoLockMinutes(minutes); setAutoLockMinutesState(minutes); };
 
@@ -125,7 +132,7 @@ export default function SyncScreen({ navigation, onPaired, onLock }: SyncScreenP
       
       {section === "connection" && <ConnectionSettingsCard status={status} statusColor={statusColor} serverUrl={serverUrl} pairingCode={pairingCode} isPairing={isPairing} onServerUrlChange={setServerUrl} onPairingCodeChange={setPairingCode} onPair={() => void pairComputer()} onRefresh={() => void testConnection()} />}
       {section === "alerts" && <RetentionAlertsCard alerts={lifeAlerts} loading={alertsLoading} onRefresh={() => void loadLifeAlerts()} />}
-      {section === "security" && <View style={styles.vaultCard}>
+      {section === "security" && <><View style={styles.card}><Text style={styles.vaultTitle}>Dane aplikacyjne offline</Text><Text style={styles.subText}>Zajętość lokalnej kopii: {(offlineBytes / 1024 / 1024).toFixed(1)} MB</Text><TouchableOpacity style={styles.btn} onPress={() => { void loadOfflineFolders(); void getCatalogStorageBytes().then(setOfflineBytes); }}><Text style={styles.btnText}>Odśwież listę kartotek</Text></TouchableOpacity>{offlineFolders.length > 0 && <><Text style={styles.optionLabel}>Kartoteki pobierane na telefon</Text>{offlineFolders.filter(folder => folder.parentId !== null).map(folder => <TouchableOpacity key={folder.id} style={styles.folderChoice} onPress={() => void toggleOfflineFolder(folder.id)}><Ionicons name={offlineFolderIds.includes(folder.id) ? "checkbox" : "square-outline"} size={22} color={offlineFolderIds.includes(folder.id) ? "#22c55e" : "#94a3b8"} /><Text style={styles.btnText}>{folder.name}</Text></TouchableOpacity>)}<Text style={styles.hint}>Zaznaczone kartoteki pobiorą pełne pliki do sejfu offline. Pozostałe kartoteki pozostaną dostępne jako metadane, gdy były wcześniej otwarte.</Text></>}</View><View style={styles.vaultCard}>
         <Ionicons name="lock-closed" size={22} color="#60a5fa" />
         <View style={{ flex: 1 }}><Text style={styles.vaultTitle}>Blokada aplikacji i sejf offline</Text><Text style={styles.subText}>{vaultReady ? `Aplikacja będzie otwierana przez: ${vaultMode === "pin" ? "PIN" : vaultMode === "password" ? "hasło" : "biometrię telefonu z metodą awaryjną"}.` : "Wybierz metodę otwierania całej aplikacji."}</Text></View>
         {(!vaultReady || changingAccess) && <>
@@ -138,12 +145,13 @@ export default function SyncScreen({ navigation, onPaired, onLock }: SyncScreenP
         {vaultReady && !changingAccess && <><TouchableOpacity style={styles.mode} onPress={() => { setCurrentSecret(""); setVaultPin(""); setBackupSecret(""); setChangingAccess(true); }}><Text style={styles.btnText}>Zmień metodę otwierania</Text></TouchableOpacity><TouchableOpacity disabled={vaultSyncing} style={[styles.btn, vaultSyncing && styles.disabledBtn]} onPress={refreshVault}>{vaultSyncing ? <ActivityIndicator color="white" /> : <Text style={styles.btnText}>Synchronizuj sejf</Text>}</TouchableOpacity></>}
         {vaultReady && <><Text style={styles.optionLabel}>Automatyczna blokada po opuszczeniu aplikacji</Text><View style={styles.modeRow}>{[1, 5, 15].map((minutes) => <TouchableOpacity key={minutes} onPress={() => void chooseAutoLock(minutes)} style={[styles.mode, autoLockMinutes === minutes && styles.modeActive]}><Text style={styles.btnText}>{minutes} min</Text></TouchableOpacity>)}</View><TouchableOpacity style={styles.lockNowButton} onPress={() => onLock?.()}><Ionicons name="lock-closed" size={17} color="white" /><Text style={styles.btnText}>Zablokuj aplikację teraz</Text></TouchableOpacity></>}
         {Boolean(vaultProgress) && <Text style={styles.hint}>{vaultProgress}</Text>}
-      </View>}
+      </View></>}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+  folderChoice: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#0f172a", padding: 10, borderRadius: 7, marginTop: 6 },
   container: { 
     flex: 1, 
     backgroundColor: "#0f172a", 
