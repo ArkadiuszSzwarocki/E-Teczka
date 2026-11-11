@@ -4,7 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import axios from "axios";
 import type { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
 import { getApiUrl, getAuthHeaders, getLocalConnection, pairLocalComputer } from "../services/localConnection";
-import { changeVaultAccess, createVault, getOfflineFolderIds, hasVault, setOfflineFolderIds, syncOfflineVault, unlockWithPin, vaultMode as readVaultMode, SecretMode, VaultMode } from "../services/offlineVault";
+import { changeVaultAccess, createVault, getOfflineFolderIds, getVaultStorageBytes, hasVault, setOfflineFolderIds, syncOfflineVault, unlockWithPin, vaultMode as readVaultMode, SecretMode, VaultMode } from "../services/offlineVault";
 import { getCatalogStorageBytes } from "../services/offlineCatalog";
 import * as LocalAuthentication from "expo-local-authentication";
 import { isRetentionDocument, retentionExpiresAt, scheduleRetentionNotifications, type RetentionDocument } from "../services/retentionNotifications";
@@ -87,7 +87,7 @@ export default function SyncScreen({ navigation, onPaired, onLock }: SyncScreenP
         setStatusColor("#94a3b8");
       }
     });
-    getOfflineFolderIds().then(setOfflineFolderIdsState); getCatalogStorageBytes().then(setOfflineBytes);
+    getOfflineFolderIds().then(setOfflineFolderIdsState); Promise.all([getCatalogStorageBytes(), getVaultStorageBytes()]).then(([catalog, vault]) => setOfflineBytes(catalog + vault));
   }, []);
 
   const loadOfflineFolders = async () => { try { const response = await fetch(await getApiUrl("/api/folders"), { headers: await getAuthHeaders() }); const data = await response.json(); if (Array.isArray(data)) setOfflineFolders(data); } catch { /* offline: keep the last choice */ } };

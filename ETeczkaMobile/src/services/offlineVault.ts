@@ -65,6 +65,7 @@ export async function changeVaultAccess(secret: string, mode: VaultMode, backup?
 export async function unlockWithPin(pin: string) { return (await SecureStore.getItemAsync(PIN_HASH)) === await hashPin(pin); }
 export async function getOfflineFolderIds(): Promise<number[]> { try { return JSON.parse(await SecureStore.getItemAsync(SELECTED_FOLDERS) || "[]"); } catch { return []; } }
 export async function setOfflineFolderIds(ids: number[]) { await SecureStore.setItemAsync(SELECTED_FOLDERS, JSON.stringify([...new Set(ids)])); }
+export async function getVaultStorageBytes() { try { const names = await FileSystem.readDirectoryAsync(ROOT); let total = 0; for (const name of names) { const info = await FileSystem.getInfoAsync(`${ROOT}${name}`); total += Number(info.exists && "size" in info ? info.size || 0 : 0); } return total; } catch { return 0; } }
 
 export type OfflineDocument = MobileDocument & {
   isDeleted?: boolean;
