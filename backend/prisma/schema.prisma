@@ -59,6 +59,18 @@ model BackupDestination {
   enabled      Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+  runs         BackupRun[]
+}
+
+model BackupRun {
+  id            Int      @id @default(autoincrement())
+  destinationId Int
+  destination   BackupDestination @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+  status        String
+  error         String?
+  startedAt     DateTime @default(now())
+  finishedAt    DateTime?
+  @@index([destinationId, startedAt])
 }
 
 model BillingTransaction {

@@ -48,15 +48,18 @@ cron.schedule('15 2 * * *', async () => {
     const subscription = await prisma.subscription.findUnique({ where: { ownerKey: destination.ownerKey } });
     if (!subscription || !['active', 'trialing'].includes(subscription.status)) continue;
     const ownerIdValue = destination.ownerKey.startsWith('user:') ? Number(destination.ownerKey.slice(5)) : 1;
+    const run = await prisma.backupRun.create({ data: { destinationId: destination.id, status: 'running' } });
     try {
       await runScheduledCloudBackup(prisma, destination.ownerKey, Number.isFinite(ownerIdValue) ? ownerIdValue : 1);
+      await prisma.backupRun.update({ where: { id: run.id }, data: { status: 'success', finishedAt: new Date() } });
       await prisma.backupDestination.update({ where: { id: destination.id }, data: { lastBackupAt: new Date(), lastBackupStatus: 'success', lastBackupError: null } });
       console.log(`[backup] Scheduled backup completed for ${destination.ownerKey}`);
     } catch (error) {
       const details = errorMessage(error).slice(0, 1000);
+      await prisma.backupRun.update({ where: { id: run.id }, data: { status: 'failed', error: details, finishedAt: new Date() } });
       await prisma.backupDestination.update({ where: { id: destination.id }, data: { lastBackupAt: new Date(), lastBackupStatus: 'failed', lastBackupError: details } });
       console.error(`[backup] Scheduled backup failed for ${destination.ownerKey}:`, details);
-      try { await runScheduledCloudBackup(prisma, destination.ownerKey, Number.isFinite(ownerIdValue) ? ownerIdValue : 1); await prisma.backupDestination.update({ where: { id: destination.id }, data: { lastBackupAt: new Date(), lastBackupStatus: 'success', lastBackupError: null } }); } catch (retryError) { console.error(`[backup] Scheduled retry failed for ${destination.ownerKey}:`, errorMessage(retryError)); }
+      try { await runScheduledCloudBackup(prisma, destination.ownerKey, Number.isFinite(ownerIdValue) ? ownerIdValue : 1); await prisma.backupRun.create({ data: { destinationId: destination.id, status: 'success', finishedAt: new Date() } }); await prisma.backupDestination.update({ where: { id: destination.id }, data: { lastBackupAt: new Date(), lastBackupStatus: 'success', lastBackupError: null } }); } catch (retryError) { const retryDetails = errorMessage(retryError).slice(0, 1000); await prisma.backupRun.create({ data: { destinationId: destination.id, status: 'failed', error: retryDetails, finishedAt: new Date() } }); console.error(`[backup] Scheduled retry failed for ${destination.ownerKey}:`, retryDetails); }
     }
   }
 });

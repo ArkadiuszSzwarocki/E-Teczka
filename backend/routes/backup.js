@@ -193,6 +193,14 @@ function createBackupRouter(prisma) {
         const destination = yield prisma.backupDestination.findUnique({ where: { ownerKey: (0, premium_1.billingOwnerKey)(res) } });
         res.json(destination ? { provider: destination.provider, endpoint: destination.endpoint, remoteFolder: destination.remoteFolder, schedule: destination.schedule, lastBackupAt: destination.lastBackupAt, lastBackupStatus: destination.lastBackupStatus, lastBackupError: destination.lastBackupError, enabled: destination.enabled, configured: true } : { configured: false });
     }));
+    router.get('/runs', (_req, res) => __awaiter(this, void 0, void 0, function* () {
+        if (!(yield isPremium(prisma, res)))
+            return res.status(402).json({ code: 'PREMIUM_REQUIRED', error: 'Historia kopii wymaga planu Premium.' });
+        const destination = yield prisma.backupDestination.findUnique({ where: { ownerKey: (0, premium_1.billingOwnerKey)(res) }, select: { id: true } });
+        if (!destination)
+            return res.json([]);
+        res.json(yield prisma.backupRun.findMany({ where: { destinationId: destination.id }, orderBy: { startedAt: 'desc' }, take: 50 }));
+    }));
     router.put('/destination', (req, res) => __awaiter(this, void 0, void 0, function* () {
         var _a, _b, _c, _d, _e, _f;
         if (!(yield isPremium(prisma, res)))

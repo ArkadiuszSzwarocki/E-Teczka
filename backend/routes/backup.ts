@@ -97,6 +97,13 @@ export function createBackupRouter(prisma: PrismaClient) {
     res.json(destination ? { provider: destination.provider, endpoint: destination.endpoint, remoteFolder: destination.remoteFolder, schedule: destination.schedule, lastBackupAt: destination.lastBackupAt, lastBackupStatus: destination.lastBackupStatus, lastBackupError: destination.lastBackupError, enabled: destination.enabled, configured: true } : { configured: false });
   });
 
+  router.get('/runs', async (_req, res) => {
+    if (!await isPremium(prisma, res)) return res.status(402).json({ code: 'PREMIUM_REQUIRED', error: 'Historia kopii wymaga planu Premium.' });
+    const destination = await prisma.backupDestination.findUnique({ where: { ownerKey: billingOwnerKey(res) }, select: { id: true } });
+    if (!destination) return res.json([]);
+    res.json(await prisma.backupRun.findMany({ where: { destinationId: destination.id }, orderBy: { startedAt: 'desc' }, take: 50 }));
+  });
+
   router.put('/destination', async (req, res) => {
     if (!await isPremium(prisma, res)) return res.status(402).json({ code: 'PREMIUM_REQUIRED', error: 'Backup do chmury wymaga planu Premium.' });
     const provider = String(req.body?.provider || '');
