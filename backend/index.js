@@ -59,10 +59,20 @@ node_cron_1.default.schedule('15 2 * * *', () => __awaiter(void 0, void 0, void 
         const ownerIdValue = destination.ownerKey.startsWith('user:') ? Number(destination.ownerKey.slice(5)) : 1;
         try {
             yield (0, backup_2.runScheduledCloudBackup)(prisma, destination.ownerKey, Number.isFinite(ownerIdValue) ? ownerIdValue : 1);
+            yield prisma.backupDestination.update({ where: { id: destination.id }, data: { lastBackupAt: new Date(), lastBackupStatus: 'success', lastBackupError: null } });
             console.log(`[backup] Scheduled backup completed for ${destination.ownerKey}`);
         }
         catch (error) {
-            console.error(`[backup] Scheduled backup failed for ${destination.ownerKey}:`, (0, errors_1.errorMessage)(error));
+            const details = (0, errors_1.errorMessage)(error).slice(0, 1000);
+            yield prisma.backupDestination.update({ where: { id: destination.id }, data: { lastBackupAt: new Date(), lastBackupStatus: 'failed', lastBackupError: details } });
+            console.error(`[backup] Scheduled backup failed for ${destination.ownerKey}:`, details);
+            try {
+                yield (0, backup_2.runScheduledCloudBackup)(prisma, destination.ownerKey, Number.isFinite(ownerIdValue) ? ownerIdValue : 1);
+                yield prisma.backupDestination.update({ where: { id: destination.id }, data: { lastBackupAt: new Date(), lastBackupStatus: 'success', lastBackupError: null } });
+            }
+            catch (retryError) {
+                console.error(`[backup] Scheduled retry failed for ${destination.ownerKey}:`, (0, errors_1.errorMessage)(retryError));
+            }
         }
     }
 }));

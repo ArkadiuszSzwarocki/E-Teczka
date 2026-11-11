@@ -52,6 +52,9 @@ model BackupDestination {
   endpoint     String?
   remoteFolder String?
   schedule     String?   @default("manual")
+  lastBackupAt DateTime?
+  lastBackupStatus String?
+  lastBackupError String?
   encryptedCredentials String?
   enabled      Boolean  @default(true)
   createdAt    DateTime @default(now())
