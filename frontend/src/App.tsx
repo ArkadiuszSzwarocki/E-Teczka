@@ -17,7 +17,7 @@ import { errorMessage } from './utils/errors';
 import type { DocumentPatch, DocumentRecord, FolderRecord, RetentionUnit, Tag } from './types/domain';
 import { getElectronIpc, isWiaDeviceList, isWiaScanResult, readAndRemoveFileBase64, type WiaDevice } from './services/electron';
 
-const API_URL = "http://localhost:3000";
+const API_URL = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3000' : `${window.location.protocol}//${window.location.hostname}:3000`);
 const apiFetch = (input: RequestInfo | URL, init: RequestInit = {}) => {
   const requestUrl = new URL(typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url, window.location.href);
   const token = localStorage.getItem('eteczka_auth_token');

@@ -12,7 +12,8 @@ export default function AuthModal({ onClose, onAuthenticated }: Props) {
   const submit = async () => {
     setBusy(true); setError('');
     try {
-      const response = await fetch(`http://localhost:3000/api/auth/${mode}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password, deviceId, deviceName: 'E‑Teczka Desktop' }) });
+      const apiUrl = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3000' : `${window.location.protocol}//${window.location.hostname}:3000`);
+      const response = await fetch(`${apiUrl}/api/auth/${mode}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password, deviceId, deviceName: 'E‑Teczka Desktop' }) });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || typeof payload.token !== 'string') throw new Error(payload.error || 'Nie udało się zalogować.');
       localStorage.setItem('eteczka_auth_token', payload.token);
