@@ -91,6 +91,7 @@ export function registerPairingRoutes(app: express.Express) {
       .filter((item): item is os.NetworkInterfaceInfo => item !== undefined && item.family === 'IPv4' && !item.internal)
       .map(item => item.address)
       .filter(address => { const [first = -1, second = -1] = address.split('.').map(Number); return first === 10 || (first === 172 && second >= 16 && second <= 31) || (first === 192 && second === 168); });
+    addresses.sort((a, b) => Number(b.startsWith('192.168.')) - Number(a.startsWith('192.168.')) || Number(a.startsWith('172.20.')) - Number(b.startsWith('172.20.')));
     res.json({ addresses, port: Number(process.env.PORT || 3000) });
   });
 
