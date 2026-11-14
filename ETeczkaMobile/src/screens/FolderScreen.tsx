@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Animated, FlatList, Image, PanResponder, Platform, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, Animated, FlatList, Image, PanResponder, Platform, RefreshControl, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system/legacy";
 import * as MailComposer from "expo-mail-composer";
@@ -10,6 +10,10 @@ import { getApiUrl, getAuthHeaders } from "../services/localConnection";
 import { isRetentionDocument, type RetentionDocument } from "../services/retentionNotifications";
 import type { FolderStackParamList, MainTabParamList, RootStackParamList } from "../types/navigation";
 import { loadCachedDocuments, saveCachedDocuments } from "../services/offlineCatalog";
+import { queueOfflineChange, syncNow } from "../services/offlineSync";
+import { downloadSecureFile } from "../services/secureFileTransfer";
+import { getOfflineOcr } from "../services/offlineVault";
+import { fetchWithTimeout } from "../services/networkRequest";
 
 type FolderDocument = RetentionDocument;
 
@@ -46,9 +50,38 @@ export default function FolderScreen() {
   const isFocused = useIsFocused();
   const isMainFolder = !folder.parentId;
   const [documents, setDocuments] = useState<FolderDocument[]>([]); const [loading, setLoading] = useState(true); const [refreshing, setRefreshing] = useState(false); const [selectedIds, setSelectedIds] = useState<number[]>([]);
-  const fetchDocuments = async () => { try { const res = await fetch(await getApiUrl(`/api/documents?folderId=${folder.id}`), { headers: await getAuthHeaders() }); const data: unknown = await res.json(); const active = Array.isArray(data) ? data.filter(isRetentionDocument).filter((doc) => !doc.isArchived && !doc.isDeleted) : []; setDocuments(active); await saveCachedDocuments(folder.id, active); } catch { const cached = await loadCachedDocuments(folder.id); if (cached.length) setDocuments(cached); else Alert.alert("Brak połączenia", "Nie udało się pobrać dokumentów z komputera."); } finally { setLoading(false); setRefreshing(false); } };
+  const [query, setQuery] = useState(""); const [ocrMatches, setOcrMatches] = useState<number[]>([]);
+  useEffect(() => {
+    let cancelled = false; const search = query.trim().toLocaleLowerCase();
+    if (!search || search.length > 200) { setOcrMatches([]); return; }
+    const timer = setTimeout(() => { void (async () => {
+      try {
+        const response = await fetchWithTimeout(await getApiUrl(`/api/ocr/search?q=${encodeURIComponent(search)}`), { headers: await getAuthHeaders() }, 5000, "Wyszukiwanie OCR");
+        if (!response.ok) { if (!cancelled) setOcrMatches([]); return; }
+        const result = await response.json(); if (!cancelled) setOcrMatches(Array.isArray(result.ids) ? result.ids.filter((id: unknown) => typeof id === 'number') : []);
+      } catch {
+        const matches: number[] = []; for (const document of documents) { const text = await getOfflineOcr(document.id); if (text?.toLocaleLowerCase().includes(search)) matches.push(document.id); }
+        if (!cancelled) setOcrMatches(matches);
+      }
+    })(); }, 300);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [query, documents]);
+  const visibleDocuments = useMemo(() => { const term = query.trim().toLocaleLowerCase(); return !term ? documents : documents.filter(doc => doc.title.toLocaleLowerCase().includes(term) || ocrMatches.includes(doc.id)); }, [documents, query, ocrMatches]);
+  const fetchDocuments = async () => {
+    const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 5000);
+    try {
+      const res = await fetch(await getApiUrl(`/api/documents?folderId=${folder.id}`), { headers: await getAuthHeaders(), signal: controller.signal });
+      if (!res.ok) throw new Error('Serwer odrzucił pobranie dokumentów.');
+      const data: unknown = await res.json(); if (!Array.isArray(data)) throw new Error('Nieprawidłowa lista dokumentów.');
+      const active = data.filter(isRetentionDocument).filter((doc) => !doc.isArchived && !doc.isDeleted);
+      setDocuments(active); await saveCachedDocuments(folder.id, active);
+    } catch {
+      const cached = await loadCachedDocuments(folder.id);
+      if (cached.length) setDocuments(cached); else Alert.alert("Brak połączenia", "Nie udało się pobrać dokumentów z komputera.");
+    } finally { clearTimeout(timeout); setLoading(false); setRefreshing(false); }
+  };
   useEffect(() => { if (isFocused) void fetchDocuments(); }, [isFocused]);
-  const updateDocument = async (id: number, data: Record<string, unknown>) => { await fetch(await getApiUrl(`/api/documents/${id}`), { method: "PATCH", headers: { "Content-Type": "application/json", ...await getAuthHeaders() }, body: JSON.stringify(data) }); await fetchDocuments(); };
+  const updateDocument = async (id: number, data: Record<string, unknown>) => { const current = documents.find(item => item.id === id); const value = { ...(current || {}), ...data, id, folderId: folder.id, updatedAt: new Date().toISOString() }; try { const response = await fetch(await getApiUrl(`/api/documents/${id}`), { method: "PATCH", headers: { "Content-Type": "application/json", ...await getAuthHeaders() }, body: JSON.stringify(data) }); if (!response.ok) { Alert.alert("Nie udało się zapisać", "Komputer odrzucił zmianę dokumentu."); return; } await fetchDocuments(); void syncNow().catch(() => undefined); } catch { await queueOfflineChange({ entity: "documents", operation: "updated", value }); const next = documents.map(item => item.id === id ? { ...item, ...data } as FolderDocument : item).filter(item => !item.isArchived && !item.isDeleted); setDocuments(next); await saveCachedDocuments(folder.id, next); Alert.alert("Zapisano offline", "Zmiana zostanie wysłana do komputera po ponownym połączeniu."); } };
   const openDocument = (doc: FolderDocument) => rootNavigation?.navigate("DocumentViewer", { document: doc });
   const toggleSelection = (id: number) => setSelectedIds((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id]);
   const emailSelected = async () => {
@@ -58,7 +91,7 @@ export default function FolderScreen() {
       if (!await MailComposer.isAvailableAsync()) return Alert.alert("Brak aplikacji e-mail", "Zainstaluj lub skonfiguruj pocztę w telefonie.");
       const attachments = await Promise.all(selected.map(async (document) => {
         const extension = document.filePath?.split(".").pop() || "pdf";
-        const result = await FileSystem.downloadAsync(await getApiUrl(`/uploads/${document.filePath}`), `${FileSystem.cacheDirectory}eteczka_mail_${document.id}.${extension}`, { headers: await getAuthHeaders() });
+        const result = await downloadSecureFile(await getApiUrl(`/uploads/${document.filePath}`), `${FileSystem.cacheDirectory}eteczka_mail_${document.id}.${extension}`, await getAuthHeaders());
         return result.uri;
       }));
       await MailComposer.composeAsync({ subject: `Dokumenty E‑Teczka (${selected.length})`, body: "Pakiet dokumentów z E‑Teczki w załącznikach.", attachments });
@@ -67,10 +100,12 @@ export default function FolderScreen() {
   };
   const openScanner = () => { if (!isMainFolder) tabNavigation?.navigate("Skaner", { targetFolderId: folder.id }); };
   return <View style={styles.container}><View style={styles.header}><TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()} accessibilityLabel="Wróć do kartotek"><Ionicons name="arrow-back" size={20} color="white" /></TouchableOpacity><View style={{ flex: 1 }}><Text style={styles.title} numberOfLines={1}>{folder.name}</Text><Text style={styles.subtitle}>{selectedIds.length ? `Wybrano: ${selectedIds.length}` : isMainFolder ? "Kartoteka główna — pliki dodawaj do podkartoteki" : "Przesuń ← archiwum, → kosz"}</Text></View>{selectedIds.length ? <TouchableOpacity style={styles.emailBtnHeader} onPress={() => void emailSelected()}><Ionicons name="mail" size={17} color="white" /><Text style={styles.scanBtnText}>Wyślij</Text></TouchableOpacity> : !isMainFolder && <TouchableOpacity style={styles.scanBtnHeader} onPress={openScanner}><Ionicons name="camera" size={17} color="white" /><Text style={styles.scanBtnText}>Skanuj</Text></TouchableOpacity>}</View>
-    <FlatList data={documents} keyExtractor={(item) => String(item.id)} contentContainerStyle={styles.listContent} refreshControl={<RefreshControl refreshing={refreshing || loading} onRefresh={() => { setRefreshing(true); void fetchDocuments(); }} tintColor="#3b82f6" />} ListEmptyComponent={<View style={styles.emptyBox}><Ionicons name="folder-open-outline" size={54} color="#475569" /><Text style={styles.emptyText}>{isMainFolder ? "Do kartoteki głównej nie dodajemy plików. Wybierz podkartotekę." : "Brak dokumentów w tej kartotece"}</Text>{!isMainFolder && <TouchableOpacity style={styles.emptyScanBtn} onPress={openScanner}><Text style={styles.emptyScanText}>Zrób pierwszy skan</Text></TouchableOpacity>}</View>} renderItem={({ item }) => <DocumentCard item={item} selected={selectedIds.includes(item.id)} onSelect={() => toggleSelection(item.id)} onOpen={() => selectedIds.length ? toggleSelection(item.id) : openDocument(item)} onArchive={() => void updateDocument(item.id, { isArchived: true })} onTrash={() => void updateDocument(item.id, { isDeleted: true })} />} />
+    <TextInput value={query} onChangeText={setQuery} placeholder="Szukaj po nazwie lub treści OCR" placeholderTextColor="#94a3b8" style={styles.search} accessibilityLabel="Szukaj dokumentów" />
+    <FlatList data={visibleDocuments} keyExtractor={(item) => String(item.id)} contentContainerStyle={styles.listContent} refreshControl={<RefreshControl refreshing={refreshing || loading} onRefresh={() => { setRefreshing(true); void fetchDocuments(); }} tintColor="#3b82f6" />} ListEmptyComponent={<View style={styles.emptyBox}><Ionicons name="folder-open-outline" size={54} color="#475569" /><Text style={styles.emptyText}>{isMainFolder ? "Do kartoteki głównej nie dodajemy plików. Wybierz podkartotekę." : "Brak dokumentów w tej kartotece"}</Text>{!isMainFolder && <TouchableOpacity style={styles.emptyScanBtn} onPress={openScanner}><Text style={styles.emptyScanText}>Zrób pierwszy skan</Text></TouchableOpacity>}</View>} renderItem={({ item }) => <DocumentCard item={item} selected={selectedIds.includes(item.id)} onSelect={() => toggleSelection(item.id)} onOpen={() => selectedIds.length ? toggleSelection(item.id) : openDocument(item)} onArchive={() => void updateDocument(item.id, { isArchived: true })} onTrash={() => void updateDocument(item.id, { isDeleted: true })} />} />
   </View>;
 }
 
 const styles = StyleSheet.create({
+  search: { marginHorizontal: 13, marginTop: 10, borderWidth: 1, borderColor: "#475569", borderRadius: 8, backgroundColor: "#111827", color: "white", paddingHorizontal: 12, paddingVertical: 8 },
   container: { flex: 1, backgroundColor: "#0f172a", paddingTop: Platform.OS === "android" ? 30 : 13 }, header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingBottom: 13, borderBottomWidth: 1, borderBottomColor: "#1e293b", gap: 8 }, backButton: { width: 34, height: 34, borderRadius: 17, backgroundColor: "#1e293b", alignItems: "center", justifyContent: "center" }, title: { color: "white", fontSize: 18, fontWeight: "bold" }, subtitle: { color: "#94a3b8", fontSize: 10, marginTop: 2 }, scanBtnHeader: { backgroundColor: "#22c55e", flexDirection: "row", alignItems: "center", paddingHorizontal: 10, paddingVertical: 7, borderRadius: 7, gap: 5 }, emailBtnHeader: { backgroundColor: "#16a34a", flexDirection: "row", alignItems: "center", paddingHorizontal: 10, paddingVertical: 7, borderRadius: 7, gap: 5 }, scanBtnText: { color: "white", fontWeight: "bold", fontSize: 12 }, listContent: { padding: 13, gap: 10, paddingBottom: 96, flexGrow: 1 }, emptyBox: { alignItems: "center", justifyContent: "center", marginTop: 64 }, emptyText: { color: "#94a3b8", fontSize: 13, marginTop: 10, marginBottom: 16 }, emptyScanBtn: { backgroundColor: "#3b82f6", paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8 }, emptyScanText: { color: "white", fontWeight: "bold", fontSize: 12 }, swipeShell: { minHeight: 72, justifyContent: "center" }, swipeHint: { position: "absolute", top: 0, bottom: 0, width: "42%", flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 13, borderRadius: 10 }, trashHint: { left: 0, backgroundColor: "#b91c1c", justifyContent: "flex-start" }, archiveHint: { right: 0, backgroundColor: "#b45309", justifyContent: "flex-end" }, swipeHintText: { color: "white", fontWeight: "800", fontSize: 10 }, card: { backgroundColor: "#1e293b", borderRadius: 10, borderWidth: 1, borderColor: "#334155" }, cardSelected: { borderColor: "#60a5fa", borderWidth: 2 }, cardPress: { minHeight: 72, flexDirection: "row", alignItems: "center", padding: 10, gap: 9 }, thumbnail: { width: 44, height: 50, backgroundColor: "#0f172a", borderRadius: 6, alignItems: "center", justifyContent: "center", overflow: "hidden" }, thumbnailImage: { width: "100%", height: "100%", resizeMode: "cover" }, documentInfo: { flex: 1, minWidth: 0 }, docTitle: { color: "white", fontSize: 12, fontWeight: "bold" }, docDate: { color: "#94a3b8", fontSize: 10, marginTop: 2 }, openHint: { color: "#60a5fa", fontSize: 9, marginTop: 2 }, retentionBadge: { alignSelf: "flex-start", marginTop: 4, backgroundColor: "#0c4a6e", borderRadius: 999, paddingHorizontal: 6, paddingVertical: 3, flexDirection: "row", gap: 3, alignItems: "center" }, retentionText: { color: "#e0f2fe", fontSize: 9, fontWeight: "700" },
 });

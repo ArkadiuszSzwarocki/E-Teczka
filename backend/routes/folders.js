@@ -84,8 +84,13 @@ function createFolderRouter(prisma) {
     }));
     router.get('/:id/delete-preview', (req, res) => __awaiter(this, void 0, void 0, function* () {
         try {
-            const ids = yield (0, folders_1.collectFolderBranch)(prisma, Number(req.params.id));
-            res.json({ folderIds: ids, documentCount: yield prisma.document.count({ where: { folderId: { in: ids } } }) });
+            const ids = yield (0, folders_1.collectFolderBranch)(prisma, Number(req.params.id), ownerId(res));
+            const [documentCount, archivedCount, trashedCount] = yield Promise.all([
+                prisma.document.count({ where: { folderId: { in: ids }, isDeleted: false, isArchived: false } }),
+                prisma.document.count({ where: { folderId: { in: ids }, isDeleted: false, isArchived: true } }),
+                prisma.document.count({ where: { folderId: { in: ids }, isDeleted: true } }),
+            ]);
+            res.json({ folderIds: ids, documentCount, archivedCount, trashedCount });
         }
         catch (error) {
             res.status(500).json({ error: 'Nie udało się sprawdzić zawartości kartoteki.', details: (0, errors_1.errorMessage)(error) });
@@ -94,25 +99,43 @@ function createFolderRouter(prisma) {
     router.post('/:id/delete-safely', (req, res) => __awaiter(this, void 0, void 0, function* () {
         var _a;
         try {
-            const ids = yield (0, folders_1.collectFolderBranch)(prisma, Number(req.params.id));
-            const documentCount = yield prisma.document.count({ where: { folderId: { in: ids } } });
+            const currentOwner = ownerId(res);
+            const sourceId = Number(req.params.id);
             const transferFolderId = ((_a = req.body) === null || _a === void 0 ? void 0 : _a.transferFolderId) ? Number(req.body.transferFolderId) : null;
-            if (documentCount && (!transferFolderId || ids.includes(transferFolderId)))
-                return res.status(400).json({ error: 'Wybierz inną kartotekę docelową dla dokumentów.' });
-            if (transferFolderId) {
-                const target = yield prisma.folder.findUnique({ where: { id: transferFolderId }, select: { parentId: true } });
-                if (!target)
-                    return res.status(400).json({ error: 'Wybrana kartoteka docelowa nie istnieje.' });
-                if (!target.parentId)
-                    return res.status(400).json({ error: 'Dokumenty można przenieść wyłącznie do podkartoteki.' });
-            }
-            yield prisma.$transaction((tx) => __awaiter(this, void 0, void 0, function* () { if (documentCount && transferFolderId)
-                yield tx.document.updateMany({ where: { folderId: { in: ids } }, data: { folderId: transferFolderId } }); for (const folderId of [...ids].reverse())
-                yield tx.folder.delete({ where: { id: folderId } }); }));
-            res.json({ success: true, movedDocuments: documentCount });
+            const result = yield prisma.$transaction((tx) => __awaiter(this, void 0, void 0, function* () {
+                const source = yield tx.folder.findFirst({ where: { id: sourceId, ownerId: currentOwner }, select: { id: true } });
+                if (!source)
+                    throw new Error('Kartoteka już nie istnieje.');
+                const ids = yield (0, folders_1.collectFolderBranch)(tx, sourceId, currentOwner);
+                const foreignChildren = yield tx.folder.count({ where: { parentId: { in: ids }, ownerId: { not: currentOwner } } });
+                if (foreignChildren)
+                    throw new Error('Kartoteka zawiera podkartoteki innego użytkownika.');
+                const [documentCount, archivedCount, trashedCount] = yield Promise.all([
+                    tx.document.count({ where: { folderId: { in: ids }, isDeleted: false, isArchived: false } }),
+                    tx.document.count({ where: { folderId: { in: ids }, isDeleted: false, isArchived: true } }),
+                    tx.document.count({ where: { folderId: { in: ids }, isDeleted: true } }),
+                ]);
+                if (documentCount && (!transferFolderId || ids.includes(transferFolderId)))
+                    throw new Error('Wybierz inną podkartotekę docelową dla aktywnych dokumentów.');
+                let targetId = transferFolderId;
+                if (targetId) {
+                    const target = yield tx.folder.findFirst({ where: { id: targetId, ownerId: currentOwner }, select: { id: true, parentId: true } });
+                    if (!target || ids.includes(targetId) || !target.parentId)
+                        throw new Error('Wybierz istniejącą podkartotekę docelową poza usuwaną kartoteką.');
+                }
+                else if (archivedCount || trashedCount) {
+                    throw new Error('Wybierz podkartotekę, aby zachować dokumenty z archiwum i kosza.');
+                }
+                if (targetId && (documentCount || archivedCount || trashedCount))
+                    yield tx.document.updateMany({ where: { folderId: { in: ids } }, data: { folderId: targetId } });
+                for (const folderId of [...ids].reverse())
+                    yield tx.folder.delete({ where: { id: folderId } });
+                return { success: true, movedDocuments: documentCount, preservedArchived: archivedCount, preservedTrash: trashedCount, targetFolderId: targetId };
+            }));
+            res.json(result);
         }
         catch (error) {
-            res.status(500).json({ error: 'Błąd usuwania kartoteki', details: (0, errors_1.errorMessage)(error) });
+            res.status(409).json({ error: (0, errors_1.errorMessage)(error) || 'Błąd usuwania kartoteki.' });
         }
     }));
     return router;

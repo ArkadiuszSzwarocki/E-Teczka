@@ -5,6 +5,8 @@ export type MobileDocument = {
   mimeType: string;
   folderId?: number;
   thumbnail?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type FolderSummary = {
@@ -13,6 +15,9 @@ export type FolderSummary = {
   parentId: number | null;
   order?: number;
   _count?: { documents?: number };
+  createdAt?: string;
+  updatedAt?: string;
+  clientId?: string;
 };
 
 export type FolderStackParamList = {

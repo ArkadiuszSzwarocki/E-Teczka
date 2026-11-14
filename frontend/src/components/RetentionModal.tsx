@@ -1,4 +1,4 @@
-import type { FormEvent } from 'react';
+import type { FormEvent, ReactNode } from 'react';
 import type { RetentionUnit } from '../types/domain';
 
 export type RetentionModalState = {
@@ -8,6 +8,7 @@ export type RetentionModalState = {
   unit: RetentionUnit;
   enabled: boolean;
   restoreFrom?: 'archive' | 'trash';
+  targetFolderId?: string;
 };
 
 type RetentionModalProps = {
@@ -15,6 +16,7 @@ type RetentionModalProps = {
   onStateChange: (state: RetentionModalState) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onClose: () => void;
+  folderOptions: ReactNode;
 };
 
 export default function RetentionModal({
@@ -22,6 +24,7 @@ export default function RetentionModal({
   onStateChange,
   onSubmit,
   onClose,
+  folderOptions,
 }: RetentionModalProps) {
   if (!state.isOpen) return null;
 
@@ -37,6 +40,12 @@ export default function RetentionModal({
           </p>
         )}
         <form onSubmit={onSubmit}>
+          {state.restoreFrom && <label className="mb-4 block text-sm font-semibold text-slate-200">Przywróć do podkartoteki
+            <select required value={state.targetFolderId || ''} onChange={event => onStateChange({ ...state, targetFolderId: event.target.value })} className="mt-2 w-full rounded border border-slate-600 bg-[#0f172a] px-3 py-2 text-white" aria-label="Docelowa podkartoteka">
+              <option value="">— wybierz podkartotekę —</option>{folderOptions}
+            </select>
+          </label>}
+          <p className="mb-2 text-sm font-semibold text-slate-200">Czas życia dokumentu</p>
           <div className="flex gap-2 mb-6">
             <input
               type="number"
@@ -44,6 +53,8 @@ export default function RetentionModal({
               onChange={(event) => onStateChange({ ...state, value: Number(event.target.value) })}
               className="w-24 bg-[#0f172a] border border-slate-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500"
               min="1"
+              step="1"
+              required
               aria-label="Wartość terminu życia"
             />
             <select
@@ -58,7 +69,7 @@ export default function RetentionModal({
               <option value="minutes">Minuty</option>
             </select>
           </div>
-          {!state.restoreFrom && (
+          {
             <label className="flex items-center gap-2 text-sm text-slate-300 mb-6">
               <input
                 type="checkbox"
@@ -67,7 +78,7 @@ export default function RetentionModal({
               />
               Włącz automatyczne przeniesienie do kosza po upływie terminu
             </label>
-          )}
+          }
           <div className="flex justify-end gap-3">
             <button
               type="button"

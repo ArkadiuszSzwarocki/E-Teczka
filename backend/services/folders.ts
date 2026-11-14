@@ -1,9 +1,9 @@
 import type { PrismaClient } from '@prisma/client';
 
-export async function collectFolderBranch(prisma: PrismaClient, folderId: number): Promise<number[]> {
+export async function collectFolderBranch(prisma: PrismaClient, folderId: number, ownerId?: number): Promise<number[]> {
   const ids = [folderId];
-  const children = await prisma.folder.findMany({ where: { parentId: folderId }, select: { id: true } });
-  for (const child of children) ids.push(...await collectFolderBranch(prisma, child.id));
+  const children = await prisma.folder.findMany({ where: { parentId: folderId, ...(ownerId === undefined ? {} : { ownerId }) }, select: { id: true } });
+  for (const child of children) ids.push(...await collectFolderBranch(prisma, child.id, ownerId));
   return ids;
 }
 

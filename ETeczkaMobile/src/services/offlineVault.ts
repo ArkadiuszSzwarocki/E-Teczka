@@ -3,6 +3,11 @@ import * as Crypto from "expo-crypto";
 import * as FileSystem from "expo-file-system/legacy";
 import CryptoJS from "crypto-js";
 import { getApiUrl, getAuthHeaders } from "./localConnection";
+import { fetchWithTimeout } from "./networkRequest";
+import { createOfflineChunkStore } from './offlineChunks';
+import { downloadSecureFile } from './secureFileTransfer';
+import { createOfflineChunkCodec } from './offlineChunkCodec';
+import { getOfflineCacheBytes, removeOfflineFiles } from './offlineCleanup';
 import type { MobileDocument } from "../types/navigation";
 
 const KEY = "eteczka.vault.key";
@@ -12,6 +17,7 @@ const BACKUP_MODE = "eteczka.vault.backup-mode";
 const ROOT = `${FileSystem.documentDirectory}eteczka-vault/`;
 const INDEX = `${ROOT}index.enc`;
 const SELECTED_FOLDERS = "eteczka.vault.offline-folders";
+const { decryptFileInChunks, encryptFileInChunks, readChunkManifest } = createOfflineChunkStore(FileSystem, Crypto.getRandomBytesAsync);
 
 const hashPin = (pin: string) => Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, `eteczka:${pin}`);
 async function key(): Promise<CryptoJS.lib.WordArray> {
@@ -29,6 +35,7 @@ async function decrypt(value: string) {
   if (!plain) throw new Error("Nie można odblokować sejfu.");
   return plain;
 }
+const chunkCodec = { encrypt, decrypt, ...createOfflineChunkCodec(key, Crypto.getRandomBytesAsync) };
 
 export async function hasVault() { return Boolean(await SecureStore.getItemAsync(KEY)); }
 export type VaultMode = "pin" | "password" | "biometric";
@@ -65,7 +72,19 @@ export async function changeVaultAccess(secret: string, mode: VaultMode, backup?
 export async function unlockWithPin(pin: string) { return (await SecureStore.getItemAsync(PIN_HASH)) === await hashPin(pin); }
 export async function getOfflineFolderIds(): Promise<number[]> { try { return JSON.parse(await SecureStore.getItemAsync(SELECTED_FOLDERS) || "[]"); } catch { return []; } }
 export async function setOfflineFolderIds(ids: number[]) { await SecureStore.setItemAsync(SELECTED_FOLDERS, JSON.stringify([...new Set(ids)])); }
-export async function getVaultStorageBytes() { try { const names = await FileSystem.readDirectoryAsync(ROOT); let total = 0; for (const name of names) { const info = await FileSystem.getInfoAsync(`${ROOT}${name}`); total += Number(info.exists && "size" in info ? info.size || 0 : 0); } return total; } catch { return 0; } }
+export async function getVaultStorageBytes() {
+  const sizeOfDirectory = async (dir: string): Promise<number> => {
+    let total = 0;
+    for (const name of await FileSystem.readDirectoryAsync(dir)) {
+      const path = `${dir}${name}`; const info = await FileSystem.getInfoAsync(path);
+      if (info.exists && info.isDirectory) total += await sizeOfDirectory(`${path}/`);
+      else if (info.exists && 'size' in info) total += Number(info.size || 0);
+    }
+    return total;
+  };
+  try { return await sizeOfDirectory(ROOT); } catch { return 0; }
+}
+export async function getViewerCacheBytes() { try { return await getOfflineCacheBytes(FileSystem, FileSystem.cacheDirectory); } catch { return 0; } }
 
 export type OfflineDocument = MobileDocument & {
   isDeleted?: boolean;
@@ -95,38 +114,107 @@ async function index(): Promise<OfflineDocument[]> {
 }
 
 async function saveIndex(items: OfflineDocument[]) {
-  await FileSystem.writeAsStringAsync(INDEX, await encrypt(JSON.stringify(items)));
+  const temporary = `${INDEX}.${Date.now()}.tmp`;
+  try {
+    await FileSystem.writeAsStringAsync(temporary, await encrypt(JSON.stringify(items)));
+    await FileSystem.moveAsync({ from: temporary, to: INDEX });
+  } catch (error) {
+    await FileSystem.deleteAsync(temporary, { idempotent: true }).catch(() => undefined);
+    throw error;
+  }
 }
 
-export async function syncOfflineVault(onProgress?: (done: number, total: number) => void) {
-  const response = await fetch(await getApiUrl("/api/documents"), { headers: await getAuthHeaders() });
+/** OCR is stored separately from the unencrypted catalog, using the vault key. */
+export async function readOfflineOcr(id: number): Promise<string | null> {
+  if (!Number.isSafeInteger(id) || id < 1) return null;
+  try { const value = await FileSystem.readAsStringAsync(`${ROOT}ocr-${id}.enc`); return CryptoJS.enc.Base64.parse(await chunkCodec.decryptChunk(value)).toString(CryptoJS.enc.Utf8); }
+  catch { return null; }
+}
+export async function saveOfflineOcr(id: number, text: string) {
+  if (!Number.isSafeInteger(id) || id < 1) throw new Error("Nieprawidłowy dokument.");
+  const target = `${ROOT}ocr-${id}.enc`; const temporary = `${target}.${Date.now()}.tmp`;
+  try { await FileSystem.writeAsStringAsync(temporary, await chunkCodec.encryptChunk(CryptoJS.enc.Utf8.parse(JSON.stringify({ text })).toString(CryptoJS.enc.Base64))); await FileSystem.moveAsync({ from: temporary, to: target }); }
+  finally { await FileSystem.deleteAsync(temporary, { idempotent: true }).catch(() => undefined); }
+}
+export async function getOfflineOcr(id: number): Promise<string | null> {
+  const value = await readOfflineOcr(id); if (!value) return null;
+  try { const data: unknown = JSON.parse(value); return data && typeof data === 'object' && typeof (data as { text?: unknown }).text === 'string' ? (data as { text: string }).text : null; } catch { return null; }
+}
+export async function removeOfflineOcr(id: number) { await FileSystem.deleteAsync(`${ROOT}ocr-${id}.enc`, { idempotent: true }); }
+
+let vaultBusy = false;
+
+export async function clearOfflineCopies(onProgress?: (done: number, total: number) => void) {
+  if (vaultBusy) throw new Error('Poczekaj na zakończenie pobierania dokumentów.');
+  vaultBusy = true;
+  try {
+    await setOfflineFolderIds([]);
+    const removed = await removeOfflineFiles(FileSystem, ROOT, FileSystem.cacheDirectory, onProgress);
+    if (await hasVault()) await saveIndex([]);
+    return removed;
+  } finally { vaultBusy = false; }
+}
+
+export async function syncOfflineVault(onProgress?: (done: number, total: number, stage?: string) => void) {
+  if (vaultBusy) throw new Error('Trwa już operacja na kopiach offline.');
+  vaultBusy = true;
+  try { return await syncOfflineVaultLocked(onProgress); }
+  finally { vaultBusy = false; }
+}
+
+async function syncOfflineVaultLocked(onProgress?: (done: number, total: number, stage?: string) => void) {
+  const response = await fetchWithTimeout(await getApiUrl("/api/documents"), { headers: await getAuthHeaders() }, 30_000, 'Pobieranie listy dokumentów');
   if (!response.ok) throw new Error("Komputer nie udostępnił dokumentów.");
   const payload: unknown = await response.json();
   if (!Array.isArray(payload)) throw new Error("Komputer zwrócił nieprawidłową listę dokumentów.");
   const selectedFolders = await getOfflineFolderIds();
-  const docs = payload.filter(isOfflineDocument).filter((document) => !document.isDeleted && (!selectedFolders.length || (typeof document.folderId === "number" && selectedFolders.includes(document.folderId))));
+  if (!selectedFolders.length) throw new Error('Zaznacz przynajmniej jedną podkartotekę do pobrania offline.');
+  const docs = payload.filter(isOfflineDocument).filter((document) => !document.isDeleted && typeof document.folderId === "number" && selectedFolders.includes(document.folderId));
   const current = await index(); const map = new Map(current.map((doc) => [doc.id, doc]));
   for (let i = 0; i < docs.length; i++) {
     const doc = docs[i]; const target = `${ROOT}${doc.id}.enc`;
-    if (!map.has(doc.id)) {
-      const temporary = `${FileSystem.cacheDirectory}vault-${doc.id}`;
-      await FileSystem.downloadAsync(await getApiUrl(`/uploads/${doc.filePath}`), temporary, { headers: await getAuthHeaders() });
-      const base64 = await FileSystem.readAsStringAsync(temporary, { encoding: FileSystem.EncodingType.Base64 });
-      await FileSystem.deleteAsync(temporary, { idempotent: true });
-      await FileSystem.writeAsStringAsync(target, await encrypt(base64));
+    const previous = map.get(doc.id);
+    const localFile = await FileSystem.getInfoAsync(target);
+    const manifest = await readChunkManifest(ROOT, doc.id, chunkCodec);
+    const alreadyAvailable = manifest ? manifest.filePath === doc.filePath : Boolean(previous && previous.filePath === doc.filePath && localFile.exists);
+    if (!alreadyAvailable) {
+      const temporary = `${FileSystem.cacheDirectory}vault-${doc.id}-${Date.now()}.download`;
+      const normalizedPath = doc.filePath.replace(/\\/g, '/').replace(/^\/+/, '');
+      const path = normalizedPath.toLowerCase().startsWith('uploads/') ? `/${normalizedPath}` : `/uploads/${normalizedPath}`;
+      onProgress?.(i, docs.length, `Pobieranie: ${doc.title}`);
+      let result: { status: number; uri: string };
+      try { result = await downloadSecureFile(await getApiUrl(path), temporary, await getAuthHeaders(), (done, total) => { const amount = total > 0 ? ` ${Math.round(100 * done / total)}%` : ''; onProgress?.(i, docs.length, `Pobieranie: ${doc.title}${amount}`); }); }
+      catch { throw new Error(`Nie udało się bezpiecznie pobrać dokumentu „${doc.title}”. Sprawdź połączenie z komputerem.`); }
+      try {
+        if (!result || result.status !== 200) throw new Error(`Komputer nie udostępnił dokumentu (HTTP ${result?.status ?? 'brak odpowiedzi'}).`);
+        onProgress?.(i, docs.length, `Szyfrowanie: ${doc.title}`);
+        await encryptFileInChunks(ROOT, doc.id, doc.filePath, temporary, chunkCodec, (done, total) => onProgress?.(i, docs.length, `Szyfrowanie: ${doc.title} ${Math.round(100 * done / total)}%`));
+      } finally { await FileSystem.deleteAsync(temporary, { idempotent: true }).catch(() => undefined); }
     }
-    map.set(doc.id, doc); onProgress?.(i + 1, docs.length);
+    // OCR is optional: a missing Premium subscription or unfinished job must not block the document download.
+    try {
+      const ocrResponse = await fetchWithTimeout(await getApiUrl(`/api/ocr/${doc.id}`), { headers: await getAuthHeaders() }, 10_000, 'Pobieranie tekstu OCR');
+      if (ocrResponse.status === 402 || ocrResponse.status === 403 || ocrResponse.status === 404) await removeOfflineOcr(doc.id);
+      else if (ocrResponse.ok) { const result: unknown = await ocrResponse.json(); const text = result && typeof result === 'object' ? (result as { text?: unknown }).text : null; if (typeof text === 'string' && text.length) await saveOfflineOcr(doc.id, text); else await removeOfflineOcr(doc.id); }
+    } catch { /* Keep the previous encrypted copy when the connection is interrupted. */ }
+    map.set(doc.id, doc); await saveIndex([...map.values()]); onProgress?.(i + 1, docs.length);
     await new Promise<void>((resolve) => setTimeout(resolve, 80));
   }
   const allowed = new Set(docs.map((document) => document.id));
+  for (const old of current) if (!allowed.has(old.id)) await removeOfflineOcr(old.id);
   await saveIndex([...map.values()].filter((doc) => allowed.has(doc.id)));
   return docs.length;
 }
 export async function offlineFile(document: Pick<OfflineDocument, "id" | "filePath">) {
   const encrypted = `${ROOT}${document.id}.enc`;
-  if (!(await FileSystem.getInfoAsync(encrypted)).exists) throw new Error("Nie ma kopii offline.");
   const extension = document.filePath?.split(".").pop() || "pdf";
   const target = `${FileSystem.cacheDirectory}opened-${document.id}.${extension}`;
+  const manifest = await readChunkManifest(ROOT, document.id, chunkCodec);
+  if (manifest) {
+    if (manifest.filePath !== document.filePath) throw new Error('Kopia offline dotyczy starszej wersji dokumentu.');
+    return decryptFileInChunks(ROOT, document.id, target, manifest, chunkCodec);
+  }
+  if (!(await FileSystem.getInfoAsync(encrypted)).exists) throw new Error("Nie ma kopii offline.");
   await FileSystem.writeAsStringAsync(target, await decrypt(await FileSystem.readAsStringAsync(encrypted)), { encoding: FileSystem.EncodingType.Base64 });
   return target;
 }

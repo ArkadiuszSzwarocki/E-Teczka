@@ -31,6 +31,17 @@ model AuthSession {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+// Durable receipts make retries of offline operations safe after a lost response.
+model SyncOperation {
+  ownerKey    String
+  operationId String
+  result      String
+  createdAt   DateTime @default(now())
+
+  @@id([ownerKey, operationId])
+  @@index([createdAt])
+}
+
 model Subscription {
   id                     Int      @id @default(autoincrement())
   ownerKey               String   @unique
@@ -146,6 +157,7 @@ model Tag {
   name      String        @unique
   color     String        @default("#2563eb")
   documents DocumentTag[]
+  owners PlanTagOwner[]
   createdAt DateTime      @default(now())
 }
 
@@ -156,4 +168,43 @@ model DocumentTag {
   tag        Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
   @@id([documentId, tagId])
+}
+
+// Persistent trial and seven-day usage accounting.
+model PlanTrial {
+  ownerKey String
+  feature String
+  startedAt BigInt
+  @@id([ownerKey, feature])
+}
+model PlanUsage {
+  ownerKey String
+  feature String
+  operationId String
+  amount Int
+  usedAt BigInt
+  @@id([ownerKey, feature, operationId])
+  @@index([ownerKey, feature, usedAt], map: "PlanUsage_window_idx")
+}
+model PlanPrinterClaim {
+  ownerKey String
+  jobId String
+  draftId String
+  @@id([ownerKey, jobId])
+}
+model PlanScanReceipt {
+  ownerKey String
+  draftId String
+  documentId Int
+  fingerprint String
+  @@id([ownerKey, draftId])
+}
+model PlanTagOwner {
+  ownerId Int
+  tagId Int
+  tag Tag @relation(fields: [tagId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  @@id([ownerId, tagId])
+}
+model PlanMeta {
+  key String @id
 }

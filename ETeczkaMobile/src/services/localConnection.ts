@@ -1,4 +1,5 @@
 import * as SecureStore from "expo-secure-store";
+import { clearPendingComputerCertificate, commitComputerCertificate, hasComputerCertificate, hasPendingComputerCertificate } from "./localTls";
 
 const CONNECTION_KEY = "eteczka.local-connection.v1";
 
@@ -30,7 +31,7 @@ function isPrivateIpv4(hostname: string) {
   );
 }
 
-function normalizeServerUrl(value: string) {
+export function normalizeServerUrl(value: string) {
   const candidate = value.trim().replace(/\/+$/, "");
   if (!candidate) throw new Error("Podaj adres komputera.");
 
@@ -43,6 +44,7 @@ function normalizeServerUrl(value: string) {
     throw new Error("Adres komputera ma nieprawidłowy format.");
   }
 
+  if (parsed.username || parsed.password || parsed.search || parsed.hash || (parsed.pathname && parsed.pathname !== '/')) throw new Error("Adres komputera nie może zawierać ścieżki ani danych logowania.");
   const isLocalName = parsed.hostname === "localhost" || parsed.hostname.endsWith(".local");
   if (!isLocalName && !isPrivateIpv4(parsed.hostname)) {
     throw new Error("Można dodać tylko komputer w sieci lokalnej.");
@@ -71,6 +73,8 @@ export async function saveLocalConnection(serverUrl: string): Promise<LocalConne
 
 export async function pairLocalComputer(serverUrl: string, pairingCode: string, deviceName: string) {
   const normalizedUrl = normalizeServerUrl(serverUrl);
+  if (!normalizedUrl.startsWith('https://')) throw new Error('Zeskanuj aktualny kod QR z okna parowania na komputerze.');
+  if (!await hasPendingComputerCertificate(normalizedUrl)) throw new Error('Najpierw zeskanuj kod QR i zweryfikuj certyfikat komputera.');
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8_000);
   let response: Response;
@@ -81,6 +85,7 @@ export async function pairLocalComputer(serverUrl: string, pairingCode: string, 
       body: JSON.stringify({ pairingCode: pairingCode.trim(), deviceName: deviceName.trim() || "Telefon" }),
     });
   } catch (error: unknown) {
+    await clearPendingComputerCertificate().catch(() => undefined);
     if (error instanceof Error && error.name === "AbortError") throw new Error("Komputer nie odpowiedział w ciągu 8 sekund.");
     throw new Error(errorMessage(error));
   } finally { clearTimeout(timeout); }
@@ -89,10 +94,12 @@ export async function pairLocalComputer(serverUrl: string, pairingCode: string, 
   const pairResponse = payload && typeof payload === "object" ? payload as { accessToken?: unknown; error?: unknown } : {};
   const accessToken = pairResponse.accessToken;
   if (!response.ok || typeof accessToken !== "string" || !accessToken) {
+    await clearPendingComputerCertificate().catch(() => undefined);
     throw new Error(typeof pairResponse.error === "string" ? pairResponse.error : "Nie udało się sparować telefonu.");
   }
 
   const connection: LocalConnection = { serverUrl: normalizedUrl, accessToken };
+  await commitComputerCertificate();
   await SecureStore.setItemAsync(CONNECTION_KEY, JSON.stringify(connection));
   return connection;
 }
@@ -100,11 +107,15 @@ export async function pairLocalComputer(serverUrl: string, pairingCode: string, 
 export async function getAuthHeaders() {
   const connection = await getLocalConnection();
   if (!connection) throw new Error("Najpierw sparuj telefon z komputerem E‑Teczka.");
+  if (!connection.serverUrl.startsWith('https://')) throw new Error('Stare połączenie HTTP jest niezabezpieczone. Sparuj telefon ponownie przez HTTPS.');
+  if (!await hasComputerCertificate(connection.serverUrl)) throw new Error('Sparuj komputer ponownie, aby sprawdzić jego certyfikat.');
   return { Authorization: `Bearer ${connection.accessToken}` };
 }
 
 export async function getApiUrl(path: string) {
   const connection = await getLocalConnection();
   if (!connection) throw new Error("Najpierw dodaj komputer E‑Teczka w zakładce Ustawienia.");
+  if (!connection.serverUrl.startsWith('https://')) throw new Error('Stare połączenie HTTP jest niezabezpieczone. Sparuj telefon ponownie przez HTTPS.');
+  if (!await hasComputerCertificate(connection.serverUrl)) throw new Error('Sparuj komputer ponownie, aby sprawdzić jego certyfikat.');
   return `${connection.serverUrl}${path.startsWith("/") ? path : `/${path}`}`;
 }

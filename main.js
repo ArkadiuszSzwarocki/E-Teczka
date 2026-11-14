@@ -1,57 +1,37 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const http = require('http');
 const fs = require('fs');
-const crypto = require('crypto');
+const { createAccessLock } = require('./desktop/accessLock');
+const { createRecoveryMailer } = require('./desktop/recoveryMail');
 
 let mainWindow;
 let backendProcess;
+let tray;
+let quitting = false;
 
-function accessLockPath() {
-  return path.join(app.getPath('userData'), 'access-lock.json');
-}
+const recoveryMailer = createRecoveryMailer(path.join(__dirname, 'backend'));
+const accessLock = createAccessLock({ file: path.join(app.getPath('userData'), 'access-lock.json'), sendRecoveryMail: recoveryMailer.send, mailConfigured: recoveryMailer.configured });
+const verifiedSenders = new Map();
+const isVerified = (event) => (verifiedSenders.get(event.sender.id) || 0) > Date.now();
 
-function readAccessLock() {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(accessLockPath(), 'utf8'));
-    return ['pin', 'password'].includes(parsed.mode) && parsed.salt && parsed.hash ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function lockHash(secret, salt) {
-  return crypto.scryptSync(secret, salt, 64).toString('hex');
-}
-
-function validSecret(mode, secret) {
-  return (mode === 'pin' && /^\d{6,}$/.test(secret)) || (mode === 'password' && typeof secret === 'string' && secret.length >= 8);
-}
-
-ipcMain.handle('eteczka-access-status', () => {
-  const lock = readAccessLock();
-  return { configured: Boolean(lock), mode: lock?.mode ?? null };
+ipcMain.handle('eteczka-access-status', () => accessLock.status());
+ipcMain.handle('eteczka-access-verify', (event, secret) => {
+  const result = accessLock.verify(secret);
+  if (result.ok) verifiedSenders.set(event.sender.id, Date.now() + 5 * 60_000);
+  else verifiedSenders.delete(event.sender.id);
+  return result;
 });
-
-ipcMain.handle('eteczka-access-configure', (_event, { mode, secret }) => {
-  if (!validSecret(mode, secret)) return { ok: false, error: mode === 'pin' ? 'PIN musi mieć co najmniej 6 cyfr.' : 'Hasło musi mieć co najmniej 8 znaków.' };
-  const salt = crypto.randomBytes(16).toString('hex');
-  const settings = { mode, salt, hash: lockHash(secret, salt) };
-  const target = accessLockPath();
-  const temp = `${target}.tmp`;
-  fs.writeFileSync(temp, JSON.stringify(settings), { encoding: 'utf8', mode: 0o600 });
-  fs.renameSync(temp, target);
-  return { ok: true, mode };
+ipcMain.handle('eteczka-access-configure', (event, settings) => {
+  const result = accessLock.configure(settings || {}, isVerified(event));
+  if (result.ok) verifiedSenders.delete(event.sender.id);
+  return result;
 });
-
-ipcMain.handle('eteczka-access-verify', (_event, secret) => {
-  const lock = readAccessLock();
-  if (!lock) return { ok: true };
-  const actual = Buffer.from(lockHash(secret, lock.salt), 'hex');
-  const expected = Buffer.from(lock.hash, 'hex');
-  return { ok: actual.length === expected.length && crypto.timingSafeEqual(actual, expected) };
-});
+ipcMain.handle('eteczka-recovery-enroll-request', (event, email) => accessLock.requestEnrollment(email, isVerified(event)));
+ipcMain.handle('eteczka-recovery-enroll-complete', (event, email, code) => accessLock.completeEnrollment(email, code, isVerified(event)));
+ipcMain.handle('eteczka-recovery-reset-request', () => accessLock.requestReset());
+ipcMain.handle('eteczka-recovery-reset-complete', (_event, settings) => accessLock.completeReset(settings || {}));
 
 function runWiaPowerShell(script, onStage) {
   return new Promise((resolve, reject) => {
@@ -73,6 +53,11 @@ ipcMain.handle('eteczka-wia-devices', async () => {
   if (!output) return [];
   const parsed = JSON.parse(output);
   return Array.isArray(parsed) ? parsed : [parsed];
+});
+
+ipcMain.handle('eteczka-default-printer', async () => {
+  try { return (await runWiaPowerShell("$p = Get-CimInstance Win32_Printer -Filter 'Default=True' | Select-Object -First 1 -ExpandProperty Name; if ($p) { Write-Output $p }")) || ''; }
+  catch { return ''; }
 });
 
 function acquireWithWia(deviceId, onStage) {
@@ -108,9 +93,26 @@ function startBackend() {
   });
 }
 
+function backendAvailable() {
+  return new Promise((resolve) => {
+    const request = http.get('http://127.0.0.1:3000/api/network-info', (response) => {
+      let body = '';
+      response.on('data', (chunk) => { body += chunk.toString(); });
+      response.on('end', () => {
+        try {
+          const info = JSON.parse(body);
+          resolve(response.statusCode === 200 && info.port === 3000 && Array.isArray(info.addresses));
+        } catch { resolve(false); }
+      });
+    });
+    request.setTimeout(1500, () => request.destroy());
+    request.on('error', () => resolve(false));
+  });
+}
+
 // Funkcja sprawdzająca czy serwer backendowy już odpowiada na porcie 3000
 function waitForServer(retries = 20) {
-  http.get('http://localhost:3000/api/documents', (res) => {
+  http.get('http://127.0.0.1:3000/api/documents', (res) => {
     if (res.statusCode >= 0) {
       console.log('Backend jest gotowy! Otwieram okno...');
       createWindow();
@@ -155,13 +157,35 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+  mainWindow.on('close', (event) => {
+    if (!quitting && tray) { event.preventDefault(); mainWindow.hide(); }
+  });
 }
 
-app.whenReady().then(() => {
-  if (process.env.ETECZKA_EXTERNAL_BACKEND !== '1') startBackend();
+async function createTray() {
+  try {
+    const icon = await app.getFileIcon(process.execPath, { size: 'small' });
+    if (icon.isEmpty()) return;
+    tray = new Tray(icon);
+    tray.setToolTip('E-Teczka — działa w tle');
+    const show = () => { if (!mainWindow) createWindow(); else { mainWindow.show(); mainWindow.focus(); } };
+    tray.setContextMenu(Menu.buildFromTemplate([
+      { label: 'Otwórz E-Teczkę', click: show },
+      { type: 'separator' },
+      { label: 'Zakończ E-Teczkę', click: () => { quitting = true; app.quit(); } },
+    ]));
+    tray.on('double-click', show);
+  } catch (error) { console.error('Nie udało się uruchomić ikony E-Teczki:', error); }
+}
+
+app.whenReady().then(async () => {
+  await createTray();
+  if (process.env.ETECZKA_EXTERNAL_BACKEND !== '1' && !(await backendAvailable())) startBackend();
   // Czekamy aż serwer wstane zanim wygenerujemy okno
   setTimeout(() => waitForServer(), 1000);
 });
+
+app.on('before-quit', () => { quitting = true; });
 
 app.on('window-all-closed', () => {
   if (backendProcess) backendProcess.kill();

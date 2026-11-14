@@ -1,9 +1,10 @@
 @echo off
 setlocal
 title E-Teczka Mobile — deweloperka
-set "MOBILE_DIR=A:\GitHub\E-Teczka\ETeczkaMobile"
-set "TEMP=A:\ETeczkaTemp"
-set "TMP=A:\ETeczkaTemp"
+set "MOBILE_DIR=%~dp0ETeczkaMobile"
+set "GRADLE_USER_HOME=%~dp0.local\gradle"
+set "TEMP=%~dp0.local\temp"
+set "TMP=%TEMP%"
 
 if not exist "%MOBILE_DIR%\package.json" (
   echo Nie znaleziono projektu: %MOBILE_DIR%

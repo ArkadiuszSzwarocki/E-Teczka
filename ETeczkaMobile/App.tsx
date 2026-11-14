@@ -47,18 +47,50 @@ function AppTabs({ initialTab = "Ustawienia", onLock }: { initialTab?: keyof Mai
   const insets = useSafeAreaInsets();
   const bottomInset = Math.max(insets.bottom, 16);
   const [isPaired, setIsPaired] = useState(false);
+  const [computerOnline, setComputerOnline] = useState(false);
 
   useEffect(() => {
     getLocalConnection().then((connection) => setIsPaired(Boolean(connection)));
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    let foreground = AppState.currentState !== 'background' && AppState.currentState !== 'inactive';
+    let generation = 0;
+    let controller: AbortController | null = null;
+    const checkComputer = async () => {
+      if (!foreground) return;
+      const attempt = ++generation;
+      controller?.abort();
+      const request = new AbortController(); controller = request;
+      const timeout = setTimeout(() => { if (active && attempt === generation) setComputerOnline(false); request.abort(); }, 3000);
+      try {
+        const connection = await getLocalConnection();
+        if (!connection) { if (active && attempt === generation) { setIsPaired(false); setComputerOnline(false); } return; }
+        if (active) setIsPaired(true);
+        const response = await fetch(`${connection.serverUrl}/api/folders`, { headers: await getAuthHeaders(), signal: request.signal });
+        if (active && attempt === generation) setComputerOnline(response.ok);
+      } catch { if (active && attempt === generation) setComputerOnline(false); }
+      finally { clearTimeout(timeout); }
+    };
+    void checkComputer();
+    const timer = setInterval(() => void checkComputer(), 5000);
+    const subscription = AppState.addEventListener('change', state => {
+      foreground = state === 'active';
+      if (state === 'active') { setComputerOnline(false); void checkComputer(); }
+      else { generation++; controller?.abort(); setComputerOnline(false); }
+    });
+    return () => { active = false; generation++; controller?.abort(); clearInterval(timer); subscription.remove(); };
+  }, []);
+
   return (
-    <Tab.Navigator
+    <View style={appTabsStyles.container}><ConnectionStatusBar computerOnline={computerOnline} /><Tab.Navigator
       initialRouteName={initialTab}
       screenOptions={({ route }) => {
         const isLocked = !isPaired && route.name !== "Ustawienia";
         return ({
         headerShown: false,
+        tabBarLabel: route.name === 'Ustawienia' ? 'Więcej' : route.name,
         tabBarStyle: {
           backgroundColor: "#1e293b",
           borderTopColor: "#334155",
@@ -84,7 +116,7 @@ function AppTabs({ initialTab = "Ustawienia", onLock }: { initialTab?: keyof Mai
           else if (route.name === "Skaner") iconName = focused ? "camera" : "camera-outline";
           else if (route.name === "Archiwum") iconName = focused ? "archive" : "archive-outline";
           else if (route.name === "Kosz") iconName = focused ? "trash" : "trash-outline";
-          else if (route.name === "Ustawienia") iconName = focused ? "settings" : "settings-outline";
+          else if (route.name === "Ustawienia") iconName = "ellipsis-horizontal";
           return <Ionicons name={iconName} size={size + 2} color={color} />;
         },
         });
@@ -95,10 +127,15 @@ function AppTabs({ initialTab = "Ustawienia", onLock }: { initialTab?: keyof Mai
       <Tab.Screen name="Archiwum">{() => <DocumentListScreen mode="archive" />}</Tab.Screen>
       <Tab.Screen name="Kosz">{() => <DocumentListScreen mode="trash" />}</Tab.Screen>
       <Tab.Screen name="Ustawienia">
-        {(props) => <SyncScreen {...props} onPaired={() => setIsPaired(true)} onLock={onLock} />}
+        {(props) => <SyncScreen {...props} computerOnline={computerOnline} onPaired={() => setIsPaired(true)} onLock={onLock} />}
       </Tab.Screen>
-    </Tab.Navigator>
+    </Tab.Navigator></View>
   );
+}
+
+function ConnectionStatusBar({ computerOnline }: { computerOnline: boolean }) {
+  const computerColor = computerOnline ? "#22c55e" : "#64748b";
+  return <View style={appTabsStyles.statusBar} accessibilityLabel={`Komputer ${computerOnline ? "połączony" : "rozłączony"}`}><View style={appTabsStyles.statusItem}><Ionicons name="desktop-outline" size={17} color={computerColor} /><Text style={[appTabsStyles.statusText, { color: computerColor }]}>Komputer</Text>{!computerOnline && <Ionicons name="close-circle" size={12} color="#94a3b8" style={appTabsStyles.offlineMark} />}</View></View>;
 }
 
 export default function App() {
@@ -205,4 +242,12 @@ const startupStyles = StyleSheet.create({
   text: { color: "#cbd5e1", fontSize: 15, textAlign: "center" },
   button: { backgroundColor: "#2563eb", borderRadius: 10, paddingHorizontal: 22, paddingVertical: 13 },
   buttonText: { color: "white", fontSize: 15, fontWeight: "700" },
+});
+
+const appTabsStyles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: "#0f172a" },
+  statusBar: { height: 30, flexDirection: "row", justifyContent: "flex-end", alignItems: "center", gap: 14, paddingHorizontal: 14, backgroundColor: "#111827", borderBottomWidth: 1, borderBottomColor: "#1e293b" },
+  statusItem: { flexDirection: "row", alignItems: "center", gap: 4, position: "relative" },
+  statusText: { fontSize: 10, fontWeight: "700" },
+  offlineMark: { marginLeft: -7, marginTop: -10 },
 });

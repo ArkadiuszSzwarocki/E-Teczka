@@ -1,0 +1,28 @@
+const test=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const os=require('node:os');const path=require('node:path');const express=require('express');const {PrismaClient}=require('@prisma/client');const {createDocumentRouter}=require('../routes/documents');
+
+test('restore requires an owned destination and changes destination and state together',async()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'eteczka-restore-destination-'));const p=new PrismaClient({datasources:{db:{url:`file:${path.join(dir,'db.sqlite').replace(/\\/g,'/')}`}}});let server; const { uploadsDir }=require('../config/paths'); const sample='restore-test-'+require('node:crypto').randomUUID()+'.pdf'; fs.writeFileSync(path.join(uploadsDir,sample),'sample',{flag:'wx'}); const other='restore-test-'+require('node:crypto').randomUUID()+'.pdf'; fs.writeFileSync(path.join(uploadsDir,other),'different',{flag:'wx'});
+ try {
+    await p.$executeRawUnsafe("CREATE TABLE Subscription (id INTEGER PRIMARY KEY,ownerKey TEXT UNIQUE NOT NULL,provider TEXT NOT NULL DEFAULT 'stripe',providerCustomerId TEXT,providerSubscriptionId TEXT,plan TEXT NOT NULL DEFAULT 'free',status TEXT NOT NULL DEFAULT 'inactive',currentPeriodEnd DATETIME,cancelAtPeriodEnd BOOLEAN NOT NULL DEFAULT 0,createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)");
+  await p.$executeRawUnsafe('CREATE TABLE Folder (id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,parentId INTEGER,ownerId INTEGER NOT NULL,createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,"order" INTEGER NOT NULL DEFAULT 0,updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)');
+  await p.$executeRawUnsafe("CREATE TABLE Document (id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL,filePath TEXT NOT NULL,mimeType TEXT NOT NULL,folderId INTEGER NOT NULL,userId INTEGER,thumbnail TEXT,ocrText TEXT,retentionEnabled BOOLEAN NOT NULL DEFAULT 1,retentionValue INTEGER NOT NULL DEFAULT 5,retentionUnit TEXT NOT NULL DEFAULT 'years',isArchived BOOLEAN NOT NULL DEFAULT 0,isDeleted BOOLEAN NOT NULL DEFAULT 0,deletedAt DATETIME,physicalLocation TEXT,createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)");
+  await p.$executeRawUnsafe('CREATE TABLE Tag (id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL UNIQUE,color TEXT NOT NULL,createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)');
+  await p.$executeRawUnsafe('CREATE TABLE DocumentTag (documentId INTEGER NOT NULL,tagId INTEGER NOT NULL,PRIMARY KEY(documentId,tagId))');
+  const root=await p.folder.create({data:{name:'Glowna',ownerId:1}});const target=await p.folder.create({data:{name:'Cel',ownerId:1,parentId:root.id}});const original=await p.folder.create({data:{name:'Stare',ownerId:1,parentId:root.id}});const foreign=await p.folder.create({data:{name:'Obca',ownerId:2,parentId:root.id}});
+  const doc=await p.document.create({data:{title:'Test',filePath:sample,mimeType:'application/pdf',folderId:original.id,isDeleted:true,isArchived:true,deletedAt:new Date()}});
+  const app=express();app.use(express.json());app.use('/api/documents',createDocumentRouter(p));server=await new Promise(resolve=>{const s=app.listen(0,'127.0.0.1',()=>resolve(s));});const url=`http://127.0.0.1:${server.address().port}/api/documents/${doc.id}`;
+  const patch=data=>fetch(url,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  let response=await patch({isDeleted:false});assert.equal(response.status,400);
+  response=await patch({isDeleted:false,folderId:foreign.id});assert.equal(response.status,400);
+  response=await patch({isDeleted:false,folderId:root.id});assert.equal(response.status,400);
+  let current=await p.document.findUnique({where:{id:doc.id}});assert.equal(current.isDeleted,true);assert.equal(current.folderId,original.id);
+  response=await patch({isDeleted:false,isArchived:false,folderId:target.id,retentionEnabled:true,retentionValue:3,retentionUnit:'months'});assert.equal(response.status,200);
+  current=await p.document.findUnique({where:{id:doc.id}});assert.equal(current.folderId,target.id);assert.equal(current.isDeleted,false);assert.equal(current.isArchived,false);assert.equal(current.deletedAt,null);assert.equal(current.retentionValue,3);assert.equal(current.retentionUnit,'months');
+  await p.document.update({where:{id:doc.id},data:{isArchived:true}});response=await patch({isArchived:false});assert.equal(response.status,400);response=await patch({isArchived:false,isDeleted:false,folderId:original.id,retentionEnabled:true,retentionValue:2,retentionUnit:'years'});assert.equal(response.status,200);current=await p.document.findUnique({where:{id:doc.id}});assert.equal(current.isArchived,false);assert.equal(current.isDeleted,false);assert.equal(current.folderId,original.id);assert.equal(current.retentionValue,2);
+  for(let i=0;i<200;i++) await p.document.create({data:{title:'Old '+i,filePath:other,mimeType:'application/pdf',folderId:original.id,createdAt:new Date('2020-01-01T00:00:00Z')}});
+  response=await patch({title:'Blocked'});assert.equal(response.status,403);assert.equal((await response.json()).code,'PLAN_LIMIT_REACHED');
+  response=await patch({isDeleted:true});assert.equal(response.status,200);
+  const old=await p.document.findFirst({where:{title:'Old 0'}});await p.document.delete({where:{id:old.id}});
+  response=await patch({isDeleted:false,folderId:original.id});assert.equal(response.status,200);
+ } finally {if(server)await new Promise(resolve=>server.close(resolve));await p.$disconnect();fs.unlinkSync(path.join(uploadsDir,sample));fs.unlinkSync(path.join(uploadsDir,other));fs.rmSync(dir,{recursive:true,force:true});}
+});

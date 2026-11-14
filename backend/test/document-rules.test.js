@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 
 const { retentionExpired } = require('../services/retention.js');
 const { collectFolderBranch, isDocumentFolder } = require('../services/folders.js');
-const { parseCreatedDocuments } = require('../routes/sync.js');
+const { parseSyncChanges } = require('../routes/sync.js');
 
 test('retentionExpired recognizes documents that are past their retention date', () => {
   assert.equal(retentionExpired({
@@ -60,16 +60,24 @@ test('documents are allowed only in a non-root folder', async () => {
 });
 
 test('sync parsing accepts valid documents and rejects malformed retention data', () => {
-  assert.deepEqual(parseCreatedDocuments({
+  const result = parseSyncChanges({
     documents: {
       created: [{
         title: '  Umowa  ', filePath: 'umowa.pdf', mimeType: 'application/pdf', folderId: '11', retentionValue: '5', retentionUnit: 'years', thumbnail: null,
       }],
     },
-  }), [{
-    title: 'Umowa', filePath: 'umowa.pdf', mimeType: 'application/pdf', folderId: 11, retentionValue: 5, retentionUnit: 'years', thumbnail: null,
-  }]);
+  });
+  assert.equal(result.documents.created[0].title, 'Umowa');
+  assert.equal(result.documents.created[0].folderId, 11);
+  assert.equal(result.documents.created[0].retentionValue, 5);
 
-  assert.equal(parseCreatedDocuments({ documents: { created: [{ title: 'Zły', filePath: 'zly.pdf', mimeType: 'application/pdf', folderId: 11, retentionValue: 5, retentionUnit: 'weeks' }] } }), null);
-  assert.equal(parseCreatedDocuments({ documents: { created: [{ title: 'Root', filePath: 'root.pdf', mimeType: 'application/pdf', folderId: 0 }] } }), null);
+  assert.equal(parseSyncChanges({ documents: { created: [{ title: 'Zły', filePath: 'zly.pdf', mimeType: 'application/pdf', folderId: 11, retentionValue: 5, retentionUnit: 'weeks' }] } }), null);
+  assert.equal(parseSyncChanges({ documents: { created: [{ title: 'Root', filePath: 'root.pdf', mimeType: 'application/pdf', folderId: 0 }] } }), null);
+  assert.equal(parseSyncChanges({ documents: { deleted: [1, 'invalid'] } }), null);
+  assert.equal(parseSyncChanges({ folders: { deleted: 'invalid' } }), null);
+  assert.equal(parseSyncChanges({ folders: { updated: [{ id: 1, name: 'A', updatedAt: 'not-a-date' }] } }), null);
+  assert.equal(parseSyncChanges({ folders: { updated: [{ id: -1, name: 'A' }] } }), null);
+  const validDoc = { id: 1, title: 'Test', filePath: 'test.pdf', mimeType: 'application/pdf', folderId: 11 };
+  assert.equal(parseSyncChanges({ documents: { updated: [{ ...validDoc, isArchived: 'false' }] } }), null);
+  assert.equal(parseSyncChanges({ documents: { updated: [{ ...validDoc, retentionValue: 1.5 }] } }), null);
 });

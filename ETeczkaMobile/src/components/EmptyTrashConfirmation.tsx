@@ -1,0 +1,9 @@
+import React, { useEffect, useState } from 'react';
+import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+type Props = { visible: boolean; count: number; busy: boolean; onCancel: () => void; onConfirm: () => void };
+export default function EmptyTrashConfirmation({ visible, count, busy, onCancel, onConfirm }: Props) {
+  const [seconds, setSeconds] = useState(5);
+  useEffect(() => { if (!visible) return; setSeconds(5); const timer = setInterval(() => setSeconds(value => Math.max(0, value - 1)), 1000); return () => clearInterval(timer); }, [visible]);
+  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}><View style={styles.backdrop}><View style={styles.card}><Text style={styles.title}>Opróżnić kosz?</Text><Text style={styles.text}>Trwale usuniesz wszystkie dokumenty z kosza ({count}) oraz ich pliki. Nie będzie można przywrócić ich z kosza.</Text><View style={styles.row}><TouchableOpacity disabled={busy} onPress={onCancel} style={styles.button}><Text style={styles.text}>Anuluj</Text></TouchableOpacity><TouchableOpacity disabled={busy || seconds > 0} onPress={onConfirm} style={[styles.button, styles.danger, (busy || seconds > 0) && styles.disabled]}><Text style={styles.text}>{busy ? 'Usuwanie…' : seconds > 0 ? `Poczekaj ${seconds} s` : 'Opróżnij kosz'}</Text></TouchableOpacity></View></View></View></Modal>;
+}
+const styles=StyleSheet.create({backdrop:{flex:1,backgroundColor:'rgba(0,0,0,0.8)',justifyContent:'center',padding:20},card:{backgroundColor:'#1e293b',borderColor:'#ef4444',borderWidth:1,borderRadius:14,padding:20},title:{fontSize:20,fontWeight:'bold',color:'white'},text:{color:'white',lineHeight:22,marginTop:12},row:{flexDirection:'row',justifyContent:'flex-end',gap:10,marginTop:16},button:{padding:10,borderRadius:8,backgroundColor:'#475569'},danger:{backgroundColor:'#b91c1c'},disabled:{opacity:0.5}});

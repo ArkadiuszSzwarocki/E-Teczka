@@ -12,13 +12,14 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.billingOwnerKey = billingOwnerKey;
 exports.requirePremium = requirePremium;
 exports.hasPremium = hasPremium;
+const planLedger_1 = require("../services/planLedger");
 function billingOwnerKey(response) {
     return String(response.locals.billingOwnerKey || 'desktop-local');
 }
+function planKey(response) { const key = billingOwnerKey(response); return key.startsWith('device:') && !response.locals.userId ? 'desktop-local' : key; }
 function requirePremium(prisma) {
     return (_request, response, next) => __awaiter(this, void 0, void 0, function* () {
-        const subscription = yield prisma.subscription.findUnique({ where: { ownerKey: billingOwnerKey(response) } });
-        const active = (subscription === null || subscription === void 0 ? void 0 : subscription.status) === 'active' || (subscription === null || subscription === void 0 ? void 0 : subscription.status) === 'trialing';
+        const active = (yield (0, planLedger_1.getPlan)(prisma, planKey(response))) === 'premium';
         if (active)
             return next();
         return response.status(402).json({ code: 'PREMIUM_REQUIRED', error: 'Ta funkcja wymaga aktywnego planu Premium.' });
@@ -26,7 +27,6 @@ function requirePremium(prisma) {
 }
 function hasPremium(prisma, response) {
     return __awaiter(this, void 0, void 0, function* () {
-        const subscription = yield prisma.subscription.findUnique({ where: { ownerKey: billingOwnerKey(response) } });
-        return (subscription === null || subscription === void 0 ? void 0 : subscription.status) === 'active' || (subscription === null || subscription === void 0 ? void 0 : subscription.status) === 'trialing';
+        return (yield (0, planLedger_1.getPlan)(prisma, planKey(response))) === 'premium';
     });
 }

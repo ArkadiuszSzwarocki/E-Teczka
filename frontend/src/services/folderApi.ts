@@ -1,0 +1,4 @@
+type Fetcher = typeof window.fetch;
+export async function createFolder(apiUrl: string, fetcher: Fetcher, name: string, parentId: number | null) { return fetcher(`${apiUrl}/api/folders`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, parentId }) }); }
+export async function renameFolder(apiUrl: string, fetcher: Fetcher, id: number, name: string) { return fetcher(`${apiUrl}/api/folders/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }); }
+export async function moveFolderRequest(apiUrl: string, fetcher: Fetcher, id: number, direction: 'up' | 'down') { return fetcher(`${apiUrl}/api/folders/${id}/move`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ direction }) }); }

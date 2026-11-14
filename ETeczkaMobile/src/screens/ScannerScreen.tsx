@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Alert, TextInput, Image, ActivityIndicator, ScrollView, Switch, Modal } from "react-native";
 import * as FileSystem from "expo-file-system/legacy";
 import { Ionicons } from "@expo/vector-icons";
@@ -30,6 +30,7 @@ export default function ScannerScreen() {
   const targetFolderId = routeFolderId || selectedFolderId;
   const [folderChoices, setFolderChoices] = useState<FolderSummary[]>([]);
   const [pages, setPages] = useState<string[]>([]);
+  const uploadId = useRef<string | null>(null);
   const [title, setTitle] = useState("");
   const [retentionValue, setRetentionValue] = useState("5");
   const [retentionUnit, setRetentionUnit] = useState<RetentionUnit>("years");
@@ -43,14 +44,15 @@ export default function ScannerScreen() {
 
   const persistDraft = async (nextPages: string[], nextTitle = title, nextRetentionValue = retentionValue, nextRetentionUnit = retentionUnit, nextRetentionEnabled = retentionEnabled) => {
     if (!targetFolderId || nextPages.length === 0) return;
-    await saveScanDraft({ folderId: targetFolderId, pages: nextPages, title: nextTitle, retentionValue: nextRetentionValue, retentionUnit: nextRetentionUnit, retentionEnabled: nextRetentionEnabled });
+    if (!uploadId.current) uploadId.current = 'draft_' + Date.now() + '_' + Math.random().toString(36).slice(2, 14);
+    await saveScanDraft({ folderId: targetFolderId, uploadId: uploadId.current, pages: nextPages, title: nextTitle, retentionValue: nextRetentionValue, retentionUnit: nextRetentionUnit, retentionEnabled: nextRetentionEnabled });
   };
 
   useEffect(() => {
     void (async () => {
       const draft = await loadScanDraft(targetFolderId);
       if (!draft) return;
-      setPages(draft.pages); setTitle(draft.title); setRetentionValue(draft.retentionValue); setRetentionUnit(draft.retentionUnit); setRetentionEnabled(Boolean(draft.retentionEnabled));
+      uploadId.current = draft.uploadId || null; setPages(draft.pages); setTitle(draft.title); setRetentionValue(draft.retentionValue); setRetentionUnit(draft.retentionUnit); setRetentionEnabled(Boolean(draft.retentionEnabled));
     })();
   }, [targetFolderId]);
 
@@ -126,13 +128,14 @@ export default function ScannerScreen() {
     }
     try {
       setIsProcessing(true);
-      await uploadScanDocument({ pages, folderId: targetFolderId, title: title.trim(), retentionEnabled, retentionValue, retentionUnit, onStage: setProcessingLabel });
+      if (!uploadId.current) { uploadId.current = 'draft_' + Date.now() + '_' + Math.random().toString(36).slice(2, 14); await persistDraft(pages); }
+      await uploadScanDocument({ uploadId: uploadId.current, pages, folderId: targetFolderId, title: title.trim(), retentionEnabled, retentionValue, retentionUnit, onStage: setProcessingLabel });
       await Promise.all(pages.map((uri) => FileSystem.deleteAsync(uri, { idempotent: true })));
       await clearScanDraft();
       Alert.alert("Dokument zapisany", `Scalono ${pages.length} ${pages.length === 1 ? "stronę" : "stron"} do jednego PDF i zapisano w kartotece.`, [
         { text: "OK", onPress: () => navigation.navigate("Kartoteki") },
       ]);
-      setPages([]);
+      setPages([]); uploadId.current = null;
     } catch (error: unknown) {
       Alert.alert("Nie udało się zapisać", errorMessage(error, "Spróbuj ponownie."));
     } finally {
@@ -145,7 +148,7 @@ export default function ScannerScreen() {
     const removed = pages[pageIndex]; const nextPages = pages.filter((_, index) => index !== pageIndex);
     if (removed) await FileSystem.deleteAsync(removed, { idempotent: true });
     setPages(nextPages);
-    if (nextPages.length) await persistDraft(nextPages); else await clearScanDraft();
+    if (nextPages.length) await persistDraft(nextPages); else { uploadId.current = null; await clearScanDraft(); }
   };
 
   if (pages.length) return (

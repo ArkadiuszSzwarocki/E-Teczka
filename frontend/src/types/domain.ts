@@ -4,6 +4,7 @@ export interface Tag {
   id: number;
   name: string;
   color: string;
+  inactive?: boolean;
 }
 
 export interface DocumentTag {
@@ -22,6 +23,7 @@ export interface DocumentRecord {
   createdAt: string;
   updatedAt?: string;
   fileSize?: number;
+  readOnly?: boolean;
   retentionEnabled: boolean;
   retentionValue: number;
   retentionUnit: RetentionUnit;

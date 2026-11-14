@@ -1,5 +1,6 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { getApiUrl, getAuthHeaders } from './localConnection';
+import { downloadSecureFile } from './secureFileTransfer';
 import type { RetentionUnit } from '../types/domain';
 
 export type PrinterDevice = { id: string; name: string; manufacturer?: string };
@@ -48,8 +49,8 @@ export async function scanPrinterPage(input: StartPrinterScanInput): Promise<str
     if (status.status !== 'completed') continue;
 
     input.onStage('Pobieranie strony do wersji roboczej…');
-    const localUri = `${FileSystem.documentDirectory}printer_draft_${Date.now()}.jpg`;
-    const downloaded = await FileSystem.downloadAsync(`${apiUrl}/api/printer-scan/${started.jobId}/file`, localUri, { headers });
+    const localUri = `${FileSystem.documentDirectory}printer_draft_${started.jobId}.jpg`;
+    const downloaded = await downloadSecureFile(`${apiUrl}/api/printer-scan/${started.jobId}/file`, localUri, headers);
     if (downloaded.status !== 200) throw new Error(`Komputer nie udostępnił skanu (kod ${downloaded.status}). Spróbuj ponownie; jeśli problem wróci, otwórz E‑Teczkę na komputerze.`);
     return localUri;
   }

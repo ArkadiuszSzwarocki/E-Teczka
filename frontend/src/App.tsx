@@ -1,65 +1,67 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import QRCode from 'react-qr-code';
 import DesktopAccessSettings from './DesktopAccessSettings';
 import DocumentPreviewModal from './components/DocumentPreviewModal';
+import DocumentThumbnail from './components/DocumentThumbnail';
+import HoverDocumentPreview from './components/HoverDocumentPreview';
+import PrinterScannerModal, { type InboxScan } from './components/PrinterScannerModal';
 import DesktopSidebar from './components/DesktopSidebar';
 import DesktopTopBar from './components/DesktopTopBar';
 import BillingHistoryModal from './components/BillingHistoryModal';
+import PlanUsageModal from './components/PlanUsageModal';
+import PlanLimitModal from './components/PlanLimitModal';
 import AuthModal from './components/AuthModal';
 import BillingPlansModal from './components/BillingPlansModalV2';
-import BackupModal from './components/BackupModal';
+import BackupModal, { type BackupSection } from './components/BackupModal';
+import OcrPanel from './components/OcrPanel';
 import TagManagerModal from './components/TagManagerModal';
 import RetentionModal, { type RetentionModalState } from './components/RetentionModal';
 import MoveDocumentModal from './components/MoveDocumentModal';
 import DestructiveActionModal, { type PendingAction } from './components/DestructiveActionModal';
-import BulkMoveModal from './components/BulkMoveModal';
+import BulkMoveModal, { type BulkRetention } from './components/BulkMoveModal';
 import { formatFileSize, getExpiryDate } from './utils/documentLifecycle';
 import { errorMessage } from './utils/errors';
 import type { DocumentPatch, DocumentRecord, FolderRecord, RetentionUnit, Tag } from './types/domain';
-import { getElectronIpc, isWiaDeviceList, isWiaScanResult, readAndRemoveFileBase64, type WiaDevice } from './services/electron';
+import { getElectronIpc, isWiaDeviceList, isWiaScanResult, readScanFileBase64, removeTemporaryScan, type WiaDevice } from './services/electron';
+import { confirmCheckout, getBillingStatus, startCheckout, type BillingDetails, type BillingTransaction } from './services/billing';
+import { generatePdfThumbnail, prepareUploadFiles, uploadDocuments, type UploadItem } from './services/documentUpload';
+import { buildFolderOptions, sortedChildren } from './utils/folderTree';
+import { getRetentionAlerts } from './services/retentionAlerts';
+import { deleteDocument, exportDocuments, patchDocument } from './services/documentApi';
+import { createFolder, moveFolderRequest, renameFolder } from './services/folderApi';
+import { preparePrinterPage, uploadPrinterDocument, type PrinterPage } from './services/scannerApi';
+import { createTag as createTagRequest, deleteTag as deleteTagRequest } from './services/tagApi';
+import { deleteFolderSafely, getFolderDeletePreview } from './services/folderActions';
+import { resolveApiBase } from './services/apiBase';
 
-const API_URL = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3000' : `${window.location.protocol}//${window.location.hostname}:3000`);
-const apiFetch = (input: RequestInfo | URL, init: RequestInit = {}) => {
+const API_URL = resolveApiBase(window.location, import.meta.env.VITE_API_URL);
+const defaultPrinterScanTitle = () => `Skan drukarki ${new Date().toLocaleString('pl-PL')}`;
+const apiFetch = async (input: RequestInfo | URL, init: RequestInit = {}) => {
   const requestUrl = new URL(typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url, window.location.href);
   const token = localStorage.getItem('eteczka_auth_token');
-  if (!token || requestUrl.origin !== new URL(API_URL).origin) return window.fetch(input, init);
-  const headers = new Headers(init.headers || {});
-  headers.set('Authorization', `Bearer ${token}`);
-  return window.fetch(input, { ...init, headers });
+  const headers = new Headers(init.headers || (input instanceof Request ? input.headers : undefined));
+  if (token && requestUrl.origin === new URL(API_URL).origin) headers.set('Authorization', `Bearer ${token}`);
+  const response = await window.fetch(input, { ...init, headers });
+  const method = (init.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
+  if (requestUrl.origin === new URL(API_URL).origin && (method !== 'GET' || /\/api\/backup\/oauth\/[^/]+\/start$/.test(requestUrl.pathname)) && (response.status === 403 || response.status === 402)) {
+    const data = await response.clone().json().catch(() => ({})) as { code?: string; error?: string; resetsAt?: string };
+    if (['PLAN_LIMIT_REACHED', 'OCR_UNAVAILABLE', 'PREMIUM_REQUIRED', 'DEVICE_LIMIT_REACHED'].includes(data.code || '')) {
+      const renewal = data.resetsAt ? ` Najbliższe zwolnienie limitu: ${new Date(data.resetsAt).toLocaleString('pl-PL')}.` : '';
+      window.dispatchEvent(new CustomEvent('eteczka-plan-limit', { detail: (data.error || 'Limit Twojego planu został wykorzystany.') + renewal }));
+    }
+  }
+  return response;
 };
-type ActionType = 'trash_doc' | 'delete_doc' | 'delete_folder';
-type UploadFile = {
-  file: File;
-  enabled: boolean;
-  value: number;
-  unit: RetentionUnit;
-};
-type BillingTransaction = {
-  id: number;
-  type: string;
-  status: string;
-  amount: number;
-  currency: string;
-  description?: string | null;
-  occurredAt: string;
-};
-type BillingDetails = {
-  plan: 'free' | 'premium';
-  status: string;
-  interval?: 'month' | 'year' | null;
-  intervalCount?: number;
-  amount?: number;
-  currency?: string;
-  renewalAt?: string | null;
-  cancellationPolicy?: string;
-};
-
+type ActionType = 'trash_doc' | 'delete_doc' | 'delete_folder' | 'empty_trash';
 export default function App() {
   const fetch = apiFetch;
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [folders, setFolders] = useState<FolderRecord[]>([]);
-  const [scannerFiles, setScannerFiles] = useState<unknown[]>([]);
+  const [foldersUnavailable, setFoldersUnavailable] = useState(false);
+  const [scannerFiles, setScannerFiles] = useState<InboxScan[]>([]);
   
-  const [filesToUpload, setFilesToUpload] = useState<UploadFile[]>([]);
+  const [filesToUpload, setFilesToUpload] = useState<UploadItem[]>([]);
+  const [uploadReport, setUploadReport] = useState<{ saved: number; folder: string; skipped: Array<{ name: string; existingTitle: string }> } | null>(null);
   const [folderId, setFolderId] = useState<string>('');
   const [physicalLocation, setPhysicalLocation] = useState<string>('');
   const [isUploading, setIsUploading] = useState<boolean>(false);
@@ -72,11 +74,14 @@ export default function App() {
   const [activeView, setActiveView] = useState<string>('dashboard');
   const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [ocrSearchIds, setOcrSearchIds] = useState<number[]>([]);
+  const [ocrDocumentId, setOcrDocumentId] = useState<number | null>(null);
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
   
   const [previewDoc, setPreviewDoc] = useState<DocumentRecord | null>(null);
   const [previewZoom, setPreviewZoom] = useState<number>(1);
   const [hoverDocId, setHoverDocId] = useState<number | null>(null);
+  const [hoverAnchor, setHoverAnchor] = useState<HTMLElement | null>(null);
   const [selectedDocs, setSelectedDocs] = useState<number[]>([]);
   const [documentMenuId, setDocumentMenuId] = useState<number | null>(null);
   const [tags, setTags] = useState<Tag[]>([]);
@@ -86,20 +91,29 @@ export default function App() {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isBillingPlansOpen, setIsBillingPlansOpen] = useState(false);
-  const [billingPlan, setBillingPlan] = useState<'free' | 'premium'>('free');
+  const [isPlanUsageOpen, setIsPlanUsageOpen] = useState(false);
+  const [planLimitMessage, setPlanLimitMessage] = useState('');
+  useEffect(() => { const handler = (event: Event) => setPlanLimitMessage(String((event as CustomEvent<string>).detail)); window.addEventListener('eteczka-plan-limit', handler); return () => window.removeEventListener('eteczka-plan-limit', handler); }, []);
+  const [billingIsDev, setBillingIsDev] = useState(false);
+  const [billingPlan, setBillingPlan] = useState<'free' | 'standard' | 'premium'>('free');
   const [billingDetails, setBillingDetails] = useState<BillingDetails | null>(null);
   const [billingDetailsBusy, setBillingDetailsBusy] = useState(false);
   const [billingBusy, setBillingBusy] = useState(false);
   const [billingCancelBusy, setBillingCancelBusy] = useState(false);
   const [isBillingCancelOpen, setIsBillingCancelOpen] = useState(false);
+  const [billingCancelPreview, setBillingCancelPreview] = useState<{ accessUntil: string; refundedAmount: number; refundedMonths: number; currency: string; alreadyScheduled: boolean; restrictedDocuments: number; inactiveTags: number } | null>(null);
+  const [billingCancelPreviewError, setBillingCancelPreviewError] = useState('');
+  const [billingCancelPreviewBusy, setBillingCancelPreviewBusy] = useState(false);
   const [isBillingHistoryOpen, setIsBillingHistoryOpen] = useState(false);
-  const [isBackupOpen, setIsBackupOpen] = useState(false);
+  const [backupSection, setBackupSection] = useState<BackupSection | null>(null);
   const [billingHistory, setBillingHistory] = useState<BillingTransaction[]>([]);
   const [billingHistoryBusy, setBillingHistoryBusy] = useState(false);
   
   const [isNotificationsOpen, setIsNotificationsOpen] = useState<boolean>(false);
   const [pairingCode, setPairingCode] = useState<string>('');
   const [localAddresses, setLocalAddresses] = useState<string[]>([]);
+  const [localCaFingerprint, setLocalCaFingerprint] = useState('');
+  const [phoneConnected, setPhoneConnected] = useState(false);
   const [isPairingGuideOpen, setIsPairingGuideOpen] = useState<boolean>(false);
   
   const [renamingDocId, setRenamingDocId] = useState<number | null>(null);
@@ -117,17 +131,22 @@ export default function App() {
   
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [actionTimer, setActionTimer] = useState<number | null>(null);
-  const [folderDeletePreview, setFolderDeletePreview] = useState<{ id: number; name: string; documentCount: number } | null>(null);
+  const [folderDeletePreview, setFolderDeletePreview] = useState<{ id: number; name: string; documentCount: number; archivedCount: number; trashedCount: number } | null>(null);
   const [transferFolderId, setTransferFolderId] = useState('');
   const [isAccessSettingsOpen, setIsAccessSettingsOpen] = useState(false);
   const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState(false);
-  const [isWiaScanOpen, setIsWiaScanOpen] = useState(false);
   const [wiaFolderId, setWiaFolderId] = useState('');
   const [wiaDevices, setWiaDevices] = useState<WiaDevice[]>([]);
   const [wiaDeviceId, setWiaDeviceId] = useState('');
   const [isWiaLoadingDevices, setIsWiaLoadingDevices] = useState(false);
   const [isWiaScanning, setIsWiaScanning] = useState(false);
   const [wiaStage, setWiaStage] = useState('');
+  const [wiaPendingScanPath, setWiaPendingScanPath] = useState<string | null>(null);
+  const [wiaPages, setWiaPages] = useState<PrinterPage[]>([]);
+  const [wiaTitle, setWiaTitle] = useState('');
+  const [wiaRetentionEnabled, setWiaRetentionEnabled] = useState(true);
+  const [wiaRetentionValue, setWiaRetentionValue] = useState(5);
+  const [wiaRetentionUnit, setWiaRetentionUnit] = useState<'years' | 'months' | 'days'>('years');
 
   const hoverTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
 
@@ -135,16 +154,26 @@ export default function App() {
 
   const fetchData = useCallback(async () => {
     try {
+      const fetchList = async (path: string): Promise<unknown[] | null> => {
+        try {
+          const response = await fetch(`${API_URL}${path}`);
+          const payload: unknown = await response.json();
+          return response.ok && Array.isArray(payload) ? payload : null;
+        } catch { return null; }
+      };
       const [resDocs, resFolders, resScanner, resTags, resBilling] = await Promise.all([
-        fetch(`${API_URL}/api/documents`).then(r => r.json()).catch(() => []),
-        fetch(`${API_URL}/api/folders`).then(r => r.json()).catch(() => []),
-        fetch(`${API_URL}/api/scanner`).then(r => r.json()).catch(() => []),
-        fetch(`${API_URL}/api/tags`).then(r => r.json()).catch(() => []),
-        fetch(`${API_URL}/api/billing/status`).then(r => r.ok ? r.json() : null).catch(() => null)
+        fetchList('/api/documents'),
+        fetchList('/api/folders'),
+        fetchList('/api/scanner'),
+        fetchList('/api/tags'),
+        getBillingStatus(API_URL, fetch).catch(() => null)
       ]);
-      setDocuments(resDocs); setFolders(resFolders); setScannerFiles(resScanner); setTags(resTags);
-      if (resBilling?.plan === 'premium') setBillingPlan('premium');
-      else setBillingPlan('free');
+      if (resDocs) setDocuments(resDocs as DocumentRecord[]);
+      if (resFolders) setFolders(resFolders as FolderRecord[]);
+      setFoldersUnavailable(resFolders === null);
+      if (resScanner) setScannerFiles(resScanner as InboxScan[]);
+      if (resTags) setTags(resTags as Tag[]);
+      if (resBilling) { setBillingPlan(resBilling.plan === 'premium' || resBilling.plan === 'standard' ? resBilling.plan : 'free'); setBillingIsDev(Boolean(resBilling.developmentOverride)); }
     } catch {}
   }, []);
 
@@ -152,32 +181,40 @@ export default function App() {
     setIsAuthOpen(false); setIsUserMenuOpen(false); showToast(`Zalogowano jako ${user.email}.`, 'success'); void fetchData();
   }, [fetchData, showToast]);
 
-  const openBillingCheckout = useCallback(async (plan: 'standard' | 'premium', interval: 'monthly' | 'yearly') => {
+  const openBillingCheckout = useCallback(async (plan: 'standard' | 'premium', interval: 'monthly' | 'yearly', acceptReplacement = false, fromLimit = false) => {
     setBillingBusy(true);
     try {
-      const response = await fetch(`${API_URL}/api/billing/checkout`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan, interval }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || typeof payload.url !== 'string') {
-        throw new Error(payload.error || 'Nie udało się uruchomić płatności.');
-      }
-      window.open(payload.url, '_blank', 'noopener,noreferrer');
+      const checkout = await startCheckout(API_URL, fetch, plan, interval, acceptReplacement);
+      if (checkout.kind === 'upgrade') localStorage.setItem('eteczka_pending_upgrade', String(Date.now()));
+      else localStorage.setItem('eteczka_pending_checkout', JSON.stringify({ sessionId: checkout.sessionId, startedAt: Date.now() }));
+      window.open(checkout.url, '_blank', 'noopener,noreferrer');
       setIsUserMenuOpen(false);
       showToast('Otworzono bezpieczną stronę płatności Stripe.', 'success');
     } catch (error: unknown) {
-      showToast(errorMessage(error, 'Nie udało się uruchomić płatności Stripe.'), 'error');
+      const message = errorMessage(error, 'Nie udało się uruchomić płatności Stripe.');
+      if (fromLimit) setPlanLimitMessage(message); else showToast(message, 'error');
     } finally {
       setBillingBusy(false);
     }
   }, [showToast]);
 
+  useEffect(() => {
+    let active = true; let busy = false;
+    const sync = async () => {
+      const started = Number(localStorage.getItem('eteczka_pending_upgrade') || 0);
+      if (!started || busy) return;
+      if (Date.now() - started > 30 * 60 * 1000) { localStorage.removeItem('eteczka_pending_upgrade'); return; }
+      busy = true;
+      try { const response = await apiFetch(`${API_URL}/api/billing/sync-upgrade`, { method: 'POST' }); const result = await response.json(); if (active && result.upgraded) { localStorage.removeItem('eteczka_pending_upgrade'); await fetchData(); showToast('Plan Premium jest aktywny.', 'success'); } } catch { /* Spróbuj przy kolejnym odświeżeniu. */ } finally { busy = false; }
+    };
+    void sync(); const timer = window.setInterval(() => void sync(), 10000); window.addEventListener('focus', sync);
+    return () => { active = false; window.clearInterval(timer); window.removeEventListener('focus', sync); };
+  }, [fetchData, showToast]);
+
   const toggleUserMenu = useCallback(async () => {
     const willOpen = !isUserMenuOpen;
     setIsUserMenuOpen(willOpen);
-    if (!willOpen || billingPlan !== 'premium') return;
+    if (!willOpen || billingPlan === 'free') return;
     setBillingDetailsBusy(true);
     try {
       const response = await fetch(`${API_URL}/api/billing/manage`);
@@ -188,18 +225,36 @@ export default function App() {
     }
   }, [billingPlan, isUserMenuOpen]);
 
+  const openBillingCancel = useCallback(async () => {
+    setIsUserMenuOpen(false);
+    setIsBillingCancelOpen(true);
+    setBillingCancelPreview(null);
+    setBillingCancelPreviewError('');
+    setBillingCancelPreviewBusy(true);
+    try {
+      const response = await fetch(`${API_URL}/api/billing/cancel-preview`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Nie udało się obliczyć zwrotu.');
+      setBillingCancelPreview(payload);
+    } catch (error: unknown) {
+      setBillingCancelPreviewError(errorMessage(error, 'Nie udało się obliczyć zwrotu.'));
+    } finally {
+      setBillingCancelPreviewBusy(false);
+    }
+  }, []);
+
   const cancelBilling = useCallback(async () => {
     setBillingCancelBusy(true);
     try {
       const response = await fetch(`${API_URL}/api/billing/cancel-subscription`, { method: 'POST' });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || 'Nie udało się anulować Premium.');
-      setBillingPlan('free');
+      if (!response.ok) throw new Error(payload.error || 'Nie udało się anulować planu.');
       setBillingDetails(null);
       setIsBillingCancelOpen(false);
       const amount = typeof payload.refundedAmount === 'number' ? (payload.refundedAmount / 100).toFixed(2) : '0.00';
       const months = typeof payload.refundedMonths === 'number' ? payload.refundedMonths : 0;
-      showToast(months > 0 ? `Premium anulowane. Zwrot: ${amount} zł za ${months} mies.` : 'Premium anulowane. Bieżący miesiąc pozostaje rozliczony.', 'success');
+      const until = payload.accessUntil ? new Date(payload.accessUntil).toLocaleDateString('pl-PL') : 'końca opłaconego miesiąca';
+      showToast(months > 0 ? `Odnowienie wyłączone. Dostęp do ${until}. Zwrot ${amount} zł w toku.` : `Odnowienie wyłączone. Dostęp do ${until}.`, 'success');
       await fetchData();
     } catch (error: unknown) {
       showToast(errorMessage(error, 'Nie udało się anulować Premium.'), 'error');
@@ -225,13 +280,51 @@ export default function App() {
   }, [showToast]);
 
   useEffect(() => {
-    const initialFetch = window.setTimeout(() => { void fetchData(); }, 0);
+    let confirmingPending = false;
+    const confirmPendingCheckout = async () => {
+      if (confirmingPending) return;
+      const raw = localStorage.getItem('eteczka_pending_checkout');
+      if (!raw) return;
+      let pending: { sessionId: string; startedAt: number };
+      try { pending = JSON.parse(raw); } catch { localStorage.removeItem('eteczka_pending_checkout'); return; }
+      if (typeof pending.sessionId !== 'string' || typeof pending.startedAt !== 'number' || Date.now() - pending.startedAt > 60 * 60_000) {
+        localStorage.removeItem('eteczka_pending_checkout');
+        return;
+      }
+      confirmingPending = true;
+      try {
+        await confirmCheckout(API_URL, fetch, pending.sessionId);
+        localStorage.removeItem('eteczka_pending_checkout');
+        showToast('Płatność potwierdzona. Plan został aktywowany.', 'success');
+        await fetchData();
+      } catch { /* Payment may still be in progress; retry while the session is recent. */ }
+      finally { confirmingPending = false; }
+    };
+    const params = new URLSearchParams(window.location.search);
+    const billingSuccess = params.get('billing') === 'success';
+    const sessionId = params.get('session_id');
+    if (billingSuccess && sessionId) {
+      void (async () => {
+        try {
+          await confirmCheckout(API_URL, fetch, sessionId);
+          window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.hash}`);
+          showToast('Płatność potwierdzona. Plan został aktywowany.', 'success');
+        } catch (error: unknown) {
+          showToast(errorMessage(error, 'Płatność została wykonana, ale potwierdzenie jeszcze trwa.'), 'error');
+        } finally {
+          await fetchData();
+        }
+      })();
+    }
+    const initialFetch = window.setTimeout(() => { void fetchData(); void confirmPendingCheckout(); }, 0);
     const interval = window.setInterval(() => { void fetchData(); }, 5000);
+    const pendingInterval = window.setInterval(() => { void confirmPendingCheckout(); }, 10_000);
     return () => {
       window.clearTimeout(initialFetch);
       window.clearInterval(interval);
+      window.clearInterval(pendingInterval);
     };
-  }, [fetchData]);
+  }, [fetchData, showToast]);
 
   useEffect(() => {
     const ipc = getElectronIpc();
@@ -251,17 +344,21 @@ export default function App() {
         setPairingCode(data.code || '');
       } catch { setPairingCode(''); }
     };
+    const fetchPairingStatus = async () => { try { const response = await fetch(`${API_URL}/api/pairing-status`); const data = await response.json(); setPhoneConnected(Boolean(data.phoneConnected)); } catch { setPhoneConnected(false); } };
     fetchPairingCode();
+    fetchPairingStatus();
     const interval = setInterval(fetchPairingCode, 30000);
-    return () => clearInterval(interval);
+    const statusInterval = setInterval(fetchPairingStatus, 5000);
+    return () => { clearInterval(interval); clearInterval(statusInterval); };
   }, []);
 
   useEffect(() => {
     const fetchNetworkInfo = async () => {
+      try { const result = await fetch(`${API_URL}/api/local-ca-info`); const info = await result.json(); if (result.ok && typeof info.fingerprint === 'string') setLocalCaFingerprint(info.fingerprint); } catch { setLocalCaFingerprint(''); }
       try {
         const response = await fetch(`${API_URL}/api/network-info`);
         const data = await response.json();
-        const port = data.port || 3000;
+        const port = data.port || 3443;
         setLocalAddresses((data.addresses || []).map((address: string) => `${address}:${port}`));
       } catch { setLocalAddresses([]); }
     };
@@ -270,50 +367,23 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  const getDocExpiryInfo = (doc: DocumentRecord) => {
-    const expiry = getExpiryDate(doc);
-    if (!expiry) return { diffMs: 0, diffDays: 0, diffMonths: 0, diffMinutes: 0 };
-    const now = new Date();
-    const diffMs = expiry.getTime() - now.getTime();
-    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-    const diffMonths = Math.round(diffDays / 30);
-    const diffMinutes = Math.ceil(diffMs / (1000 * 60));
-
-    return { diffMs, diffDays, diffMonths, diffMinutes };
-  };
-
-  const getRetentionNotifications = () => {
-    const alerts: { id: number, title: string; text: string; type: 'warning' | 'danger' }[] = [];
-    documents.filter(d => d.retentionEnabled !== false && !d.isDeleted && !d.isArchived).forEach(doc => {
-      const { diffMs, diffDays, diffMonths, diffMinutes } = getDocExpiryInfo(doc);
-      if (diffMs > 0) {
-        if (diffMinutes <= 60 && diffDays === 1) alerts.push({ id: doc.id, title: doc.title, text: `Wygasa za ${diffMinutes} min!`, type: 'danger' });
-        else if (diffDays >= 1 && diffDays <= 15) alerts.push({ id: doc.id, title: doc.title, text: `Termin życia: ${diffDays} ${diffDays === 1 ? 'dzień' : 'dni'}.`, type: 'danger' });
-        else if (diffMonths >= 1 && diffMonths <= 6) alerts.push({ id: doc.id, title: doc.title, text: `Termin życia: ${diffMonths} ${diffMonths === 1 ? 'miesiąc' : 'mies.'}.`, type: 'warning' });
-      }
-    });
-    return alerts.sort((a) => a.type === 'danger' ? -1 : 1);
-  };
-  const retentionAlerts = getRetentionNotifications();
+  const retentionAlerts = getRetentionAlerts(documents);
   const createTag = async () => {
-    if (billingPlan !== 'premium') { showToast('Tagi są dostępne w planie Premium.', 'error'); return; }
     const name = newTagName.trim(); if (!name) return;
-    const response = await fetch(`${API_URL}/api/tags`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, color: newTagColor }) });
-    if (!response.ok) { showToast('Nie udało się dodać tagu.', 'error'); return; }
+    const response = await createTagRequest(API_URL, fetch, name, newTagColor);
+    if (!response.ok) { const details = await response.json().catch(() => ({})); if (details.code !== 'PLAN_LIMIT_REACHED') showToast(details.error || 'Nie udało się dodać tagu.', 'error'); return; }
     setNewTagName(''); await fetchData(); showToast('Dodano tag.', 'success');
   };
 
-  const initiateAction = (type: ActionType, id: number, name: string, transferId?: number | null) => { setPendingAction({type, id, name, transferFolderId: transferId}); setActionTimer(10); };
+  const initiateAction = (type: ActionType, id: number, name: string, transferId?: number | null, archivedCount = 0, trashedCount = 0) => { setPendingAction({type, id, name, transferFolderId: transferId, archivedCount, trashedCount}); setActionTimer(5); };
 
   const requestFolderDelete = async (id: number, name: string) => {
     try {
-      const response = await fetch(`${API_URL}/api/folders/${id}/delete-preview`);
-      if (!response.ok) throw new Error('Nie udało się sprawdzić kartoteki.');
-      const preview = await response.json();
-      if (preview.documentCount > 0) {
+      const preview = await getFolderDeletePreview(API_URL, fetch, id);
+      if (preview.documentCount + preview.archivedCount + preview.trashedCount > 0) {
         setTransferFolderId('');
-        setFolderDeletePreview({ id, name, documentCount: preview.documentCount });
-      } else initiateAction('delete_folder', id, name);
+        setFolderDeletePreview({ id, name, documentCount: preview.documentCount, archivedCount: preview.archivedCount || 0, trashedCount: preview.trashedCount || 0 });
+      } else initiateAction('delete_folder', id, name, null, preview.archivedCount || 0, preview.trashedCount || 0);
     } catch (error: unknown) { showToast(errorMessage(error, 'Nie udało się sprawdzić kartoteki.'), 'error'); }
   };
 
@@ -322,12 +392,11 @@ export default function App() {
     const {type, id} = pendingAction;
     setPendingAction(null); setActionTimer(null);
     try {
-      if (type === 'trash_doc') { await fetch(`${API_URL}/api/documents/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isDeleted: true }) }); showToast("Przeniesiono do kosza", "success"); } 
-      else if (type === 'delete_doc') { await fetch(`${API_URL}/api/documents/${id}`, { method: 'DELETE' }); showToast("Usunięto trwale", "success"); } 
+      if (type === 'trash_doc') { const response = await patchDocument(API_URL, fetch, id, { isDeleted: true }); if (!response.ok) throw new Error('Nie udało się przenieść dokumentu do kosza.'); showToast("Przeniesiono do kosza", "success"); }
+      else if (type === 'delete_doc') { const response = await deleteDocument(API_URL, fetch, id); const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Nie udało się usunąć dokumentu.'); showToast(result.failedFiles ? 'Usunięto dokument z bazy, ale nie udało się usunąć pliku z dysku.' : 'Usunięto trwale', result.failedFiles ? 'error' : 'success'); }
+      else if (type === 'empty_trash') { const response = await fetch(`${API_URL}/api/documents/empty-trash`, { method: 'POST' }); const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Nie udało się opróżnić kosza.'); clearSelectedDocs(); showToast(result.failedFiles ? `Usunięto ${result.deleted} dokumentów, ale ${result.failedFiles} plików nie udało się usunąć z dysku.` : `Kosz opróżniony: usunięto ${result.deleted} dokumentów.`, result.failedFiles ? 'error' : 'success'); }
       else if (type === 'delete_folder') {
-        const response = await fetch(`${API_URL}/api/folders/${id}/delete-safely`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ transferFolderId: pendingAction.transferFolderId }) });
-        const result = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(result.error || 'Nie udało się usunąć kartoteki.');
+        await deleteFolderSafely(API_URL, fetch, id, pendingAction.transferFolderId);
         showToast(pendingAction.transferFolderId ? 'Dokumenty przeniesiono, a kartotekę usunięto.' : 'Kartoteka usunięta.', 'success');
         setActiveView('dashboard'); setSelectedFolderId(null);
       }
@@ -336,38 +405,30 @@ export default function App() {
   }, [fetchData, pendingAction, showToast]);
 
   useEffect(() => {
-    if (actionTimer === null) return;
-    if (actionTimer === 0 && pendingAction) {
-      const execution = window.setTimeout(() => { void executeAction(); }, 0);
-      return () => window.clearTimeout(execution);
-    }
-    const timer = window.setTimeout(() => setActionTimer(value => value === null ? null : value - 1), 1000);
+    if (actionTimer === null || actionTimer <= 0) return;
+    const timer = window.setTimeout(() => setActionTimer(value => value === null ? null : Math.max(0, value - 1)), 1000);
     return () => window.clearTimeout(timer);
-  }, [actionTimer, pendingAction, executeAction]);
+  }, [actionTimer]);
 
   const updateDocument = async (id: number, data: DocumentPatch) => {
     try {
-      const res = await fetch(`${API_URL}/api/documents/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
-      if (res.ok) { showToast("Wykonano!", "success"); await fetchData(); }
+      const res = await patchDocument(API_URL, fetch, id, data);
+      if (!res.ok) throw new Error('Serwer odrzucił zmianę dokumentu.');
+      showToast("Wykonano!", "success"); await fetchData();
     } catch { showToast("Błąd zapisu.", "error"); }
   };
 
   const handleRetentionUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!retentionModal.docId) return;
-    const restoreData = retentionModal.restoreFrom === 'archive'
-      ? { isArchived: false }
-      : retentionModal.restoreFrom === 'trash'
-        ? { isDeleted: false, deletedAt: null }
-        : {};
-    await updateDocument(retentionModal.docId, {
-      ...restoreData,
-      retentionEnabled: retentionModal.restoreFrom ? true : retentionModal.enabled,
-      retentionValue: retentionModal.value,
-      retentionUnit: retentionModal.unit,
-      ...(retentionModal.restoreFrom ? { createdAt: new Date().toISOString() } : {}),
-    });
-    setRetentionModal({ ...retentionModal, isOpen: false });
+    if (!Number.isSafeInteger(retentionModal.value) || retentionModal.value < 1) { showToast('Podaj dodatnią liczbę całkowitą dla terminu życia.', 'error'); return; }
+    if (retentionModal.restoreFrom && !retentionModal.targetFolderId) { showToast('Wybierz podkartotekę docelową.', 'error'); return; }
+    try {
+      const restoreData = retentionModal.restoreFrom ? { isArchived: false, isDeleted: false, deletedAt: null, folderId: Number(retentionModal.targetFolderId), createdAt: new Date().toISOString() } : {};
+      const response = await patchDocument(API_URL, fetch, retentionModal.docId, { ...restoreData, retentionEnabled: retentionModal.enabled, retentionValue: retentionModal.value, retentionUnit: retentionModal.unit });
+      if (!response.ok) { const result = await response.json().catch(() => ({})); throw new Error(result.error || 'Nie udało się zapisać dokumentu.'); }
+      setRetentionModal({ ...retentionModal, isOpen: false }); showToast(retentionModal.restoreFrom ? 'Dokument przywrócono.' : 'Zapisano zmianę.', 'success'); await fetchData();
+    } catch (error: unknown) { showToast(errorMessage(error, 'Nie udało się zapisać dokumentu.'), 'error'); }
   };
 
   const beginRestore = (doc: Pick<DocumentRecord, 'id'>, restoreFrom: 'archive' | 'trash') => {
@@ -378,110 +439,107 @@ export default function App() {
       unit: 'years',
       enabled: true,
       restoreFrom,
+      targetFolderId: '',
     });
-  };
-
-  const generatePdfThumbnail = async (file: File): Promise<string | null> => {
-    try {
-      const arrayBuffer = await file.arrayBuffer();
-      const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.js');
-      pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      const page = await pdf.getPage(1);
-      const viewport = page.getViewport({ scale: 0.5 });
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return null;
-      canvas.width = viewport.width; canvas.height = viewport.height;
-      await page.render({ canvasContext: ctx, viewport: viewport }).promise;
-      return canvas.toDataURL('image/jpeg', 0.8);
-    } catch { return null; }
   };
 
   const handleBatchUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (filesToUpload.length === 0 || !folderId) return showToast("Wybierz pliki i kartotekę!", "error");
+    if (foldersUnavailable) return showToast('Brak połączenia z serwerem. Odśwież kartoteki i spróbuj ponownie.', 'error');
     if (isMergeMode && !mergedTitle) return showToast("Podaj tytuł PDF!", "error");
     setIsUploading(true);
     try {
-      const filePromises = filesToUpload.map((item) => {
-        return new Promise((resolve) => { void (async () => {
-          const file = item.file;
-          let thumbnail: string | null = null;
-          if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
-            thumbnail = await generatePdfThumbnail(file);
-            const reader = new FileReader(); 
-            reader.onload = (ev) => resolve({ name: file.name, data: ev.target?.result, thumbnail }); 
-            reader.readAsDataURL(file); return;
-          }
-          const reader = new FileReader();
-          reader.onload = (event) => {
-            const img = new Image(); img.onload = () => {
-              const canvas = document.createElement('canvas');
-              let width = img.width, height = img.height; const MAX_SIZE = 1600;
-              if (width > height && width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; } 
-              else if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; }
-              canvas.width = width; canvas.height = height;
-              const ctx = canvas.getContext('2d'); ctx?.drawImage(img, 0, 0, width, height);
-              resolve({ name: file.name.replace(/\.[^/.]+$/, "") + ".jpg", data: canvas.toDataURL('image/jpeg', 0.8), thumbnail: canvas.toDataURL('image/jpeg', 0.1) });
-            }; img.src = event.target?.result as string;
-          }; reader.readAsDataURL(file);
-        })(); });
-      });
-      const convertedFiles = await Promise.all(filePromises);
-      const res = await fetch(`${API_URL}/api/documents/upload-base64`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          files: convertedFiles, folderId: Number(folderId), physicalLocation: physicalLocation || null,
-          retentions: filesToUpload.map(item => ({ enabled: item.enabled, value: item.value, unit: item.unit })),
-          isMerge: isMergeMode, mergedTitle, mergedRetention: { enabled: mergedRetentionEnabled, value: mergedRetentionVal, unit: mergedRetentionUnit }
-        })
-      });
-      if (res.ok) {
-        showToast("Zarchiwizowano!", "success");
-        setFilesToUpload([]); setPhysicalLocation(''); setMergedTitle(''); setActiveView('dashboard'); await fetchData();
-      } else showToast("Błąd zapisu.", "error");
-    } catch { showToast("Błąd.", "error"); }
-    setIsUploading(false);
+      const convertedFiles = await prepareUploadFiles(filesToUpload, generatePdfThumbnail);
+      const result = await uploadDocuments(API_URL, fetch, convertedFiles, filesToUpload, Number(folderId), { physicalLocation: physicalLocation || null, isMerge: isMergeMode, mergedTitle, mergedRetention: { enabled: mergedRetentionEnabled, value: mergedRetentionVal, unit: mergedRetentionUnit } });
+      if (result.skippedDuplicates?.length) setUploadReport({ saved: result.savedDocs?.length || 0, folder: folders.find(folder => folder.id === Number(folderId))?.name || 'wybranej podkartotece', skipped: result.skippedDuplicates });
+      else showToast("Wgrano dokumenty.", "success");
+      setFilesToUpload([]); setPhysicalLocation(''); setMergedTitle(''); setActiveView('dashboard'); await fetchData();
+    } catch (error: unknown) { showToast(errorMessage(error, "Nie udało się wgrać plików."), "error"); }
+    finally { setIsUploading(false); }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) setFilesToUpload(prev => [...prev, ...Array.from(e.target.files!).map(file => ({ file, enabled: true, value: 5, unit: 'years' as RetentionUnit }))]);
   };
   const openWiaScanner = async () => {
-    if (billingPlan !== 'premium') return showToast('Skanowanie z drukarki wymaga planu Premium.', 'error');
     const ipc = getElectronIpc();
     if (!ipc) return showToast('Skanowanie WIA działa w zainstalowanej aplikacji desktopowej.', 'error');
-    setIsWiaScanOpen(true); setWiaStage('Wyszukiwanie skanerów…'); setIsWiaLoadingDevices(true); setWiaDevices([]); setWiaDeviceId('');
+    if (activeView === 'scanner') return;
+    setActiveView('scanner'); setWiaStage('Wyszukiwanie skanerów…'); setIsWiaLoadingDevices(true); setWiaDevices([]); setWiaDeviceId('');
+    if (!wiaPages.length && !wiaPendingScanPath) setWiaTitle(defaultPrinterScanTitle());
     try {
       const response = await ipc.invoke('eteczka-wia-devices');
       const devices = isWiaDeviceList(response) ? response : [];
       setWiaDevices(devices);
-      if (devices.length === 1) setWiaDeviceId(devices[0].id);
+      const remembered = localStorage.getItem('eteczka_default_scanner');
+      const defaultPrinter = await ipc.invoke('eteczka-default-printer');
+      const printerName = typeof defaultPrinter === 'string' ? defaultPrinter.toLowerCase().replace(/[^a-z0-9]/g, '').replace(/(series|lan|network|usb)$/g, '') : '';
+      const match = devices.find(device => device.id === remembered) || (printerName ? devices.find(device => { const name = device.name.toLowerCase().replace(/\s*\[.*$/, '').replace(/[^a-z0-9]/g, '').replace(/(series|lan|network|usb)$/g, ''); return name.length > 5 && (printerName.includes(name) || name.includes(printerName)); }) : undefined) || (devices.length === 1 ? devices[0] : undefined);
+      if (match) setWiaDeviceId(match.id);
       setWiaStage(devices.length ? 'Wybierz skaner i kartotekę docelową.' : 'Nie znaleziono skanera WIA.');
     } catch (error: unknown) { setWiaStage(errorMessage(error, 'Nie udało się odczytać listy skanerów.')); }
     finally { setIsWiaLoadingDevices(false); }
   };
 
   const scanFromPrinter = async () => {
-    if (billingPlan !== 'premium') return showToast('Skanowanie z drukarki wymaga planu Premium.', 'error');
-    if (!wiaFolderId) return showToast('Wybierz podkartotekę docelową.', 'error');
-    if (!wiaDeviceId) return showToast('Wybierz skaner.', 'error');
+    if (!wiaDeviceId && !wiaPendingScanPath) return showToast('Wybierz skaner.', 'error');
+    if (wiaPages.length >= 20) return showToast('Jeden dokument może mieć najwyżej 20 stron.', 'error');
     const ipc = getElectronIpc();
     if (!ipc) return showToast('Skanowanie WIA działa w zainstalowanej aplikacji desktopowej.', 'error');
-    setIsWiaScanning(true); setWiaStage('Przygotowanie skanowania…');
+    setIsWiaScanning(true); setWiaStage(`Skanowanie strony ${wiaPages.length + 1}…`);
+    let scanPath = wiaPendingScanPath;
     try {
-      const scanResponse = await ipc.invoke('eteczka-wia-scan', wiaDeviceId);
-      if (!isWiaScanResult(scanResponse)) throw new Error('Nieprawidłowa odpowiedź skanera.');
-      const result = scanResponse;
-      if (!result?.ok || !result.path) throw new Error('Nie odebrano obrazu ze skanera.');
-      setWiaStage('Zapisywanie dokumentu…');
-      const base64 = readAndRemoveFileBase64(result.path);
-      const response = await fetch(`${API_URL}/api/documents/upload-base64`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ feature: 'printer-scan', files: [{ name: `Skan drukarki ${new Date().toLocaleString('pl-PL')}.jpg`, data: `data:image/jpeg;base64,${base64}` }], folderId: Number(wiaFolderId), retentions: [{ enabled: true, value: 5, unit: 'years' }] }) });
-      if (!response.ok) throw new Error('Nie udało się zapisać skanu do wskazanej kartoteki.');
-      setIsWiaScanOpen(false); setWiaFolderId(''); setWiaDeviceId(''); await fetchData(); showToast('Skan z drukarki zapisany w kartotece.', 'success');
-    } catch (error: unknown) { showToast(errorMessage(error, 'Nie udało się zeskanować dokumentu.'), 'error'); }
+      if (!scanPath) {
+        const scanResponse = await ipc.invoke('eteczka-wia-scan', wiaDeviceId);
+        if (!isWiaScanResult(scanResponse)) throw new Error('Nieprawidłowa odpowiedź skanera.');
+        if (!scanResponse.ok || !scanResponse.path) throw new Error('Nie odebrano obrazu ze skanera.');
+        scanPath = scanResponse.path;
+        setWiaPendingScanPath(scanPath);
+      }
+      setWiaStage('Zmniejszanie rozmiaru strony…');
+      const base64 = readScanFileBase64(scanPath);
+      const page = await preparePrinterPage(base64);
+      setWiaPages(previous => [...previous, page]);
+      removeTemporaryScan(scanPath); setWiaPendingScanPath(null);
+      setWiaStage(`Dodano stronę ${wiaPages.length + 1}. Skanuj następną albo zapisz PDF.`);
+    } catch (error: unknown) {
+      const message = errorMessage(error, 'Nie udało się zeskanować dokumentu.');
+      setWiaStage(`Błąd: ${message}${scanPath ? ' Ponów dodanie strony bez ponownego skanowania.' : ''}`);
+      showToast(message, 'error');
+    }
     finally { setIsWiaScanning(false); }
+  };
+  const savePrinterDocument = async () => {
+    if (!wiaPages.length) return;
+    setIsWiaScanning(true); setWiaStage('Łączenie stron i zapisywanie PDF…');
+    try {
+      await uploadPrinterDocument(API_URL, fetch, wiaPages, wiaTitle, { enabled: wiaRetentionEnabled, value: wiaRetentionValue, unit: wiaRetentionUnit });
+      setWiaPages([]); setWiaTitle(defaultPrinterScanTitle()); setWiaStage('PDF zapisany w skanach do posortowania.');
+      await fetchData(); showToast('PDF zapisany w skanach do posortowania.', 'success');
+    } catch (error: unknown) {
+      const message = errorMessage(error, 'Nie udało się zapisać PDF.');
+      setWiaStage(`Błąd zapisu: ${message}. Strony są zachowane — możesz ponowić zapis.`);
+      showToast(message, 'error');
+    } finally { setIsWiaScanning(false); }
+  };
+  const moveInboxScan = async (id: string) => {
+    if (!wiaFolderId) return;
+    setIsWiaScanning(true);
+    try {
+      const response = await fetch(`${API_URL}/api/scanner/${id}/move`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ folderId: Number(wiaFolderId) }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Nie udało się przenieść skanu.');
+      await fetchData(); showToast('Skan przeniesiony do kartoteki.', 'success');
+    } catch (error: unknown) { setWiaStage(errorMessage(error, 'Nie udało się przenieść skanu.')); }
+    finally { setIsWiaScanning(false); }
+  };
+  const renameInboxScan = async (id: string, title: string) => {
+    const response = await fetch(`${API_URL}/api/scanner/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }) });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || 'Nie udało się zmienić nazwy.');
+    setScannerFiles(previous => previous.map(scan => scan.id === id ? { ...scan, title: result.title } : scan));
+    showToast('Nazwa skanu została zmieniona.', 'success');
   };
   const toggleDocSelection = (id: number) => setSelectedDocs(prev => prev.includes(id) ? prev.filter(dId => dId !== id) : [...prev, id]);
   const selectAllVisibleDocs = () => setSelectedDocs(displayedDocs.map(doc => doc.id));
@@ -489,20 +547,28 @@ export default function App() {
   const updateSelectedDocs = async (data: Record<string, unknown>, successMessage: string) => {
     if (!selectedDocs.length) return;
     try {
-      const responses = await Promise.all(selectedDocs.map(id => fetch(`${API_URL}/api/documents/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })));
+      const responses = await Promise.all(selectedDocs.map(id => patchDocument(API_URL, fetch, id, data)));
       if (responses.some(response => !response.ok)) throw new Error();
       clearSelectedDocs(); await fetchData(); showToast(successMessage, 'success');
     } catch { showToast('Nie udało się wykonać operacji dla wszystkich dokumentów.', 'error'); }
   };
-  const moveSelectedDocs = async (folderId: number) => {
-    await updateSelectedDocs({ folderId }, 'Dokumenty przeniesiono.');
-    setIsBulkMoveOpen(false);
+  const moveSelectedDocs = async (folderId: number, retention?: BulkRetention): Promise<boolean> => {
+    const restoring = activeView === 'trash' || activeView === 'archive';
+    if (!selectedDocs.length || (restoring && !retention)) return false;
+    const data = restoring && retention ? { folderId, isDeleted: false, isArchived: false, deletedAt: null, createdAt: new Date().toISOString(), retentionEnabled: retention.enabled, retentionValue: retention.value, retentionUnit: retention.unit } : { folderId };
+    const results = await Promise.allSettled(selectedDocs.map(id => patchDocument(API_URL, fetch, id, data)));
+    const failed = selectedDocs.filter((_, index) => results[index].status === 'rejected' || (results[index].status === 'fulfilled' && !results[index].value.ok));
+    setSelectedDocs(failed);
+    try { await fetchData(); } catch { showToast('Zmiany zapisano, ale nie udało się odświeżyć listy.', 'error'); }
+    if (failed.length) { showToast(`Nie udało się przetworzyć ${failed.length} dokumentów. Pozostały zaznaczone.`, 'error'); return false; }
+    showToast(restoring ? 'Dokumenty przywrócono do wybranej podkartoteki.' : 'Dokumenty przeniesiono.', 'success');
+    return true;
   };
 
   const handleCreateFolder = async (parentId: number | null) => {
     if (!newFolderName.trim()) return;
     try {
-      const res = await fetch(`${API_URL}/api/folders`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newFolderName.trim(), parentId }) });
+      const res = await createFolder(API_URL, fetch, newFolderName.trim(), parentId);
       if (res.ok) { setAddingSubfolderTo(null); setNewFolderName(''); if (parentId) setExpandedFolders(prev => [...prev, parentId]); await fetchData(); }
     } catch {}
   };
@@ -510,22 +576,32 @@ export default function App() {
   const handleRenameFolder = async (id: number) => {
     if (!renamingFolderName.trim()) return;
     try {
-      const res = await fetch(`${API_URL}/api/folders/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: renamingFolderName.trim() }) });
+      const res = await renameFolder(API_URL, fetch, id, renamingFolderName.trim());
       if (res.ok) { setRenamingFolderId(null); await fetchData(); }
     } catch {}
   };
 
   const moveFolder = async (id: number, direction: 'up' | 'down') => {
-    try { await fetch(`${API_URL}/api/folders/${id}/move`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ direction }) }); await fetchData(); } catch {}
+    try { await moveFolderRequest(API_URL, fetch, id, direction); await fetchData(); } catch {}
   };
 
   const toggleFolderExpand = (id: number) => setExpandedFolders(prev => prev.includes(id) ? prev.filter(fId => fId !== id) : [...prev, id]);
-  const getSortedChildren = (parentId: number | null) => folders.filter(f => f.parentId === parentId).sort((a, b) => (a.order || 0) - (b.order || 0));
+  const getSortedChildren = (parentId: number | null) => sortedChildren(folders, parentId);
 
   const renderDashboardFolder = (folder: FolderRecord, depth = 0): React.ReactNode => {
     const children = getSortedChildren(folder.id);
     const isExpanded = expandedFolders.includes(folder.id);
     const hasChildren = children.length > 0;
+    const countDescendants = (id: number): { folders: number; documents: number } => {
+      const descendants = getSortedChildren(id);
+      return descendants.reduce((total, child) => { const nested = countDescendants(child.id); return { folders: total.folders + 1 + nested.folders, documents: total.documents + (child._count?.documents ?? 0) + nested.documents }; }, { folders: 0, documents: 0 });
+    };
+    const totals = depth === 0 ? countDescendants(folder.id) : null;
+    const branchIds = (id: number): number[] => [id, ...getSortedChildren(id).flatMap(child => branchIds(child.id))];
+    const ids = new Set(branchIds(folder.id));
+    const hidden = documents.filter(doc => ids.has(doc.folderId));
+    const trashCount = hidden.filter(doc => doc.isDeleted).length;
+    const archiveCount = hidden.filter(doc => doc.isArchived && !doc.isDeleted).length;
     const openFolder = () => {
       if (hasChildren) return toggleFolderExpand(folder.id);
       setSelectedFolderId(folder.id);
@@ -533,47 +609,17 @@ export default function App() {
     };
     return <div key={folder.id} className={depth ? 'ml-7 border-l border-slate-700 pl-4' : ''}>
       <div className="flex items-center gap-2"><button onClick={openFolder} className="flex-1 flex items-center gap-4 rounded-lg border border-slate-700 bg-[#1e293b] px-5 py-4 text-left hover:border-blue-500 hover:bg-[#263449] transition-all">
-        <span className="text-2xl">{hasChildren ? (isExpanded ? '📂' : '📁') : '📄'}</span>
-        <span className="flex-1">{renamingFolderId === folder.id ? <input autoFocus value={renamingFolderName} onClick={(event) => event.stopPropagation()} onChange={(event) => setRenamingFolderName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') handleRenameFolder(folder.id); if (event.key === 'Escape') setRenamingFolderId(null); }} className="w-full rounded bg-[#111827] border border-blue-500 px-2 py-1 text-lg font-bold text-white" /> : <span className="block text-lg font-bold text-white">{folder.name}</span>}<span className="mt-1 block text-sm text-blue-300">{hasChildren ? `${children.length} ${children.length === 1 ? 'podkartoteka' : 'podkartoteki'}` : `${folder._count?.documents ?? 0} dokumentów`}</span></span>
+        <span className="text-2xl">{hasChildren && isExpanded ? '📂' : '📁'}</span>
+        <span className="flex-1">{renamingFolderId === folder.id ? <input autoFocus value={renamingFolderName} onClick={(event) => event.stopPropagation()} onChange={(event) => setRenamingFolderName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') handleRenameFolder(folder.id); if (event.key === 'Escape') setRenamingFolderId(null); }} className="w-full rounded bg-[#111827] border border-blue-500 px-2 py-1 text-lg font-bold text-white" /> : <span className="block text-lg font-bold text-white">{folder.name}</span>}<span className="mt-1 block text-sm text-blue-300">{totals ? `${totals.folders} podkartotek · ${totals.documents + (folder._count?.documents ?? 0)} aktywnych dokumentów` : hasChildren ? `${children.length} podkartotek · ${folder._count?.documents ?? 0} dokumentów` : `${folder._count?.documents ?? 0} aktywnych dokumentów`}{trashCount > 0 && ` · ${trashCount} w koszu`}{archiveCount > 0 && ` · ${archiveCount} w archiwum`}</span></span>
         <span className="text-xl text-slate-400">{hasChildren ? (isExpanded ? '⌄' : '›') : '›'}</span>
-      </button>{isEditingFolders && <div className="flex gap-1"><button onClick={() => { setAddingSubfolderTo(folder.id); setNewFolderName(''); setExpandedFolders(value => value.includes(folder.id) ? value : [...value, folder.id]); }} className="p-2 text-blue-300 hover:text-white" title="Dodaj podkartotekę">＋</button><button onClick={() => { setRenamingFolderId(folder.id); setRenamingFolderName(folder.name); }} className="p-2 text-amber-300 hover:text-white" title="Zmień nazwę">✎</button><button onClick={() => void requestFolderDelete(folder.id, folder.name)} className="p-2 text-red-300 hover:text-white" title="Usuń">🗑</button></div>}</div>
+      </button>{hasChildren && Boolean(folder._count?.documents) && <button onClick={() => { setSelectedFolderId(folder.id); setActiveView('folder'); }} className="rounded border border-blue-500/60 px-3 py-2 text-xs text-blue-200 hover:bg-blue-500/10">Pokaż dokumenty ({folder._count?.documents})</button>}{isEditingFolders && <div className="flex gap-1"><button onClick={() => { setAddingSubfolderTo(folder.id); setNewFolderName(''); setExpandedFolders(value => value.includes(folder.id) ? value : [...value, folder.id]); }} className="p-2 text-blue-300 hover:text-white" title="Dodaj podkartotekę">＋</button><button onClick={() => { setRenamingFolderId(folder.id); setRenamingFolderName(folder.name); }} className="p-2 text-amber-300 hover:text-white" title="Zmień nazwę">✎</button><button onClick={() => void requestFolderDelete(folder.id, folder.name)} className="p-2 text-red-300 hover:text-white" title="Usuń">🗑</button></div>}</div>
       {isEditingFolders && addingSubfolderTo === folder.id && <div className="mt-2 flex gap-2"><input autoFocus value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder(folder.id)} placeholder="Nazwa podkartoteki" className="flex-1 rounded bg-[#111827] border border-slate-600 px-3 py-2 text-sm text-white" /><button onClick={() => handleCreateFolder(folder.id)} className="rounded bg-blue-600 px-3 text-sm font-bold text-white">Dodaj</button><button onClick={() => setAddingSubfolderTo(null)} className="px-2 text-slate-400">×</button></div>}
       {hasChildren && isExpanded && <div className="mt-2 space-y-2">{children.map(child => renderDashboardFolder(child, depth + 1))}</div>}
     </div>;
   };
 
 
-  // =========================================================
-  // IDEALNIE CZYTELNE DRZEWKO DO WYBORU KARTOTEKI (<SELECT>)
-  // =========================================================
-  const renderSelectOptions = (parentId: number | null = null, depth: number = 0): React.ReactElement[] => {
-    let options: React.ReactElement[] = [];
-    const children = getSortedChildren(parentId);
-    
-    children.forEach(child => {
-      // Twarde spacje gwarantują, że przeglądarka nie zetnie wcięć
-      const spaces = '\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0'.repeat(depth); 
-      const arrow = depth > 0 ? '↳ ' : '';
-      const icon = depth === 0 ? '📂' : '📁';
-      const prefix = `${spaces}${arrow}${icon} `;
-      
-      options.push(
-        <option 
-          key={child.id} 
-          value={child.id} 
-          // Wyróżnienie głównej kartoteki na liście ułatwia orientację
-          className={depth === 0 ? 'font-bold bg-[#0f172a] text-blue-400' : 'font-medium text-slate-200'}
-        >
-          {prefix}{child.name}
-        </option>
-      );
-      
-      options = options.concat(renderSelectOptions(child.id, depth + 1));
-    });
-    
-    return options;
-  };
-  // =========================================================
+  const renderSelectOptions = () => buildFolderOptions(folders);
 
 
   const handleHoverEnter = (id: number) => {
@@ -634,22 +680,40 @@ export default function App() {
     );
   };
 
+  const recognizeSelected = useCallback(async () => {
+    try {
+      for (let offset = 0; offset < selectedDocs.length; offset += 100) {
+        const response = await apiFetch(`${API_URL}/api/ocr/batch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ documentIds: selectedDocs.slice(offset, offset + 100) }) });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Nie udało się uruchomić OCR.');
+      }
+      showToast('Dokumenty dodano do kolejki OCR.');
+    } catch (error) { showToast(error instanceof Error ? error.message : 'Nie udało się uruchomić OCR.', 'error'); }
+  }, [billingPlan, selectedDocs, showToast]);
+
   const exportSelectedPdf = useCallback(async () => {
     if (!selectedDocs.length) return;
-    if (billingPlan !== 'premium') return showToast('Eksport grupowy do PDF wymaga planu Premium.', 'error');
+    if (billingPlan !== 'premium') { setPlanLimitMessage('Eksport zaznaczonych dokumentów do PDF jest dostępny w planie Premium.'); return; }
     try {
-      const response = await fetch(`${API_URL}/api/documents/export-pdf`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ documentIds: selectedDocs }) });
-      if (!response.ok) { const payload = await response.json().catch(() => ({})); throw new Error(payload.error || 'Nie udało się wyeksportować dokumentów.'); }
-      const blob = await response.blob(); const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = `eteczka-eksport-${new Date().toISOString().slice(0, 10)}.pdf`; anchor.click(); URL.revokeObjectURL(url);
+      const blob = await exportDocuments(API_URL, fetch, selectedDocs); const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = `eteczka-eksport-${new Date().toISOString().slice(0, 10)}.pdf`; anchor.click(); URL.revokeObjectURL(url);
       showToast(`Wyeksportowano ${selectedDocs.length} dokumentów do jednego PDF-a.`, 'success');
     } catch (error: unknown) { showToast(errorMessage(error, 'Nie udało się wyeksportować dokumentów.'), 'error'); }
   }, [billingPlan, selectedDocs, showToast]);
+
+  useEffect(() => {
+    const query = searchQuery.trim(); let active = true;
+    setOcrSearchIds([]);
+    if (!query || query.length > 200) return () => { active = false; };
+    const search = () => { void fetch(`${API_URL}/api/ocr/search?q=${encodeURIComponent(query)}`).then(async response => response.ok ? response.json() : null).then(data => { if (active && Array.isArray(data?.ids)) setOcrSearchIds(data.ids); }).catch(() => { if (active) setOcrSearchIds([]); }); };
+    const timer = window.setTimeout(search, 300); const interval = window.setInterval(search, 5000);
+    return () => { active = false; window.clearTimeout(timer); window.clearInterval(interval); };
+  }, [searchQuery, billingPlan]);
 
   const displayedDocs = documents.filter(doc => {
     if (activeView === 'trash') return doc.isDeleted;
     if (activeView === 'archive') return doc.isArchived && !doc.isDeleted;
     const query = searchQuery.toLowerCase();
-    const matchesSearch = !query || doc.title.toLowerCase().includes(query) || Boolean(doc.ocrText?.toLowerCase().includes(query));
+    const matchesSearch = !query || doc.title.toLowerCase().includes(query) || ocrSearchIds.includes(doc.id);
     if (activeView === 'dashboard') return !doc.isDeleted && !doc.isArchived && matchesSearch;
     if (activeView === 'folder') return doc.folderId === selectedFolderId && !doc.isDeleted && !doc.isArchived && matchesSearch;
     return false;
@@ -665,10 +729,14 @@ export default function App() {
 
       {previewDoc && <DocumentPreviewModal apiUrl={API_URL} document={previewDoc} zoom={previewZoom} onZoomChange={setPreviewZoom} onClose={() => { setPreviewDoc(null); setPreviewZoom(1); }} />}
 
-      {isBillingCancelOpen && <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"><div className="w-full max-w-md rounded-2xl border border-red-500/40 bg-[#0f172a] p-7 shadow-2xl"><h3 className="text-xl font-bold text-white">Anulować Premium?</h3><p className="mt-3 text-sm leading-6 text-slate-300">Dostęp Premium zostanie zakończony od razu. Bieżący rozpoczęty miesiąc pozostaje opłacony, a system zwróci środki za pełne niewykorzystane miesiące.</p><div className="mt-6 flex gap-3"><button disabled={billingCancelBusy} onClick={() => setIsBillingCancelOpen(false)} className="flex-1 rounded-lg bg-slate-700 py-3 font-bold text-white hover:bg-slate-600 disabled:opacity-50">Nie</button><button disabled={billingCancelBusy} onClick={() => void cancelBilling()} className="flex-1 rounded-lg bg-red-600 py-3 font-bold text-white hover:bg-red-500 disabled:opacity-50">{billingCancelBusy ? 'Rozliczanie…' : 'Anuluj i zwróć'}</button></div></div></div>}
+      {uploadReport && <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/80 p-4"><section role="dialog" aria-modal="true" aria-labelledby="upload-report-title" className="w-full max-w-lg rounded-xl border border-slate-600 bg-[#0f172a] p-6 text-slate-200 shadow-2xl"><h2 id="upload-report-title" className="text-xl font-bold text-white">Wynik wgrywania</h2><p className="mt-3 text-sm">Podkartoteka: <strong>{uploadReport.folder}</strong>. Wgrano plików: <strong>{uploadReport.saved}</strong>.</p><p className="mt-3 text-sm text-amber-200">Pominięto {uploadReport.skipped.length} identycznych plików — były już w tej podkartotece lub pojawiły się wcześniej w wybranej paczce.</p><ul className="mt-3 max-h-48 list-disc overflow-auto pl-5 text-sm text-slate-300">{uploadReport.skipped.map((item, index) => <li key={index} className="break-words">{item.name} — identyczny jak „{item.existingTitle}”</li>)}</ul><button onClick={() => setUploadReport(null)} className="mt-5 rounded-lg bg-blue-600 px-5 py-2 font-semibold text-white">Rozumiem</button></section></div>}
+      {isBillingCancelOpen && <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"><div className="w-full max-w-md rounded-2xl border border-red-500/40 bg-[#0f172a] p-7 shadow-2xl"><h3 className="text-xl font-bold text-white">Anulować subskrypcję?</h3>{billingCancelPreviewBusy && <p className="mt-3 text-sm text-slate-300">Obliczam rozliczenie…</p>}{billingCancelPreviewError && <p role="alert" className="mt-3 text-sm text-red-300">{billingCancelPreviewError}</p>}{billingCancelPreview && <div className="mt-3 space-y-2 text-sm leading-6 text-slate-300"><p>Odnowienie zostanie wyłączone. Dostęp do planu pozostanie aktywny do <strong className="text-white">{new Date(billingCancelPreview.accessUntil).toLocaleDateString('pl-PL')}</strong>.</p><p>Zwrot za {billingCancelPreview.refundedMonths} pełnych niewykorzystanych miesięcy: <strong className="text-white">{(billingCancelPreview.refundedAmount / 100).toFixed(2)} {billingCancelPreview.currency.toUpperCase()}</strong>.</p><p className="rounded-lg bg-amber-950/40 p-3 text-amber-100">Po przejściu na plan Darmowy {billingCancelPreview.restrictedDocuments} dokumentów będzie tylko do odczytu, a {billingCancelPreview.inactiveTags} tagów stanie się nieaktywnych. Dokumenty zachowają możliwość pobrania i usunięcia. To szacunkowy stan na teraz.</p>{billingCancelPreview.alreadyScheduled && <p className="text-amber-300">Anulowanie zostało już zaplanowane.</p>}</div>}<div className="mt-6 flex gap-3"><button disabled={billingCancelBusy} onClick={() => setIsBillingCancelOpen(false)} className="flex-1 rounded-lg bg-slate-700 py-3 font-bold text-white hover:bg-slate-600 disabled:opacity-50">Wróć</button><button disabled={billingCancelBusy || billingCancelPreviewBusy || !billingCancelPreview || billingCancelPreview.alreadyScheduled} onClick={() => void cancelBilling()} className="flex-1 rounded-lg bg-red-600 py-3 font-bold text-white hover:bg-red-500 disabled:opacity-50">{billingCancelBusy ? 'Rozliczanie…' : 'Potwierdź anulowanie'}</button></div></div></div>}
 
+      {planLimitMessage && <PlanLimitModal message={planLimitMessage} plan={billingPlan} busy={billingBusy} onClose={() => setPlanLimitMessage('')} onSelect={(plan, interval) => { setPlanLimitMessage(''); void openBillingCheckout(plan, interval, false, true); }} />}
+      {isPlanUsageOpen && <PlanUsageModal apiUrl={API_URL} fetcher={apiFetch} onClose={() => setIsPlanUsageOpen(false)} />}
       {isBillingHistoryOpen && <BillingHistoryModal transactions={billingHistory} loading={billingHistoryBusy} onClose={() => setIsBillingHistoryOpen(false)} />}
-      {isBackupOpen && <BackupModal apiUrl={API_URL} onClose={() => setIsBackupOpen(false)} onDone={() => { setIsBackupOpen(false); void fetchData(); }} />}
+      {backupSection && <BackupModal key={backupSection} section={backupSection} apiUrl={API_URL} fetcher={apiFetch} onClose={() => setBackupSection(null)} onDone={() => { setBackupSection(null); void fetchData(); }} />}
+      {ocrDocumentId !== null && <OcrPanel apiUrl={API_URL} documentId={ocrDocumentId} title={documents.find(document => document.id === ocrDocumentId)?.title || 'Dokument'} fetcher={fetch} onClose={() => setOcrDocumentId(null)} />}
 
       <TagManagerModal
         isOpen={isTagManagerOpen}
@@ -678,13 +746,13 @@ export default function App() {
         onNameChange={setNewTagName}
         onColorChange={setNewTagColor}
         onCreate={() => void createTag()}
-        onDelete={(tagId) => void (async () => { await fetch(`${API_URL}/api/tags/${tagId}`, { method: 'DELETE' }); await fetchData(); })()}
+        onDelete={(tagId) => void (async () => { await deleteTagRequest(API_URL, fetch, tagId); await fetchData(); })()}
         onClose={() => setIsTagManagerOpen(false)}
       />
 
       <MoveDocumentModal
         documentId={moveModalDocId}
-        folderOptions={renderSelectOptions(null)}
+        folderOptions={renderSelectOptions()}
         onMove={(folderId) => updateDocument(moveModalDocId!, { folderId })}
         onClose={() => setMoveModalDocId(null)}
       />
@@ -692,8 +760,9 @@ export default function App() {
       <BulkMoveModal
         isOpen={isBulkMoveOpen}
         documentCount={selectedDocs.length}
-        folderOptions={renderSelectOptions(null)}
-        onMove={(folderId) => void moveSelectedDocs(folderId)}
+        restoring={activeView === 'trash' || activeView === 'archive'}
+        folderOptions={renderSelectOptions()}
+        onMove={moveSelectedDocs}
         onClose={() => setIsBulkMoveOpen(false)}
       />
 
@@ -701,14 +770,14 @@ export default function App() {
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-2xl border border-amber-500/50 bg-[#0f172a] p-7 shadow-2xl">
             <h3 className="text-xl font-bold text-white">Najpierw przenieś dokumenty</h3>
-            <p className="mt-3 text-sm leading-6 text-slate-300">W kartotece „{folderDeletePreview.name}” i jej podkartotekach jest <strong className="text-white">{folderDeletePreview.documentCount}</strong> dokumentów. Wybierz podkartotekę, do której mają zostać przeniesione przed usunięciem struktury.</p>
+            <p className="mt-3 text-sm leading-6 text-slate-300">W kartotece „{folderDeletePreview.name}” i jej podkartotekach jest <strong className="text-white">{folderDeletePreview.documentCount}</strong> aktywnych dokumentów. Wybierz podkartotekę, do której zostaną przeniesione. W archiwum jest {folderDeletePreview.archivedCount}, a w koszu {folderDeletePreview.trashedCount} dokumentów — pozostaną w archiwum i koszu. Przy ich przywracaniu wybierzesz miejsce docelowe.</p>
             <select value={transferFolderId} onChange={(event) => setTransferFolderId(event.target.value)} className="mt-5 w-full rounded-md border border-slate-600 bg-[#111827] px-3 py-3 text-white focus:border-blue-500 focus:outline-none">
               <option value="">— wybierz podkartotekę docelową —</option>
-              {renderSelectOptions(null)}
+              {renderSelectOptions()}
             </select>
             <div className="mt-6 flex gap-3">
               <button onClick={() => setFolderDeletePreview(null)} className="flex-1 rounded-lg bg-slate-700 py-3 font-bold text-white hover:bg-slate-600">Anuluj</button>
-              <button disabled={!transferFolderId} onClick={() => { const preview = folderDeletePreview; setFolderDeletePreview(null); initiateAction('delete_folder', preview.id, preview.name, Number(transferFolderId)); }} className="flex-1 rounded-lg bg-red-600 py-3 font-bold text-white hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50">Dalej</button>
+              <button disabled={!transferFolderId} onClick={() => { const preview = folderDeletePreview; setFolderDeletePreview(null); initiateAction('delete_folder', preview.id, preview.name, Number(transferFolderId), preview.archivedCount, preview.trashedCount); }} className="flex-1 rounded-lg bg-red-600 py-3 font-bold text-white hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50">Dalej</button>
             </div>
           </div>
         </div>
@@ -722,11 +791,12 @@ export default function App() {
           setActionTimer(null);
           showToast('Anulowano operację', 'success');
         }}
-        onConfirm={() => void executeAction()}
+        onConfirm={() => { if (actionTimer === 0) void executeAction(); }}
       />
 
       <RetentionModal
         state={retentionModal}
+        folderOptions={renderSelectOptions()}
         onStateChange={setRetentionModal}
         onSubmit={handleRetentionUpdate}
         onClose={() => setRetentionModal({ ...retentionModal, isOpen: false })}
@@ -742,22 +812,26 @@ export default function App() {
         onOpenPairing={() => setIsPairingGuideOpen(true)}
         onOpenAccessSettings={() => setIsAccessSettingsOpen(true)}
         onOpenTags={() => setIsTagManagerOpen(true)}
+        onOpenBackup={setBackupSection}
       />
       {/* GŁÓWNA ZAWARTOŚĆ */}
       {isAccessSettingsOpen && <DesktopAccessSettings onClose={() => setIsAccessSettingsOpen(false)} />}
-      {isWiaScanOpen && <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/75 p-5 backdrop-blur-sm"><div className="w-full max-w-xl overflow-hidden rounded-2xl border border-slate-600 bg-[#1e293b] shadow-2xl"><div className="border-b border-slate-700 bg-[#0f172a] px-7 py-5"><h3 className="text-xl font-bold text-white">Skanuj z urządzenia</h3><p className="mt-1 text-sm text-slate-400">Wybór urządzenia i przebieg skanowania odbywają się w E‑Teczce.</p></div><div className="space-y-5 p-7"><div><label className="block text-sm font-semibold text-slate-200">1. Wybierz skaner</label><div className="mt-2 grid gap-2">{isWiaLoadingDevices && <div className="rounded-lg border border-slate-700 bg-[#111827] px-4 py-3 text-sm text-slate-400">Wyszukiwanie urządzeń…</div>}{!isWiaLoadingDevices && wiaDevices.map(device => <button key={device.id} onClick={() => setWiaDeviceId(device.id)} disabled={isWiaScanning} className={`flex items-center gap-3 rounded-lg border p-4 text-left transition-colors ${wiaDeviceId === device.id ? 'border-blue-400 bg-blue-500/15' : 'border-slate-600 bg-[#111827] hover:border-slate-400'}`}><span className="text-2xl">🖨️</span><span><span className="block font-semibold text-white">{device.name}</span>{device.manufacturer && <span className="mt-0.5 block text-xs text-slate-400">{device.manufacturer}</span>}</span>{wiaDeviceId === device.id && <span className="ml-auto text-blue-300">✓</span>}</button>)}{!isWiaLoadingDevices && wiaDevices.length === 0 && <div className="rounded-lg border border-amber-700/50 bg-amber-950/20 px-4 py-3 text-sm text-amber-200">Nie znaleziono skanera WIA. Upewnij się, że jest włączony i ma zainstalowany sterownik WIA.</div>}</div></div><div><label className="block text-sm font-semibold text-slate-200">2. Zapisz do podkartoteki</label><select value={wiaFolderId} disabled={isWiaScanning} onChange={(event) => setWiaFolderId(event.target.value)} className="mt-2 w-full rounded-lg border border-slate-600 bg-[#111827] p-3 text-white"><option value="">— wybierz podkartotekę —</option>{renderSelectOptions(null)}</select></div><div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-3"><p className="text-sm font-semibold text-blue-200">{isWiaScanning ? wiaStage : 'Gotowe do skanowania'}</p>{isWiaScanning && <div className="mt-3 h-1.5 overflow-hidden rounded bg-slate-700"><div className="h-full w-2/3 animate-pulse rounded bg-blue-400" /></div>}</div><div className="flex justify-end gap-3"><button onClick={() => { if (!isWiaScanning) setIsWiaScanOpen(false); }} disabled={isWiaScanning} className="px-4 py-2 text-slate-300 disabled:opacity-50">Anuluj</button><button onClick={() => void scanFromPrinter()} disabled={!wiaFolderId || !wiaDeviceId || isWiaScanning} className="rounded-lg bg-blue-600 px-5 py-2.5 font-bold text-white shadow-lg hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50">{isWiaScanning ? 'Trwa skanowanie…' : 'Skanuj dokument'}</button></div></div></div></div>}
       <div className="flex-1 flex flex-col overflow-hidden bg-[#0f172a]">
-        <button onClick={() => setIsBackupOpen(true)} className="fixed bottom-5 left-5 z-40 rounded-lg border border-slate-600 bg-[#1e293b] px-3 py-2 text-xs font-bold text-slate-200 shadow-xl hover:border-blue-400 hover:text-white">☁️ Kopia zapasowa</button>
         <DesktopTopBar
           activeView={activeView}
           searchQuery={searchQuery}
           localAddress={localAddresses[0] || ''}
           pairingCode={pairingCode}
+          phoneConnected={phoneConnected}
           scannerFileCount={scannerFiles.length}
           retentionAlerts={retentionAlerts}
           notificationsOpen={isNotificationsOpen}
           userMenuOpen={isUserMenuOpen}
           billingPlan={billingPlan}
+          billingIsDev={billingIsDev}
+          apiUrl={API_URL}
+          apiFetcher={apiFetch}
+          onDevPlanChanged={() => { setBillingDetails(null); void fetchData(); }}
           billingDetails={billingDetails}
           billingDetailsBusy={billingDetailsBusy}
           billingBusy={billingBusy}
@@ -765,19 +839,50 @@ export default function App() {
           onSearchChange={setSearchQuery}
           onBack={() => { setActiveView('dashboard'); setSelectedFolderId(null); }}
           onToggleNotifications={() => setIsNotificationsOpen((value) => !value)}
-          onOpenScannerInbox={() => { setActiveView('upload'); setIsNotificationsOpen(false); }}
+          onOpenScannerInbox={() => { void openWiaScanner(); setIsNotificationsOpen(false); }}
           onOpenNotification={(documentId) => { const doc = documents.find((item) => item.id === documentId); if (doc) { setSelectedFolderId(doc.folderId); setActiveView('folder'); } setIsNotificationsOpen(false); }}
           onToggleUserMenu={() => void toggleUserMenu()}
           onOpenBillingPlans={() => { setIsBillingPlansOpen(true); setIsUserMenuOpen(false); }}
-          onRequestCancelBilling={() => { setIsBillingCancelOpen(true); setIsUserMenuOpen(false); }}
+          onRequestCancelBilling={() => { void openBillingCancel(); }}
+          onOpenPlanUsage={() => { setIsUserMenuOpen(false); setIsPlanUsageOpen(true); }}
           onOpenBillingHistory={() => { setIsUserMenuOpen(false); void openBillingHistory(); }}
           onOpenAuth={() => { setIsAuthOpen(true); setIsUserMenuOpen(false); }}
+          onOpenPairing={() => setIsPairingGuideOpen(true)}
           onOpenAccessSettings={() => { setIsAccessSettingsOpen(true); setIsUserMenuOpen(false); }}
           onOpenSettings={() => { setIsSettingsMenuOpen(true); setIsUserMenuOpen(false); }}
         />
         <main className="relative flex-1 overflow-y-auto p-6 flex justify-center custom-scrollbar">
           {selectedDocs.length > 0 && activeView !== 'dashboard' && <button onClick={() => void exportSelectedPdf()} className="fixed bottom-6 left-1/2 z-40 -translate-x-1/2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-xl hover:bg-emerald-500">Eksportuj zaznaczone do PDF ({selectedDocs.length})</button>}
-          {activeView === 'upload' ? (
+      {activeView === 'scanner' ? <PrinterScannerModal
+        devices={wiaDevices}
+        loadingDevices={isWiaLoadingDevices}
+        deviceId={wiaDeviceId}
+        folderId={wiaFolderId}
+        folderOptions={renderSelectOptions()}
+        pages={wiaPages}
+        title={wiaTitle}
+        retentionValue={wiaRetentionValue}
+        retentionUnit={wiaRetentionUnit}
+        retentionEnabled={wiaRetentionEnabled}
+        stage={wiaStage}
+        busy={isWiaScanning}
+        pendingScan={Boolean(wiaPendingScanPath)}
+        onDeviceChange={(id) => { setWiaDeviceId(id); localStorage.setItem('eteczka_default_scanner', id); }}
+        onFolderChange={setWiaFolderId}
+        onTitleChange={setWiaTitle}
+        onRetentionValueChange={setWiaRetentionValue}
+        onRetentionUnitChange={setWiaRetentionUnit}
+        onRetentionEnabledChange={setWiaRetentionEnabled}
+        onScan={() => void scanFromPrinter()}
+        onRemovePage={(index) => setWiaPages(previous => previous.filter((_, pageIndex) => pageIndex !== index))}
+        inbox={scannerFiles}
+        onSave={() => void savePrinterDocument()}
+        onMove={(id) => void moveInboxScan(id)}
+        onRename={renameInboxScan}
+        onClose={() => setActiveView('dashboard')}
+      /> :
+
+          activeView === 'upload' ? (
             <div className="w-full max-w-5xl bg-[#1e293b] border border-slate-700 rounded-lg p-6 shadow-xl h-fit mb-10">
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-xl font-bold text-white flex items-center gap-2">📦 Rejestracja Dokumentów</h2>
@@ -847,8 +952,9 @@ export default function App() {
                   <label className="block text-sm font-bold mb-1 text-slate-200">Docelowa Kartoteka (WYMAGANA)</label>
                   <select value={folderId} onChange={(e) => setFolderId(e.target.value)} className="w-full bg-[#111827] border border-slate-600 rounded-md p-2.5 text-white font-medium focus:outline-none focus:border-blue-500 appearance-none">
                     <option value="">-- Wybierz kartotekę --</option>
-                    {renderSelectOptions(null)}
+                    {renderSelectOptions().length ? renderSelectOptions() : <option disabled>Brak kartotek — utwórz kartotekę w widoku Kartoteki</option>}
                   </select>
+                  {foldersUnavailable && <div role="status" className="mt-2 text-sm text-amber-300"><p>Nie udało się pobrać kartotek z serwera. Sprawdź, czy E-Teczka na komputerze działa.</p><button type="button" onClick={() => void fetchData()} className="mt-2 rounded border border-amber-500 px-3 py-1.5 text-amber-200 hover:bg-amber-500/10">Ponów połączenie</button></div>}
                 </div>
 
                 <div>
@@ -859,8 +965,8 @@ export default function App() {
                 </div>
 
                 <div className="flex justify-end pt-4">
-                  <button type="submit" disabled={isUploading || filesToUpload.length === 0} className="px-6 py-2.5 bg-slate-200 hover:bg-white text-slate-800 rounded-md font-bold shadow-lg disabled:opacity-50 transition-colors">
-                    {isUploading ? 'Przetwarzanie...' : `Wgraj osobno (${filesToUpload.length}) plików`}
+                  <button type="submit" disabled={isUploading || filesToUpload.length === 0 || !folderId || foldersUnavailable} className="px-6 py-2.5 bg-slate-200 hover:bg-white text-slate-800 rounded-md font-bold shadow-lg disabled:opacity-50 transition-colors">
+                    {isUploading ? 'Przetwarzanie...' : isMergeMode ? `Scal i wgraj (${filesToUpload.length}) plików` : `Wgraj osobno (${filesToUpload.length}) plików`}
                   </button>
                 </div>
               </form>
@@ -872,9 +978,13 @@ export default function App() {
                 <h2 className="text-2xl font-bold text-white tracking-wide">
                   {activeView === 'dashboard' ? 'Kartoteki' : activeView === 'trash' ? 'Kosz' : activeView === 'archive' ? 'Archiwum Systemowe' : (folders.find(f => f.id === selectedFolderId)?.name || 'Kartoteka')}
                 </h2></div>
-                {activeView === 'dashboard' && <button onClick={() => { setIsEditingFolders(value => !value); setAddingSubfolderTo(null); }} className="rounded-md border border-slate-600 px-4 py-2 text-sm font-bold text-slate-200 hover:bg-slate-700">{isEditingFolders ? '✓ Gotowe' : '✎ Edytuj kartoteki'}</button>}
+                <div className="flex items-center gap-2">
+                  {activeView === 'trash' && displayedDocs.length > 0 && <button onClick={() => initiateAction('empty_trash', 0, String(displayedDocs.length))} className="rounded-md border border-red-500 px-4 py-2 text-sm font-bold text-red-300 hover:bg-red-900/40">Opróżnij kosz</button>}
+                  {activeView === 'folder' && selectedFolderId && folders.some(folder => folder.id === selectedFolderId && folder.parentId !== null) && <button onClick={() => { setFolderId(String(selectedFolderId)); setActiveView('upload'); }} className="rounded-md bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-500">＋ Dodaj dokument</button>}
+                  {activeView === 'dashboard' && <button onClick={() => { setIsEditingFolders(value => !value); setAddingSubfolderTo(null); }} className="rounded-md border border-slate-600 px-4 py-2 text-sm font-bold text-slate-200 hover:bg-slate-700">{isEditingFolders ? '✓ Gotowe' : '✎ Edytuj kartoteki'}</button>}
+                </div>
               </div>
-              {activeView === 'dashboard' ? <div className="max-w-4xl space-y-3">{isEditingFolders && <div className="rounded-lg border border-dashed border-slate-500 p-3"><p className="mb-2 text-sm font-semibold text-slate-300">Dodaj kartotekę główną</p>{addingSubfolderTo === 'root' ? <div className="flex gap-2"><input autoFocus value={newFolderName} onChange={(event) => setNewFolderName(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && handleCreateFolder(null)} placeholder="Nazwa kartoteki" className="flex-1 rounded bg-[#111827] border border-slate-600 px-3 py-2 text-sm text-white" /><button onClick={() => handleCreateFolder(null)} className="rounded bg-blue-600 px-3 text-sm font-bold text-white">Dodaj</button><button onClick={() => setAddingSubfolderTo(null)} className="px-2 text-slate-400">×</button></div> : <button onClick={() => { setAddingSubfolderTo('root'); setNewFolderName(''); }} className="text-sm text-blue-300 hover:text-white">＋ Dodaj kartotekę główną</button>}</div>}{getSortedChildren(null).map(folder => renderDashboardFolder(folder))}</div> : <><div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-blue-500/30 bg-blue-950/30 px-3 py-2"><button onClick={() => selectedDocs.length === displayedDocs.length ? clearSelectedDocs() : selectAllVisibleDocs()} className="rounded border border-slate-500 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-700">{selectedDocs.length === displayedDocs.length && displayedDocs.length ? 'Odznacz wszystkie' : 'Zaznacz wszystkie'}</button>{selectedDocs.length > 0 && <><span className="px-1 text-xs font-semibold text-blue-200">Wybrano: {selectedDocs.length}</span><button onClick={() => setIsBulkMoveOpen(true)} className="rounded border border-indigo-500/70 px-3 py-1.5 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/10">Przenieś</button>{activeView !== 'archive' && <button onClick={() => void updateSelectedDocs({ isArchived: true }, 'Dokumenty zarchiwizowano.')} className="rounded border border-amber-600/70 px-3 py-1.5 text-xs font-semibold text-amber-400 hover:bg-amber-600/10">Archiwizuj</button>}{activeView !== 'trash' && <button onClick={() => void updateSelectedDocs({ isDeleted: true }, 'Dokumenty przeniesiono do kosza.')} className="rounded border border-red-500/70 px-3 py-2 text-xs font-semibold text-red-300 hover:bg-red-500/10">Do kosza</button>}<button onClick={() => showToast('Wysyłka wymaga wskazania odbiorcy i konfiguracji poczty.', 'error')} className="rounded border border-emerald-500/70 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/10">Wyślij</button></>}</div><div className="bg-[#1e293b] rounded-lg border border-slate-700 overflow-visible shadow-xl">
+              {activeView === 'dashboard' && !searchQuery.trim() ? <div className="max-w-4xl space-y-3">{isEditingFolders && <div className="rounded-lg border border-dashed border-slate-500 p-3"><p className="mb-2 text-sm font-semibold text-slate-300">Dodaj kartotekę główną</p>{addingSubfolderTo === 'root' ? <div className="flex gap-2"><input autoFocus value={newFolderName} onChange={(event) => setNewFolderName(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && handleCreateFolder(null)} placeholder="Nazwa kartoteki" className="flex-1 rounded bg-[#111827] border border-slate-600 px-3 py-2 text-sm text-white" /><button onClick={() => handleCreateFolder(null)} className="rounded bg-blue-600 px-3 text-sm font-bold text-white">Dodaj</button><button onClick={() => setAddingSubfolderTo(null)} className="px-2 text-slate-400">×</button></div> : <button onClick={() => { setAddingSubfolderTo('root'); setNewFolderName(''); }} className="text-sm text-blue-300 hover:text-white">＋ Dodaj kartotekę główną</button>}</div>}{getSortedChildren(null).map(folder => renderDashboardFolder(folder))}</div> : <><div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-blue-500/30 bg-blue-950/30 px-3 py-2"><button onClick={() => selectedDocs.length === displayedDocs.length ? clearSelectedDocs() : selectAllVisibleDocs()} className="rounded border border-slate-500 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-700">{selectedDocs.length === displayedDocs.length && displayedDocs.length ? 'Odznacz wszystkie' : 'Zaznacz wszystkie'}</button>{selectedDocs.length > 0 && <><span className="px-1 text-xs font-semibold text-blue-200">Wybrano: {selectedDocs.length}</span>{activeView !== 'trash' && <button onClick={() => void recognizeSelected()} className="rounded border border-blue-400 px-3 py-1.5 text-xs font-semibold text-blue-200 hover:bg-blue-500/10">Rozpoznaj tekst (OCR)</button>}<button onClick={() => setIsBulkMoveOpen(true)} className="rounded border border-indigo-500/70 px-3 py-1.5 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/10">{activeView === 'trash' || activeView === 'archive' ? 'Przywróć do kartoteki' : 'Przenieś'}</button>{activeView !== 'archive' && <button onClick={() => void updateSelectedDocs({ isArchived: true }, 'Dokumenty zarchiwizowano.')} className="rounded border border-amber-600/70 px-3 py-1.5 text-xs font-semibold text-amber-400 hover:bg-amber-600/10">Archiwizuj</button>}{activeView !== 'trash' && <button onClick={() => void updateSelectedDocs({ isDeleted: true }, 'Dokumenty przeniesiono do kosza.')} className="rounded border border-red-500/70 px-3 py-2 text-xs font-semibold text-red-300 hover:bg-red-500/10">Do kosza</button>}<button onClick={() => showToast('Wysyłka wymaga wskazania odbiorcy i konfiguracji poczty.', 'error')} className="rounded border border-emerald-500/70 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/10">Wyślij</button></>}</div><div className="bg-[#1e293b] rounded-lg border border-slate-700 overflow-visible shadow-xl">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-slate-700 text-xs text-slate-400 font-semibold tracking-wider bg-[#0f172a]/50">
@@ -902,41 +1012,16 @@ export default function App() {
                             <div 
                               className="w-14 h-16 bg-[#0f172a] rounded border border-slate-600 flex items-center justify-center overflow-hidden cursor-pointer hover:border-blue-500 hover:shadow-[0_0_10px_rgba(59,130,246,0.5)] transition-all relative z-10"
                               onClick={() => { setPreviewDoc(doc); setPreviewZoom(1); setHoverDocId(null); }}
-                              onMouseEnter={() => handleHoverEnter(doc.id)}
+                              onMouseEnter={(event) => { setHoverAnchor(event.currentTarget); handleHoverEnter(doc.id); }}
                               onMouseLeave={handleHoverLeave}
                             >
-                              {doc.thumbnail ? (
-                                <img src={doc.thumbnail} className="w-full h-full object-cover pointer-events-none" />
-                              ) : doc.mimeType?.includes('image') ? (
-                                <img src={`${API_URL}/${doc.filePath?.replace(/\\/g, '/')}`} className="w-full h-full object-cover pointer-events-none" />
-                              ) : (
-                                <span className="text-3xl pointer-events-none">📄</span>
-                              )}
+                              <DocumentThumbnail document={doc} apiUrl={API_URL} fetcher={apiFetch} />
                               <div className="absolute inset-0 bg-black/0 hover:bg-blue-500/20 transition-colors flex items-center justify-center opacity-0 hover:opacity-100">
                                 <span className="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded shadow pointer-events-none">Powiększ</span>
                               </div>
                             </div>
 
-                            {hoverDocId === doc.id && (
-                              <div 
-                                className="absolute top-[-100px] left-20 bg-[#1e293b] border border-blue-500 shadow-[0_0_40px_rgba(0,0,0,0.8)] z-50 rounded-lg flex flex-col animate-fade-in"
-                                style={{ width: '500px', height: '600px', minWidth: '400px', minHeight: '400px', maxWidth: '90vw', maxHeight: '90vh', resize: 'both', overflow: 'hidden' }}
-                                onMouseEnter={() => handleHoverEnter(doc.id)}
-                                onMouseLeave={handleHoverLeave}
-                              >
-                                <div className="text-xs bg-slate-800 text-blue-300 font-bold p-2 truncate border-b border-slate-700 flex justify-between items-center cursor-move shrink-0">
-                                  <span>{doc.title}</span>
-                                  <span className="text-[10px] text-slate-500 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-700">↘ Rozciągnij w rogu</span>
-                                </div>
-                                <div className="flex-1 bg-white relative w-full h-full">
-                                  {doc.mimeType?.includes('pdf') ? (
-                                    <iframe src={`${API_URL}/${doc.filePath?.replace(/\\/g, '/')}#toolbar=1&navpanes=0&view=Fit`} className="absolute inset-0 w-full h-full border-none" />
-                                  ) : (
-                                    <img src={`${API_URL}/${doc.filePath?.replace(/\\/g, '/')}`} className="absolute inset-0 w-full h-full object-contain" />
-                                  )}
-                                </div>
-                              </div>
-                            )}
+                            {hoverDocId === doc.id && hoverAnchor && <HoverDocumentPreview document={doc} anchor={hoverAnchor} apiUrl={API_URL} fetcher={apiFetch} onEnter={() => handleHoverEnter(doc.id)} onLeave={handleHoverLeave} />}
                           </div>
                         </td>
 
@@ -950,7 +1035,7 @@ export default function App() {
                                 <button onClick={() => { setRenamingDocId(doc.id); setRenamingDocTitle(doc.title); }} className="text-blue-400 opacity-0 group-hover/title:opacity-100 hover:text-white transition-opacity" title="Zmień nazwę pliku">✎</button>
                               </div>
                             )}
-                            <div className="mt-1 flex flex-wrap gap-1">{(doc.tags || []).map((entry) => <span key={entry.tagId} className="rounded-full px-2 py-0.5 text-[10px] font-semibold text-white" style={{ backgroundColor: entry.tag.color }}>{entry.tag.name}</span>)}</div>
+                            <div className="mt-1 flex flex-wrap gap-1">{doc.readOnly && <span className="rounded bg-amber-900/60 px-2 py-0.5 text-[10px] text-amber-200">Tylko do odczytu — limit planu</span>}{(doc.tags || []).map((entry) => <span key={entry.tagId} className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${entry.tag.inactive ? 'bg-slate-700 text-slate-400' : 'text-white'}`} style={entry.tag.inactive ? undefined : { backgroundColor: entry.tag.color }}>{entry.tag.name}{entry.tag.inactive ? ' (nieaktywny)' : ''}</span>)}</div>
                           </div>
                         </td>
                         <td className="p-4">
@@ -975,7 +1060,7 @@ export default function App() {
                             ) : (
                               <button onClick={() => setDocumentMenuId(documentMenuId === doc.id ? null : doc.id)} className="rounded p-2 text-xl text-slate-300 hover:bg-slate-700 hover:text-white" aria-label="Menu dokumentu">⋮</button>
                             )}
-                            {documentMenuId === doc.id && <div className="absolute right-0 top-10 z-40 w-52 rounded-lg border border-slate-600 bg-[#111827] py-1 text-left shadow-2xl"><button onClick={() => { setMoveModalDocId(doc.id); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-slate-200 hover:bg-slate-700">Przenieś</button>{activeView === 'trash' ? <><button onClick={() => { beginRestore(doc, 'trash'); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-emerald-300 hover:bg-slate-700">Przywróć</button><button onClick={() => { initiateAction('delete_doc', doc.id, doc.title); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-red-300 hover:bg-slate-700">Usuń trwale</button></> : <>{activeView === 'archive' ? <button onClick={() => { beginRestore(doc, 'archive'); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-slate-200 hover:bg-slate-700">Przywróć</button> : <button onClick={() => { void updateDocument(doc.id, { isArchived: true }); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-amber-300 hover:bg-slate-700">Archiwizuj</button>}<button onClick={() => { setRetentionModal({ isOpen: true, docId: doc.id, value: doc.retentionValue || 5, unit: doc.retentionUnit || 'years', enabled: doc.retentionEnabled !== false }); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-slate-200 hover:bg-slate-700">Edytuj termin życia</button><button onClick={() => { initiateAction('trash_doc', doc.id, doc.title); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-red-300 hover:bg-slate-700">Do kosza</button></>}<div className="my-1 border-t border-slate-700" />{tags.map(tag => <button key={tag.id} onClick={() => { const tagIds = (doc.tags || []).map((entry) => entry.tagId); void updateDocument(doc.id, { tagIds: tagIds.includes(tag.id) ? tagIds.filter((id) => id !== tag.id) : [...tagIds, tag.id] }); setDocumentMenuId(null); }} className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: tag.color }} />{(doc.tags || []).some((entry) => entry.tagId === tag.id) ? '✓ ' : ''}{tag.name}</button>)}</div>}
+                            {documentMenuId === doc.id && <div className="absolute right-0 top-10 z-40 w-52 rounded-lg border border-slate-600 bg-[#111827] py-1 text-left shadow-2xl">{activeView !== 'trash' && activeView !== 'archive' && <button onClick={() => { setMoveModalDocId(doc.id); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-slate-200 hover:bg-slate-700">Przenieś</button>}{activeView === 'trash' ? <><button onClick={() => { beginRestore(doc, 'trash'); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-emerald-300 hover:bg-slate-700">Przywróć</button><button onClick={() => { initiateAction('delete_doc', doc.id, doc.title); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-red-300 hover:bg-slate-700">Usuń trwale</button></> : <>{activeView === 'archive' ? <button onClick={() => { beginRestore(doc, 'archive'); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-slate-200 hover:bg-slate-700">Przywróć</button> : <button onClick={() => { void updateDocument(doc.id, { isArchived: true }); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-amber-300 hover:bg-slate-700">Archiwizuj</button>}<button onClick={() => { setRetentionModal({ isOpen: true, docId: doc.id, value: doc.retentionValue || 5, unit: doc.retentionUnit || 'years', enabled: doc.retentionEnabled !== false }); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-slate-200 hover:bg-slate-700">Edytuj termin życia</button><button onClick={() => { initiateAction('trash_doc', doc.id, doc.title); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-red-300 hover:bg-slate-700">Do kosza</button></>}<button onClick={() => { setOcrDocumentId(doc.id); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-blue-300 hover:bg-slate-700">Rozpoznany tekst (OCR)</button><div className="my-1 border-t border-slate-700" />{tags.filter(tag => !tag.inactive).map(tag => <button key={tag.id} onClick={() => { const tagIds = (doc.tags || []).filter(entry => !entry.tag.inactive).map((entry) => entry.tagId); void updateDocument(doc.id, { tagIds: tagIds.includes(tag.id) ? tagIds.filter((id) => id !== tag.id) : [...tagIds, tag.id] }); setDocumentMenuId(null); }} className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: tag.color }} />{(doc.tags || []).some((entry) => entry.tagId === tag.id) ? '✓ ' : ''}{tag.name}</button>)}</div>}
                           </div>
                         </td>
                       </tr>
@@ -988,7 +1073,7 @@ export default function App() {
         </main>
       </div>
       {isAuthOpen && <AuthModal onClose={() => setIsAuthOpen(false)} onAuthenticated={handleAuthenticated} />}
-      {isBillingPlansOpen && <BillingPlansModal busy={billingBusy} onClose={() => setIsBillingPlansOpen(false)} onSelect={(plan, interval) => { setIsBillingPlansOpen(false); void openBillingCheckout(plan, interval); }} />}
+      {isBillingPlansOpen && <BillingPlansModal busy={billingBusy} currentPlan={billingPlan} developmentOverride={billingIsDev} cancellationScheduled={billingDetails?.cancellationScheduled === true} onSelectFree={() => { if (billingIsDev) { void (async () => { try { const response = await apiFetch(`${API_URL}/api/dev/plan`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan: 'free' }) }); if (!response.ok) throw new Error('Nie udało się zmienić planu testowego.'); setIsBillingPlansOpen(false); setBillingDetails(null); await fetchData(); showToast('Wybrano testowy plan Darmowy.'); } catch (error) { showToast(errorMessage(error), 'error'); } })(); } else { setIsBillingPlansOpen(false); void openBillingCancel(); } }} onClose={() => setIsBillingPlansOpen(false)} onSelect={(plan, interval) => { if (billingDetails?.cancellationScheduled) { const amount = plan === 'standard' ? (interval === 'yearly' ? '49,90 zł za rok' : '4,99 zł miesięcznie') : (interval === 'yearly' ? '99,90 zł za rok' : '9,99 zł miesięcznie'); const end = billingDetails.renewalAt ? new Date(billingDetails.renewalAt).toLocaleDateString('pl-PL') : 'końca opłaconego okresu'; if (!window.confirm(`Obecny plan pozostaje opłacony do ${end}. Nowy plan zacznie działać od razu, a nowa płatność (${amount}) zostanie pobrana po jej zatwierdzeniu w Stripe. Niewykorzystana część bieżącego miesiąca nie zostanie ponownie rozliczona. Czy chcesz kontynuować?`)) return; } setIsBillingPlansOpen(false); void openBillingCheckout(plan, interval, billingDetails?.cancellationScheduled === true); }} />}
 
       {isPairingGuideOpen && (
         <div className="fixed inset-0 z-[100] bg-slate-950/80 flex items-center justify-center p-6" onClick={() => setIsPairingGuideOpen(false)}>
@@ -998,10 +1083,11 @@ export default function App() {
               <button onClick={() => setIsPairingGuideOpen(false)} className="text-slate-400 hover:text-white text-2xl">×</button>
             </div>
             <div className="grid md:grid-cols-3 gap-4">
-              <div className="rounded-xl border border-blue-500/50 bg-blue-950/30 p-5"><div className="text-4xl mb-3">🖥️</div><div className="text-blue-300 font-bold">1. Spójrz na ten pasek</div><p className="text-sm text-slate-300 mt-2">Przepisz do telefonu adres <span className="font-mono text-white">{localAddresses[0] || 'IP:3000'}</span> oraz kod <span className="font-mono text-white">{pairingCode || '—'}</span>.</p></div>
-              <div className="rounded-xl border border-emerald-500/50 bg-emerald-950/30 p-5"><div className="text-4xl mb-3">📱</div><div className="text-emerald-300 font-bold">2. Otwórz System w telefonie</div><p className="text-sm text-slate-300 mt-2">W E‑Teczka Mobile wybierz zakładkę <b>System</b>, wpisz adres IP i kod z komputera.</p></div>
-              <div className="rounded-xl border border-violet-500/50 bg-violet-950/30 p-5"><div className="text-4xl mb-3">🔐</div><div className="text-violet-300 font-bold">3. Kliknij „Połącz”</div><p className="text-sm text-slate-300 mt-2">Kod jest jednorazowy. Po sparowaniu telefon dostaje własny klucz dostępu, a dokumenty nie są wysyłane do chmury.</p></div>
+              <div className="rounded-xl border border-blue-500/50 bg-blue-950/30 p-5"><div className="text-4xl mb-3">🖥️</div><div className="text-blue-300 font-bold">1. Połącz urządzenia z Wi‑Fi</div><p className="text-sm text-slate-300 mt-2">Telefon i komputer muszą być w tej samej sieci lokalnej. Otwórz E‑Teczkę na obu urządzeniach.</p></div>
+              <div className="rounded-xl border border-emerald-500/50 bg-emerald-950/30 p-5"><div className="text-4xl mb-3">📱</div><div className="text-emerald-300 font-bold">2. Zeskanuj kod QR</div><p className="text-sm text-slate-300 mt-2">W telefonie wybierz <b>Połączenie z komputerem → Skanuj kod QR</b> i skieruj aparat na ekran.</p></div>
+              <div className="rounded-xl border border-violet-500/50 bg-violet-950/30 p-5"><div className="text-4xl mb-3">🔐</div><div className="text-violet-300 font-bold">3. Postępuj według wskazówek</div><p className="text-sm text-slate-300 mt-2">Telefon pobierze i sprawdzi certyfikat przez Wi‑Fi. Następnie wybierz „Połącz” w aplikacji mobilnej.</p></div>
             </div>
+            <div className="mt-5 flex flex-col items-center gap-3 rounded-xl border border-cyan-500/40 bg-cyan-950/20 p-5"><h3 className="font-bold text-cyan-200">Szyfrowane połączenie z telefonem</h3><p className="text-center text-sm text-slate-300">Na telefonie otwórz Połączenie z komputerem i zeskanuj kod QR. Aplikacja sprawdzi certyfikat przez Wi‑Fi i zapisze go w E‑Teczce. Nie musisz instalować certyfikatu w ustawieniach telefonu.</p><p className="max-w-full break-all text-center font-mono text-xs text-slate-400">Odcisk SHA-256 certyfikatu: {localCaFingerprint || 'niedostępny'}</p><p className="text-center text-sm text-slate-300">W aplikacji mobilnej wybierz „Skanuj kod QR”.</p>{localAddresses[0] && pairingCode && localCaFingerprint ? <div className="rounded-lg bg-white p-4"><QRCode value={JSON.stringify({ serverUrl: `https://${localAddresses[0]}`, pairingCode, caFingerprint: localCaFingerprint })} size={190} /></div> : <p className="text-sm text-amber-200">Serwer HTTPS nie jest gotowy. Uruchom ponownie E‑Teczkę na komputerze, a potem odśwież to okno.</p>}<p className="font-mono text-xs text-slate-400">{localAddresses[0] || 'brak adresu'} · {pairingCode || 'brak kodu'}</p></div>
             <div className="mt-5 rounded-xl border border-amber-500/40 bg-amber-950/30 p-5 grid md:grid-cols-[1fr_auto] gap-5 items-center">
               <div><h3 className="font-bold text-amber-200">Dlaczego adres IP czasem się zmienia?</h3><p className="text-sm text-slate-300 mt-1">Router przydziela adresy automatycznie (DHCP). Po restarcie routera lub komputera może przydzielić komputerowi inny adres.</p><p className="text-sm text-slate-300 mt-3"><b>Jak temu zapobiec:</b> w ustawieniach routera utwórz rezerwację DHCP dla tego komputera (najbezpieczniejsze rozwiązanie). Router będzie zawsze przydzielał mu ten sam adres.</p></div>
               <div className="text-5xl text-center">📡<div className="text-xs text-amber-200 mt-2">Rezerwacja DHCP</div></div>

@@ -10,6 +10,8 @@ import { useNavigation, useRoute, type RouteProp } from "@react-navigation/nativ
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { getApiUrl, getAuthHeaders } from "../services/localConnection";
 import { offlineFile } from "../services/offlineVault";
+import { downloadSecureFile } from "../services/secureFileTransfer";
+import OcrViewer from "../components/OcrViewer";
 import type { RootStackParamList } from "../types/navigation";
 
 export default function DocumentViewerScreen() {
@@ -17,15 +19,41 @@ export default function DocumentViewerScreen() {
   const { document } = useRoute<RouteProp<RootStackParamList, "DocumentViewer">>().params;
   const [fileUri, setFileUri] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showOcr, setShowOcr] = useState(false);
+
+  const documentDownloadPath = (filePath: string) => {
+    const normalized = filePath.replace(/\\/g, "/").replace(/^\/+/, "");
+    return normalized.toLowerCase().startsWith("uploads/") ? `/${normalized}` : `/uploads/${normalized}`;
+  };
 
   const downloadDocument = async () => {
     const extension = document.filePath?.split(".").pop() || "pdf";
-    return FileSystem.downloadAsync(await getApiUrl(`/uploads/${document.filePath}`), `${FileSystem.cacheDirectory}eteczka_${document.id}.${extension}`, { headers: await getAuthHeaders() });
+    // Do not reuse files saved by older versions which cached HTTP error pages.
+    const target = `${FileSystem.cacheDirectory}eteczka_v2_${document.id}.${extension}`;
+    const cached = await FileSystem.getInfoAsync(target);
+    if (cached.exists) return { uri: target };
+    const temporary = `${target}.${Date.now()}-${Math.random().toString(36).slice(2)}.download`;
+    const download = downloadSecureFile(await getApiUrl(documentDownloadPath(document.filePath)), temporary, await getAuthHeaders())
+      .then(async (result) => {
+        if (result.status !== 200) {
+          await FileSystem.deleteAsync(temporary, { idempotent: true });
+          throw new Error(`Serwer zwrócił kod ${result.status}.`);
+        }
+        await FileSystem.moveAsync({ from: temporary, to: target });
+        return { ...result, uri: target };
+      }).catch(async error => {
+        await FileSystem.deleteAsync(temporary, { idempotent: true }).catch(() => undefined);
+        throw error;
+      });
+    return Promise.race([
+      download,
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Pobieranie dokumentu trwa zbyt długo.")), 15_000)),
+    ]);
   };
 
   useEffect(() => { void (async () => {
     try { const saved = await downloadDocument(); setFileUri(saved.uri); }
-    catch { try { setFileUri(await offlineFile(document)); } catch { Alert.alert("Brak dokumentu offline", "Połącz się z komputerem i wybierz synchronizację sejfu."); navigation.goBack(); } }
+    catch { try { setFileUri(await offlineFile(document)); } catch { Alert.alert("Nie udało się pobrać dokumentu", "Połączenie z komputerem nie odpowiada. Sprawdź połączenie albo pobierz dokument do sejfu offline."); navigation.goBack(); } }
   })(); }, [document.filePath, navigation]);
   useEffect(() => { void NavigationBar.setVisibilityAsync("hidden"); return () => { void NavigationBar.setVisibilityAsync("visible"); }; }, []);
 
@@ -35,7 +63,8 @@ export default function DocumentViewerScreen() {
   return <View style={styles.container}>
     <View style={styles.header}><TouchableOpacity onPress={() => navigation.goBack()} style={styles.back}><Ionicons name="arrow-back" size={22} color="white" /></TouchableOpacity><Text style={styles.title} numberOfLines={1}>{document.title}</Text></View>
     <View style={styles.viewer}>{fileUri && (isImage ? <Image source={{ uri: fileUri }} style={styles.image} resizeMode="contain" onLoadEnd={() => setLoading(false)} onError={() => { setLoading(false); Alert.alert("Nie udało się wyświetlić obrazu", "Możesz nadal użyć udostępniania lub e-maila."); }} /> : <Pdf source={{ uri: fileUri, cache: true }} style={styles.pdf} onLoadComplete={() => setLoading(false)} onError={() => { setLoading(false); Alert.alert("Nie udało się wyświetlić PDF", "Możesz nadal użyć udostępniania lub e-maila."); }} />)}{loading && <View style={styles.loading}><ActivityIndicator size="large" color="#60a5fa" /><Text style={styles.loadingText}>Pobieranie dokumentu…</Text></View>}</View>
-    <View style={styles.actions}><TouchableOpacity style={styles.share} onPress={() => void share()}><Ionicons name="share-social-outline" size={19} color="white" /><Text style={styles.actionText}>Udostępnij</Text></TouchableOpacity><TouchableOpacity style={styles.email} onPress={() => void email()}><Ionicons name="mail-outline" size={19} color="white" /><Text style={styles.actionText}>Wyślij e‑mailem</Text></TouchableOpacity></View>
+    <View style={styles.actions}><TouchableOpacity style={styles.share} onPress={() => setShowOcr(true)}><Text style={styles.actionText}>Tekst OCR</Text></TouchableOpacity><TouchableOpacity style={styles.share} onPress={() => void share()}><Ionicons name="share-social-outline" size={19} color="white" /><Text style={styles.actionText}>Udostępnij</Text></TouchableOpacity><TouchableOpacity style={styles.email} onPress={() => void email()}><Ionicons name="mail-outline" size={19} color="white" /><Text style={styles.actionText}>Wyślij e‑mailem</Text></TouchableOpacity></View>
+    {showOcr && <OcrViewer documentId={document.id} onClose={() => setShowOcr(false)} />}
   </View>;
 }
 

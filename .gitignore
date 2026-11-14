@@ -33,6 +33,7 @@ build/
 Thumbs.db
 
 # Temporary/generated files
+.local/
 *.log
 *.tsbuildinfo
 *.tmp
@@ -41,4 +42,14 @@ Thumbs.db
 
 # Runtime credentials and local pairing state
 backend/security/auth-secret
+backend/security/backup-mfa.enc
 backend/security/paired-devices.json
+backend/security/ocr-queue.enc
+backend/security/ocr-queue.enc.*.tmp
+backend/ocr-language-data/
+
+backend/security/local-ca-key.pem
+backend/security/local-ca-cert.pem
+*.log.err
+*.log.out
+frontend/dev-launch.err

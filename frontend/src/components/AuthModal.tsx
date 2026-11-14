@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { resolveApiBase } from '../services/apiBase';
 
 type Props = { onClose: () => void; onAuthenticated: (user: { name?: string | null; email: string }) => void };
 
@@ -12,7 +13,7 @@ export default function AuthModal({ onClose, onAuthenticated }: Props) {
   const submit = async () => {
     setBusy(true); setError('');
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3000' : `${window.location.protocol}//${window.location.hostname}:3000`);
+      const apiUrl = resolveApiBase(window.location, import.meta.env.VITE_API_URL);
       const response = await fetch(`${apiUrl}/api/auth/${mode}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password, deviceId, deviceName: 'E‑Teczka Desktop' }) });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || typeof payload.token !== 'string') throw new Error(payload.error || 'Nie udało się zalogować.');

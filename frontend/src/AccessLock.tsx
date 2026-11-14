@@ -5,9 +5,18 @@ export default function AccessLock({ children }: { children: React.ReactNode }) 
   const [loading, setLoading] = useState(true);
   const [configured, setConfigured] = useState(false);
   const [mode, setMode] = useState<AccessMode>('pin');
+  const [newMode, setNewMode] = useState<AccessMode>('pin');
   const [secret, setSecret] = useState('');
   const [error, setError] = useState('');
   const [unlocked, setUnlocked] = useState(false);
+  const [recoveryAvailable, setRecoveryAvailable] = useState(false);
+  const [mailConfigured, setMailConfigured] = useState(false);
+  const [recoveryView, setRecoveryView] = useState(false);
+  const [recoveryEmail, setRecoveryEmail] = useState('');
+  const [recoveryCode, setRecoveryCode] = useState('');
+  const [newSecret, setNewSecret] = useState('');
+  const [recoveryMessage, setRecoveryMessage] = useState('');
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
 
   useEffect(() => {
     void Promise.resolve().then(async () => {
@@ -22,7 +31,9 @@ export default function AccessLock({ children }: { children: React.ReactNode }) 
         if (!isAccessStatus(response)) throw new Error('Nieprawidłowa odpowiedź blokady.');
         const status = response;
         setConfigured(status.configured);
-        if (status.mode) setMode(status.mode);
+        if (status.mode) { setMode(status.mode); setNewMode(status.mode); }
+        setRecoveryAvailable(Boolean(status.recoveryAvailable));
+        setMailConfigured(Boolean(status.mailConfigured));
       } catch {
         setError('Nie można odczytać ustawień blokady.');
       } finally {
@@ -38,7 +49,7 @@ export default function AccessLock({ children }: { children: React.ReactNode }) 
     try {
       const response = configured
         ? await api.invoke('eteczka-access-verify', secret)
-        : await api.invoke('eteczka-access-configure', { mode, secret });
+        : await api.invoke('eteczka-access-configure', { mode, secret, ...(recoveryEmail ? { recoveryEmail, recoveryCode } : {}) });
       if (!isAccessResult(response)) { setError('Nieprawidłowa odpowiedź blokady.'); return; }
       if (!response.ok) { setError(response.error ?? 'Nieprawidłowy PIN lub hasło.'); return; }
       setSecret('');
@@ -46,6 +57,30 @@ export default function AccessLock({ children }: { children: React.ReactNode }) 
     } catch {
       setError('Nie można połączyć się z mechanizmem blokady aplikacji.');
     }
+  };
+
+  const sendCode = async (purpose: 'enroll' | 'reset') => {
+    const api = getElectronIpc(); if (!api) return;
+    setRecoveryBusy(true); setError(''); setRecoveryMessage('');
+    try {
+      const result = purpose === 'reset'
+        ? await api.invoke('eteczka-recovery-reset-request')
+        : await api.invoke('eteczka-recovery-enroll-request', recoveryEmail);
+      if (!isAccessResult(result) || !result.ok) setError(isAccessResult(result) ? result.error || 'Nie udało się wysłać kodu.' : 'Nieprawidłowa odpowiedź.');
+      else setRecoveryMessage('Kod wysłany na adres odzyskiwania. Jest ważny 10 minut.');
+    } catch { setError('Nie udało się wysłać kodu.'); }
+    finally { setRecoveryBusy(false); }
+  };
+
+  const resetAccess = async () => {
+    const api = getElectronIpc(); if (!api) return;
+    setRecoveryBusy(true); setError('');
+    try {
+      const result = await api.invoke('eteczka-recovery-reset-complete', { code: recoveryCode, mode: newMode, secret: newSecret });
+      if (!isAccessResult(result) || !result.ok) { setError(isAccessResult(result) ? result.error || 'Nie udało się zmienić hasła.' : 'Nieprawidłowa odpowiedź.'); return; }
+      setRecoveryCode(''); setNewSecret(''); setUnlocked(true);
+    } catch { setError('Nie udało się zmienić hasła.'); }
+    finally { setRecoveryBusy(false); }
   };
 
   if (loading) return <div className="min-h-screen bg-[#0f172a]" />;
@@ -65,10 +100,27 @@ export default function AccessLock({ children }: { children: React.ReactNode }) 
         <button onClick={() => { setMode('pin'); setSecret(''); setError(''); }} className={`flex-1 rounded-lg py-3 font-bold ${mode === 'pin' ? 'bg-blue-600' : 'bg-slate-700 text-slate-300'}`}>PIN</button>
         <button onClick={() => { setMode('password'); setSecret(''); setError(''); }} className={`flex-1 rounded-lg py-3 font-bold ${mode === 'password' ? 'bg-blue-600' : 'bg-slate-700 text-slate-300'}`}>Hasło</button>
       </div>}
-      <label className="block text-sm font-semibold text-slate-300 mt-6">{mode === 'pin' ? 'PIN (co najmniej 6 cyfr)' : 'Hasło (co najmniej 8 znaków)'}</label>
-      <input autoFocus value={secret} onChange={event => setSecret(event.target.value)} onKeyDown={event => event.key === 'Enter' && submit()} type="password" inputMode={mode === 'pin' ? 'numeric' : 'text'} className="mt-2 w-full rounded-lg border border-slate-600 bg-[#0f172a] px-4 py-3 text-center text-lg outline-none focus:border-blue-500" placeholder={mode === 'pin' ? 'Wpisz PIN' : 'Wpisz hasło'} />
+      {recoveryView ? <>
+        <p className="mt-5 text-sm text-slate-300">Nie potrzebujesz starego hasła ani PIN-u. Wyślemy kod na potwierdzony adres odzyskiwania.</p>
+        <button disabled={recoveryBusy} onClick={() => void sendCode('reset')} className="mt-3 w-full rounded-lg border border-blue-500 px-4 py-3 font-semibold text-blue-200 disabled:opacity-50">Wyślij kod resetowania e-mailem</button>
+        <label className="mt-4 block text-sm text-slate-300">Kod z wiadomości</label>
+        <input value={recoveryCode} onChange={event => setRecoveryCode(event.target.value)} inputMode="numeric" maxLength={8} placeholder="8-cyfrowy kod" className="mt-2 w-full rounded-lg border border-slate-600 bg-[#0f172a] px-4 py-3 text-white" />
+        <p className="mt-4 text-sm text-slate-300">Nowa metoda otwierania</p>
+        <div className="mt-2 flex gap-2">
+          <button onClick={() => { setNewMode('pin'); setNewSecret(''); }} className={`flex-1 rounded-lg py-2 font-semibold ${newMode === 'pin' ? 'bg-blue-600' : 'bg-slate-700'}`}>PIN</button>
+          <button onClick={() => { setNewMode('password'); setNewSecret(''); }} className={`flex-1 rounded-lg py-2 font-semibold ${newMode === 'password' ? 'bg-blue-600' : 'bg-slate-700'}`}>Hasło</button>
+        </div>
+        <input value={newSecret} onChange={event => setNewSecret(event.target.value)} type="password" inputMode={newMode === 'pin' ? 'numeric' : 'text'} placeholder={newMode === 'pin' ? 'Nowy PIN (min. 6 cyfr)' : 'Nowe hasło (min. 8 znaków)'} className="mt-3 w-full rounded-lg border border-slate-600 bg-[#0f172a] px-4 py-3 text-white" />
+        {recoveryMessage && <p className="mt-3 text-sm text-emerald-300">{recoveryMessage}</p>}
+      </> : <>
+        <label className="block text-sm font-semibold text-slate-300 mt-6">{mode === 'pin' ? 'PIN (co najmniej 6 cyfr)' : 'Hasło (co najmniej 8 znaków)'}</label>
+        <input autoFocus value={secret} onChange={event => setSecret(event.target.value)} onKeyDown={event => event.key === 'Enter' && submit()} type="password" inputMode={mode === 'pin' ? 'numeric' : 'text'} className="mt-2 w-full rounded-lg border border-slate-600 bg-[#0f172a] px-4 py-3 text-center text-lg outline-none focus:border-blue-500" placeholder={mode === 'pin' ? 'Wpisz PIN' : 'Wpisz hasło'} />
+        {!configured && mailConfigured && <><input value={recoveryEmail} onChange={event => setRecoveryEmail(event.target.value)} type="email" placeholder="E-mail do odzyskiwania (opcjonalnie)" className="mt-4 w-full rounded-lg border border-slate-600 bg-[#0f172a] px-4 py-3 text-white" /><button disabled={recoveryBusy || !recoveryEmail} onClick={() => void sendCode('enroll')} className="mt-2 text-sm text-blue-300 disabled:opacity-50">Wyślij kod potwierdzający adres</button>{recoveryEmail && <input value={recoveryCode} onChange={event => setRecoveryCode(event.target.value)} inputMode="numeric" maxLength={8} placeholder="Kod z e-maila" className="mt-2 w-full rounded-lg border border-slate-600 bg-[#0f172a] px-4 py-3 text-white" />}</>}
+      </>}
       {error && <p className="text-red-400 text-sm mt-3">{error}</p>}
-      <button onClick={submit} className="w-full rounded-lg bg-blue-600 hover:bg-blue-500 py-3.5 font-bold mt-5">{configured ? 'Otwórz E‑Teczkę' : 'Włącz blokadę aplikacji'}</button>
+      <button disabled={recoveryBusy || (recoveryView && (!recoveryCode || !newSecret))} onClick={() => void (recoveryView ? resetAccess() : submit())} className="mt-5 w-full rounded-lg bg-blue-600 py-3.5 font-bold hover:bg-blue-500 disabled:opacity-50">{recoveryView ? 'Potwierdź kod i ustaw nowy dostęp' : configured ? 'Otwórz E‑Teczkę' : 'Włącz blokadę aplikacji'}</button>
+      {configured && recoveryAvailable && <button onClick={() => { setRecoveryView(!recoveryView); setError(''); }} className="mt-4 w-full rounded-lg border border-blue-500 px-4 py-3 text-sm font-semibold text-blue-200">{recoveryView ? 'Wróć do wpisywania hasła / PIN-u' : 'Nie pamiętam hasła ani PIN-u — reset e-mailem'}</button>}
+      {configured && !recoveryAvailable && <p className="mt-4 text-center text-xs text-slate-400">Reset e-mailem nie był skonfigurowany dla tej blokady.</p>}
       {!configured && <p className="text-xs text-slate-500 leading-5 mt-5">Biometria na komputerze będzie korzystać z Windows Hello. Dodam ją jako natywną funkcję aplikacji po przygotowaniu podpisanej wersji instalacyjnej.</p>}
     </section>
   </main>;

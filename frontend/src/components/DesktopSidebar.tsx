@@ -1,4 +1,6 @@
 import type { DocumentRecord } from '../types/domain';
+import { useState } from 'react';
+import type { BackupSection } from './BackupModal';
 
 type Props = {
   activeView: string;
@@ -10,13 +12,15 @@ type Props = {
   onOpenPairing: () => void;
   onOpenAccessSettings: () => void;
   onOpenTags: () => void;
+  onOpenBackup: (section: BackupSection) => void;
 };
 
 /** Persistent desktop navigation. Kept independent from document-table rendering. */
 export default function DesktopSidebar({
   activeView, documents, isSettingsMenuOpen, onViewChange, onOpenScanner,
-  onToggleSettings, onOpenPairing, onOpenAccessSettings, onOpenTags,
+  onToggleSettings, onOpenPairing, onOpenAccessSettings, onOpenTags, onOpenBackup,
 }: Props) {
+  const [backupMenuOpen, setBackupMenuOpen] = useState(false);
   const navClass = (view: string) => `w-full px-2 py-2 text-left flex items-center gap-2 rounded transition-colors ${activeView === view ? 'text-white bg-white/10' : 'text-slate-400 hover:text-white hover:bg-white/5'}`;
   return <aside className="z-10 flex w-72 flex-col border-r border-slate-700 bg-[#1f2937] shadow-xl">
     <div className="flex h-16 items-center gap-3 border-b border-slate-700 bg-[#111827]/50 px-4">
@@ -34,6 +38,12 @@ export default function DesktopSidebar({
       <div className="space-y-1 text-sm">
         <button onClick={() => onViewChange('archive')} className={`w-full px-2 py-2 text-left flex items-center justify-between rounded transition-colors ${activeView === 'archive' ? 'text-white bg-white/10' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}><span>📦 Archiwum</span><span className="text-xs">{documents.filter((doc) => doc.isArchived && !doc.isDeleted).length}</span></button>
         <button onClick={() => onViewChange('trash')} className={`w-full px-2 py-2 text-left flex items-center justify-between rounded transition-colors ${activeView === 'trash' ? 'text-white bg-white/10' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}><span>🗑️ Kosz</span><span className="text-xs">{documents.filter((doc) => doc.isDeleted).length}</span></button>
+        <button onClick={() => setBackupMenuOpen(value => !value)} aria-expanded={backupMenuOpen} className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-slate-400 hover:bg-white/5 hover:text-white">☁️ Kopia zapasowa <span className="ml-auto">{backupMenuOpen ? '⌃' : '›'}</span></button>
+        {backupMenuOpen && <div className="ml-4 border-l border-slate-600 pl-2">
+          <button onClick={() => onOpenBackup('settings')} className="w-full rounded px-2 py-2 text-left text-slate-400 hover:bg-white/5 hover:text-white">Ustawienia kopii</button>
+          <button onClick={() => onOpenBackup('send')} className="w-full rounded px-2 py-2 text-left text-slate-400 hover:bg-white/5 hover:text-white">Wyślij kopię</button>
+          <button onClick={() => onOpenBackup('restore')} className="w-full rounded px-2 py-2 text-left text-slate-400 hover:bg-white/5 hover:text-white">Przywróć kopię</button>
+        </div>}
       </div>
     </div>
     <div className="border-t border-slate-700 p-4">

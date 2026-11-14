@@ -6,6 +6,7 @@ const DRAFT_KEY = 'eteczka.scan-draft.v1';
 
 export type ScanDraft = {
   folderId: number;
+  uploadId?: string;
   pages: string[];
   title: string;
   retentionValue: string;
@@ -29,6 +30,7 @@ export async function loadScanDraft(folderId: number | null): Promise<ScanDraft 
       || typeof candidate.retentionValue !== 'string' || !isRetentionUnit(candidate.retentionUnit)) return null;
     const validDraft: ScanDraft = {
       folderId: candidate.folderId,
+      uploadId: typeof candidate.uploadId === 'string' ? candidate.uploadId : undefined,
       pages: candidate.pages.filter((page): page is string => typeof page === 'string'),
       title: candidate.title,
       retentionValue: candidate.retentionValue,

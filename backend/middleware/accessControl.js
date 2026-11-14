@@ -23,6 +23,7 @@ function loadPairedDevices() {
 let pairedDevices = loadPairedDevices();
 let pairingCode = createPairingCode();
 let pairingExpiresAt = Date.now() + 10 * 60 * 1000;
+let pairingOwner = { ownerKey: 'desktop-local' };
 const pairingAttempts = new Map();
 function savePairedDevices() {
     const temporaryFile = `${paths_1.pairedDevicesFile}.tmp`;
@@ -46,6 +47,11 @@ function requireLocalDesktop(request, response, next) {
 }
 function requireAccess(request, response, next) {
     var _a;
+    // Stripe redirects the browser back without the app's Authorization header.
+    // The confirmation endpoint validates the Checkout Session itself, so it is
+    // safe to let that one GET through the device gate.
+    if (request.method === 'GET' && request.path === '/billing/confirm')
+        return next();
     const token = (_a = request.header('authorization')) === null || _a === void 0 ? void 0 : _a.replace(/^Bearer\s+/i, '');
     if (token) {
         const account = verifyAccountToken(token);
@@ -67,7 +73,9 @@ function requireAccess(request, response, next) {
         return response.status(401).json({ error: 'Urządzenie nie jest sparowane.' });
     device.lastSeenAt = new Date().toISOString();
     savePairedDevices();
-    response.locals.billingOwnerKey = `device:${device.id}`;
+    if (device.ownerId)
+        response.locals.userId = device.ownerId;
+    response.locals.billingOwnerKey = device.ownerKey || `device:${device.id}`;
     next();
 }
 function verifyAccountToken(token) {
@@ -86,9 +94,12 @@ function verifyAccountToken(token) {
     return Number.isInteger(userId) && userId > 0 && Number.isFinite(expiresAt) && expiresAt > Date.now() ? { userId } : null;
 }
 function registerPairingRoutes(app) {
-    app.get('/api/pairing-code', requireLocalDesktop, (_req, res) => {
-        if (Date.now() >= pairingExpiresAt)
+    app.get('/api/pairing-code', requireLocalDesktop, requireAccess, (_req, res) => {
+        const ownerKey = String(res.locals.billingOwnerKey || 'desktop-local');
+        const ownerId = res.locals.userId ? Number(res.locals.userId) : undefined;
+        if (Date.now() >= pairingExpiresAt || pairingOwner.ownerKey !== ownerKey)
             rotatePairingCode();
+        pairingOwner = { ownerId, ownerKey };
         res.json({ code: pairingCode, expiresAt: pairingExpiresAt });
     });
     app.get('/api/network-info', requireLocalDesktop, (_req, res) => {
@@ -97,7 +108,10 @@ function registerPairingRoutes(app) {
             .map(item => item.address)
             .filter(address => { const [first = -1, second = -1] = address.split('.').map(Number); return first === 10 || (first === 172 && second >= 16 && second <= 31) || (first === 192 && second === 168); });
         addresses.sort((a, b) => Number(b.startsWith('192.168.')) - Number(a.startsWith('192.168.')) || Number(a.startsWith('172.20.')) - Number(b.startsWith('172.20.')));
-        res.json({ addresses, port: Number(process.env.PORT || 3000) });
+        res.json({ addresses, port: 3443 });
+    });
+    app.get('/api/pairing-status', requireLocalDesktop, (_req, res) => {
+        res.json({ pairedDevices: pairedDevices.length, phoneConnected: pairedDevices.some((device) => Date.now() - Date.parse(device.lastSeenAt) < 30000) });
     });
     app.post('/api/pair', (req, res) => {
         var _a, _b;
@@ -113,7 +127,7 @@ function registerPairingRoutes(app) {
         }
         const accessToken = crypto_1.default.randomBytes(32).toString('base64url');
         const now = new Date().toISOString();
-        pairedDevices.push({ id: crypto_1.default.randomUUID(), name: String(((_b = req.body) === null || _b === void 0 ? void 0 : _b.deviceName) || 'Telefon').slice(0, 64), tokenHash: crypto_1.default.createHash('sha256').update(accessToken).digest('hex'), createdAt: now, lastSeenAt: now });
+        pairedDevices.push({ id: crypto_1.default.randomUUID(), name: String(((_b = req.body) === null || _b === void 0 ? void 0 : _b.deviceName) || 'Telefon').slice(0, 64), tokenHash: crypto_1.default.createHash('sha256').update(accessToken).digest('hex'), createdAt: now, lastSeenAt: now, ownerId: pairingOwner.ownerId, ownerKey: pairingOwner.ownerKey });
         savePairedDevices();
         rotatePairingCode();
         res.status(201).json({ accessToken });

@@ -11,12 +11,12 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.collectFolderBranch = collectFolderBranch;
 exports.isDocumentFolder = isDocumentFolder;
-function collectFolderBranch(prisma, folderId) {
+function collectFolderBranch(prisma, folderId, ownerId) {
     return __awaiter(this, void 0, void 0, function* () {
         const ids = [folderId];
-        const children = yield prisma.folder.findMany({ where: { parentId: folderId }, select: { id: true } });
+        const children = yield prisma.folder.findMany({ where: Object.assign({ parentId: folderId }, (ownerId === undefined ? {} : { ownerId })), select: { id: true } });
         for (const child of children)
-            ids.push(...yield collectFolderBranch(prisma, child.id));
+            ids.push(...yield collectFolderBranch(prisma, child.id, ownerId));
         return ids;
     });
 }

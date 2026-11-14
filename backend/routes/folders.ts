@@ -37,19 +37,45 @@ export function createFolderRouter(prisma: PrismaClient) {
     } catch (error: unknown) { const details = errorMessage(error); console.error(`[PATCH /api/folders/${req.params.id}/move] Błąd sortowania:`, details); res.status(500).json({ error: 'Błąd sortowania', details }); }
   });
   router.get('/:id/delete-preview', async (req, res) => {
-    try { const ids = await collectFolderBranch(prisma, Number(req.params.id)); res.json({ folderIds: ids, documentCount: await prisma.document.count({ where: { folderId: { in: ids } } }) }); }
-    catch (error: unknown) { res.status(500).json({ error: 'Nie udało się sprawdzić zawartości kartoteki.', details: errorMessage(error) }); }
+    try {
+      const ids = await collectFolderBranch(prisma, Number(req.params.id), ownerId(res));
+      const [documentCount, archivedCount, trashedCount] = await Promise.all([
+        prisma.document.count({ where: { folderId: { in: ids }, isDeleted: false, isArchived: false } }),
+        prisma.document.count({ where: { folderId: { in: ids }, isDeleted: false, isArchived: true } }),
+        prisma.document.count({ where: { folderId: { in: ids }, isDeleted: true } }),
+      ]);
+      res.json({ folderIds: ids, documentCount, archivedCount, trashedCount });
+    } catch (error: unknown) { res.status(500).json({ error: 'Nie udało się sprawdzić zawartości kartoteki.', details: errorMessage(error) }); }
   });
   router.post('/:id/delete-safely', async (req, res) => {
     try {
-      const ids = await collectFolderBranch(prisma, Number(req.params.id));
-      const documentCount = await prisma.document.count({ where: { folderId: { in: ids } } });
+      const currentOwner = ownerId(res); const sourceId = Number(req.params.id);
       const transferFolderId = req.body?.transferFolderId ? Number(req.body.transferFolderId) : null;
-      if (documentCount && (!transferFolderId || ids.includes(transferFolderId))) return res.status(400).json({ error: 'Wybierz inną kartotekę docelową dla dokumentów.' });
-      if (transferFolderId) { const target = await prisma.folder.findUnique({ where: { id: transferFolderId }, select: { parentId: true } }); if (!target) return res.status(400).json({ error: 'Wybrana kartoteka docelowa nie istnieje.' }); if (!target.parentId) return res.status(400).json({ error: 'Dokumenty można przenieść wyłącznie do podkartoteki.' }); }
-      await prisma.$transaction(async tx => { if (documentCount && transferFolderId) await tx.document.updateMany({ where: { folderId: { in: ids } }, data: { folderId: transferFolderId } }); for (const folderId of [...ids].reverse()) await tx.folder.delete({ where: { id: folderId } }); });
-      res.json({ success: true, movedDocuments: documentCount });
-    } catch (error: unknown) { res.status(500).json({ error: 'Błąd usuwania kartoteki', details: errorMessage(error) }); }
+      const result = await prisma.$transaction(async tx => {
+        const source = await tx.folder.findFirst({ where: { id: sourceId, ownerId: currentOwner }, select: { id: true } });
+        if (!source) throw new Error('Kartoteka już nie istnieje.');
+        const ids = await collectFolderBranch(tx as PrismaClient, sourceId, currentOwner);
+        const foreignChildren = await tx.folder.count({ where: { parentId: { in: ids }, ownerId: { not: currentOwner } } });
+        if (foreignChildren) throw new Error('Kartoteka zawiera podkartoteki innego użytkownika.');
+        const [documentCount, archivedCount, trashedCount] = await Promise.all([
+          tx.document.count({ where: { folderId: { in: ids }, isDeleted: false, isArchived: false } }),
+          tx.document.count({ where: { folderId: { in: ids }, isDeleted: false, isArchived: true } }),
+          tx.document.count({ where: { folderId: { in: ids }, isDeleted: true } }),
+        ]);
+        if (documentCount && (!transferFolderId || ids.includes(transferFolderId))) throw new Error('Wybierz inną podkartotekę docelową dla aktywnych dokumentów.');
+        let targetId = transferFolderId;
+        if (targetId) {
+          const target = await tx.folder.findFirst({ where: { id: targetId, ownerId: currentOwner }, select: { id: true, parentId: true } });
+          if (!target || ids.includes(targetId) || !target.parentId) throw new Error('Wybierz istniejącą podkartotekę docelową poza usuwaną kartoteką.');
+        } else if (archivedCount || trashedCount) {
+          throw new Error('Wybierz podkartotekę, aby zachować dokumenty z archiwum i kosza.');
+        }
+        if (targetId && (documentCount || archivedCount || trashedCount)) await tx.document.updateMany({ where: { folderId: { in: ids } }, data: { folderId: targetId } });
+        for (const folderId of [...ids].reverse()) await tx.folder.delete({ where: { id: folderId } });
+        return { success: true, movedDocuments: documentCount, preservedArchived: archivedCount, preservedTrash: trashedCount, targetFolderId: targetId };
+      });
+      res.json(result);
+    } catch (error: unknown) { res.status(409).json({ error: errorMessage(error) || 'Błąd usuwania kartoteki.' }); }
   });
   return router;
 }

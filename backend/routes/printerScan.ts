@@ -4,9 +4,11 @@ import fs from 'fs';
 import path from 'path';
 import type { PrismaClient } from '@prisma/client';
 import { scanDraftsDir } from '../config/paths';
-import { isDocumentFolder } from '../services/folders';
 import { getWiaDevices, runWiaPowerShell } from '../services/wia';
 import { errorMessage, errorStatusCode } from '../utils/errors';
+import { ocrOwnerKey } from '../services/ocrPremium';
+import { accountingKey } from '../services/devPlans';
+import { getPlan, ensurePlanLedger, consumeUsage, PlanLimitError } from '../services/planLedger';
 
 type PrinterScanJob = { status: 'running' | 'completed' | 'failed'; stage: string; error?: string; temporaryPath?: string; createdAt: number };
 
@@ -23,16 +25,17 @@ export function createPrinterScanRouter(prisma: PrismaClient) {
   router.post('/', async (req, res) => {
     const folderId = Number(req.body?.folderId);
     const requestedDeviceId = String(req.body?.deviceId || '');
-    if (!await isDocumentFolder(prisma, folderId)) return res.status(400).json({ error: 'Wybierz podkartotekę docelową.' });
+    if (!await prisma.folder.findFirst({ where: { id: folderId, ownerId: Number(res.locals.userId || 1), parentId: { not: null } }, select: { id: true } })) return res.status(400).json({ error: 'Wybierz własną podkartotekę docelową.' });
     if (activeJobId) return res.status(409).json({ error: 'Na komputerze trwa już inne skanowanie.' });
     let deviceNumber: number;
     try { deviceNumber = (await getWiaDevices()).findIndex(device => device.id === requestedDeviceId) + 1; }
     catch (error: unknown) { return res.status(503).json({ error: errorMessage(error, 'Nie udało się odczytać skanerów.') }); }
     if (!deviceNumber) return res.status(400).json({ error: 'Wybrany skaner nie jest już dostępny.' });
-    const jobId = crypto.randomUUID();
+    const jobId = crypto.randomUUID(); const key = ocrOwnerKey(res);
+    try { const plan = await getPlan(prisma, key); await ensurePlanLedger(prisma); await prisma.$transaction(tx => consumeUsage(tx, key, plan, 'printerScan', jobId, 1)); } catch (error) { if (error instanceof PlanLimitError) return res.status(403).json({ code: error.code, error: error.message, resetsAt: error.resetsAt }); return res.status(500).json({ error: 'Nie udało się sprawdzić limitu skanowania.' }); }
     const job: PrinterScanJob = { status: 'running', stage: 'Zlecenie odebrane przez komputer…', createdAt: Date.now() };
     jobs.set(jobId, job); activeJobId = jobId; res.status(202).json({ jobId });
-    void runPrinterScan(job, deviceNumber).finally(() => { activeJobId = null; });
+    void runPrinterScan(job, deviceNumber).finally(async () => { if (job.status === 'failed') { try { await prisma.$executeRaw`DELETE FROM PlanUsage WHERE ownerKey = ${accountingKey(key)} AND feature = ${'printerScan'} AND operationId = ${jobId}`; } catch { console.error('[scan] Nie udało się cofnąć licznika nieudanego skanu.'); } } activeJobId = null; });
   });
 
   router.get('/:jobId', (req, res) => {

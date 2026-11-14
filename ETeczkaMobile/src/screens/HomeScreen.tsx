@@ -7,7 +7,8 @@ import { io } from "socket.io-client";
 import { getApiUrl, getAuthHeaders, getLocalConnection } from "../services/localConnection";
 import type { FolderStackParamList, FolderSummary, MainTabParamList } from "../types/navigation";
 import { errorMessage } from "../utils/errors";
-import { loadCachedFolders, saveCachedFolders } from "../services/offlineCatalog";
+import { loadCachedDocuments, loadCachedFolders, saveCachedFolders } from "../services/offlineCatalog";
+import { cancelPendingFolderCreation, queueOfflineChange, syncNow } from "../services/offlineSync";
 
 function isFolderSummary(value: unknown): value is FolderSummary {
   if (!value || typeof value !== "object") return false;
@@ -58,6 +59,7 @@ export default function HomeScreen() {
       const nextFolders = Array.isArray(data) ? data.filter(isFolderSummary) : [];
       setFolders(nextFolders);
       await saveCachedFolders(nextFolders);
+      void syncNow().catch(() => undefined);
     } catch (error: unknown) {
       const cached = await loadCachedFolders();
       if (cached.length) { setFolders(cached); setNeedsSetup(false); setLoadError("Tryb offline — pokazano ostatnio zapisaną listę kartotek."); }
@@ -109,6 +111,14 @@ export default function HomeScreen() {
       if (parentId) setExpanded(previous => ({ ...previous, [parentId]: true }));
       await fetchFolders();
     } catch {
+      if (!folderDialog.editFolder) {
+        const clientId = `offline-${Date.now()}`;
+        const localFolder: FolderSummary = { id: -Date.now(), clientId, name, parentId: folderDialog.parentId || null, order: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+        const cached = await loadCachedFolders(); await saveCachedFolders([...cached, localFolder]);
+        await queueOfflineChange({ entity: "folders", operation: "created", value: { clientId, name, parentId: folderDialog.parentId || null, order: 0, updatedAt: localFolder.updatedAt } });
+        setFolders([...cached, localFolder]); setFolderDialog(null); setLoadError("Zapisano lokalnie — zmiana zostanie wysłana po połączeniu.");
+        return;
+      }
       Alert.alert("Nie udało się zapisać kartoteki", "Sprawdź połączenie z komputerem i spróbuj ponownie.");
     } finally {
       setCreatingFolder(false);
@@ -121,21 +131,33 @@ export default function HomeScreen() {
     return ids;
   };
   const deleteFolder = (folder: FolderSummary) => Alert.alert("Usunąć kartotekę?", `Najpierw sprawdzimy, czy „${folder.name}” zawiera dokumenty.`, [{ text: "Anuluj", style: "cancel" }, { text: "Usuń", style: "destructive", onPress: async () => {
+    if (folder.id < 0 && folder.clientId) {
+      try {
+        const cached = await loadCachedFolders();
+        if (cached.some(item => item.parentId === folder.id) || (await loadCachedDocuments(folder.id)).length) throw new Error('Kartoteka zawiera dane. Przenieś je przed usunięciem.');
+        await cancelPendingFolderCreation(folder.clientId);
+        const remaining = cached.filter(item => item.id !== folder.id);
+        await saveCachedFolders(remaining); setFolders(remaining);
+      } catch (error: unknown) { Alert.alert('Nie udało się usunąć kartoteki', errorMessage(error)); }
+      return;
+    }
     try {
       const headers = await getAuthHeaders();
       const previewResponse = await fetch(await getApiUrl(`/api/folders/${folder.id}/delete-preview`), { headers });
+      if (!previewResponse.ok) { Alert.alert("Nie udało się sprawdzić kartoteki", "Komputer odrzucił żądanie. Kartoteka nie została usunięta."); return; }
       const preview: unknown = await previewResponse.json();
       const documentCount = preview && typeof preview === "object" && typeof (preview as { documentCount?: unknown }).documentCount === "number" ? (preview as { documentCount: number }).documentCount : 0;
-      if (!previewResponse.ok) throw new Error("Nie udało się sprawdzić zawartości kartoteki.");
-      if (documentCount > 0) {
+      const extra = preview && typeof preview === "object" ? preview as { archivedCount?: number; trashedCount?: number } : {};
+      const total = documentCount + (Number(extra.archivedCount) || 0) + (Number(extra.trashedCount) || 0);
+      if (total > 0) {
         setTransferFolderId(null);
-        setDeleteDialog({ folder, documentCount });
+        setDeleteDialog({ folder, documentCount: total });
         return;
       }
       const response = await fetch(await getApiUrl(`/api/folders/${folder.id}/delete-safely`), { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify({}) });
-      if (!response.ok) throw new Error("Nie udało się usunąć kartoteki.");
+      if (!response.ok) { Alert.alert("Nie udało się usunąć kartoteki", "Komputer odrzucił żądanie. Kartoteka pozostała bez zmian."); return; }
       await fetchFolders();
-    } catch (error: unknown) { Alert.alert("Nie udało się usunąć", errorMessage(error, "Sprawdź połączenie z komputerem.")); }
+    } catch (error: unknown) { const cached = await loadCachedFolders(); await saveCachedFolders(cached.filter(item => item.id !== folder.id)); setFolders(cached.filter(item => item.id !== folder.id)); await queueOfflineChange({ entity: "folders", operation: "deleted", value: { id: folder.id, updatedAt: new Date().toISOString() } }); setLoadError("Usunięcie zapisano lokalnie — zostanie wykonane po połączeniu."); }
   } }]);
   const confirmDeleteFolder = async () => {
     if (!deleteDialog || (deleteDialog.documentCount > 0 && !transferFolderId)) return;
@@ -155,9 +177,10 @@ export default function HomeScreen() {
 
   const mainFolders = folders.filter(f => !f.parentId);
   const getSubfolders = (parentId: number) => folders.filter(f => f.parentId === parentId);
+  const folderTotals = (id: number): { folders: number; documents: number } => getSubfolders(id).reduce((total, child) => { const nested = folderTotals(child.id); return { folders: total.folders + 1 + nested.folders, documents: total.documents + Number(child._count?.documents ?? 0) + nested.documents }; }, { folders: 0, documents: 0 });
   const renderFolder = (item: FolderSummary, depth = 0): React.ReactNode => {
-    const children = getSubfolders(item.id); const isExpanded = expanded[item.id]; const docCount = Number(item._count?.documents ?? 0);
-    return <View key={item.id} style={[styles.folderGroup, depth > 0 && styles.nestedFolderGroup]}><View style={styles.card}><TouchableOpacity style={styles.infoWrapper} activeOpacity={0.7} onPress={() => children.length ? toggleExpand(item.id) : navigation.navigate("FolderDetails", { folder: item })}><View style={styles.iconWrapper}><Ionicons name="document-text-outline" size={28} color="#dbeafe" /><Text style={styles.iconCount}>{docCount}</Text></View><View style={{ flex: 1 }}><Text style={styles.folderTitle}>{item.name}</Text><Text style={styles.folderHint}>{children.length ? `${children.length} ${children.length === 1 ? "podkartoteka" : "podkartoteki"}` : "Otwórz dokumenty"}</Text></View></TouchableOpacity>{children.length > 0 ? <TouchableOpacity style={styles.expandBtn} onPress={() => toggleExpand(item.id)}><Ionicons name={isExpanded ? "chevron-down" : "chevron-forward"} size={28} color="#94a3b8" /></TouchableOpacity> : <View style={styles.expandBtnPlaceholder} />}{editing && <View style={styles.editActions}><TouchableOpacity onPress={() => openFolderDialog(item.id, item.name)}><Ionicons name="add-circle-outline" size={24} color="#60a5fa" /></TouchableOpacity><TouchableOpacity onPress={() => openFolderDialog(item.parentId ?? item.id, undefined, item)}><Ionicons name="pencil-outline" size={22} color="#fbbf24" /></TouchableOpacity><TouchableOpacity onPress={() => deleteFolder(item)}><Ionicons name="trash-outline" size={22} color="#f87171" /></TouchableOpacity></View>}</View>{isExpanded && children.map(child => renderFolder(child, depth + 1))}</View>;
+    const children = getSubfolders(item.id); const isExpanded = expanded[item.id]; const docCount = Number(item._count?.documents ?? 0); const totals = folderTotals(item.id);
+    return <View key={item.id} style={[styles.folderGroup, depth > 0 && styles.nestedFolderGroup]}><View style={styles.card}><TouchableOpacity style={styles.infoWrapper} activeOpacity={0.7} onPress={() => children.length ? toggleExpand(item.id) : navigation.navigate("FolderDetails", { folder: item })}><View style={styles.iconWrapper}><Ionicons name={isExpanded && children.length ? "folder-open-outline" : "folder-outline"} size={28} color="#dbeafe" /></View><View style={{ flex: 1 }}><Text style={styles.folderTitle}>{item.name}</Text><Text style={styles.folderHint}>{depth === 0 ? `${totals.folders} podkartotek · ${totals.documents + docCount} aktywnych dokumentów` : `${docCount} aktywnych dokumentów`}</Text></View></TouchableOpacity>{children.length > 0 ? <TouchableOpacity style={styles.expandBtn} onPress={() => toggleExpand(item.id)}><Ionicons name={isExpanded ? "chevron-down" : "chevron-forward"} size={28} color="#94a3b8" /></TouchableOpacity> : <View style={styles.expandBtnPlaceholder} />}{editing && <View style={styles.editActions}><TouchableOpacity onPress={() => openFolderDialog(item.id, item.name)}><Ionicons name="add-circle-outline" size={24} color="#60a5fa" /></TouchableOpacity><TouchableOpacity onPress={() => openFolderDialog(item.parentId ?? item.id, undefined, item)}><Ionicons name="pencil-outline" size={22} color="#fbbf24" /></TouchableOpacity><TouchableOpacity onPress={() => deleteFolder(item)}><Ionicons name="trash-outline" size={22} color="#f87171" /></TouchableOpacity></View>}</View>{isExpanded && children.map(child => renderFolder(child, depth + 1))}</View>;
   };
 
   return (
@@ -221,7 +244,7 @@ export default function HomeScreen() {
           <View style={styles.modalCard}>
             <View style={styles.modalIcon}><Ionicons name="swap-horizontal-outline" size={28} color="#fbbf24" /></View>
             <Text style={styles.modalTitle}>Przenieś dokumenty</Text>
-            <Text style={styles.modalText}>„{deleteDialog?.folder.name}” zawiera {deleteDialog?.documentCount} dokumentów. Wskaż podkartotekę, do której mają zostać przeniesione przed usunięciem.</Text>
+            <Text style={styles.modalText}>„{deleteDialog?.folder.name}” ma {deleteDialog?.documentCount} powiązanych dokumentów, także w koszu lub archiwum. Wskaż podkartotekę dla zachowania ich przed usunięciem. Przy przywracaniu wskażesz miejsce docelowe.</Text>
             <ScrollView style={styles.transferList} contentContainerStyle={styles.transferListContent}>
               {deleteDialog && folders.filter((folder) => folder.parentId !== null && !getFolderBranchIds(deleteDialog.folder.id).includes(folder.id)).map((folder) => <TouchableOpacity key={folder.id} style={[styles.transferOption, transferFolderId === folder.id && styles.transferOptionActive]} onPress={() => setTransferFolderId(folder.id)} disabled={deletingFolder}><Ionicons name="folder-outline" size={19} color={transferFolderId === folder.id ? "#bfdbfe" : "#94a3b8"} /><Text style={styles.transferOptionText}>{folder.name}</Text>{transferFolderId === folder.id && <Ionicons name="checkmark" size={19} color="#60a5fa" />}</TouchableOpacity>)}
             </ScrollView>
