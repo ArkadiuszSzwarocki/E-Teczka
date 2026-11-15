@@ -1,4 +1,13 @@
 "use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -13,6 +22,7 @@ const localTls_1 = require("./services/localTls");
 const requireSecureRemote_1 = require("./middleware/requireSecureRemote");
 const retention_1 = require("./services/retention");
 const accessControl_1 = require("./middleware/accessControl");
+const node_crypto_1 = require("node:crypto");
 const tags_1 = require("./routes/tags");
 const folders_1 = require("./routes/folders");
 const printerScan_1 = require("./routes/printerScan");
@@ -30,7 +40,10 @@ const backupScheduler_1 = require("./services/backupScheduler");
 const ocrQueue_1 = require("./services/ocrQueue");
 const ocr_1 = require("./routes/ocr");
 const devPlans_1 = require("./routes/devPlans");
+const secureShare_1 = require("./routes/secureShare");
+const centralAccount_1 = require("./routes/centralAccount");
 const prisma = new client_1.PrismaClient();
+(0, accessControl_1.configureAccountSessionValidator)((token, userId) => __awaiter(void 0, void 0, void 0, function* () { return Boolean(yield prisma.authSession.findFirst({ where: { tokenHash: (0, node_crypto_1.createHash)('sha256').update(token).digest('hex'), userId, expiresAt: { gt: new Date() } }, select: { id: true } })); }));
 const app = (0, express_1.default)();
 const ocrQueue = (0, ocrQueue_1.createOcrQueue)(prisma, { file: node_path_1.default.join(paths_1.securityDir, 'ocr-queue.enc'), uploadsDirectory: paths_1.uploadsDir });
 const localTls = (0, localTls_1.makeLocalTls)(paths_1.securityDir);
@@ -64,6 +77,9 @@ app.use(express_1.default.json({ limit: '50mb' }));
 app.use(express_1.default.urlencoded({ extended: true, limit: '50mb' }));
 (0, accessControl_1.registerPairingRoutes)(app);
 app.use('/api/auth', (0, auth_1.createAuthRouter)(prisma));
+// The bridge accepts central credentials only from this computer. Linking is
+// explicit and requires a live local session as well as a central session.
+app.use('/api/central-account', accessControl_1.requireLocalDesktop, (0, centralAccount_1.createCentralAccountRouter)(prisma));
 app.use('/api/backup/oauth', (0, backup_1.createBackupOAuthCallbackRouter)(prisma));
 app.use('/api', accessControl_1.requireAccess);
 app.use('/uploads', accessControl_1.requireAccess, express_1.default.static(paths_1.uploadsDir));
@@ -85,6 +101,7 @@ app.use('/api/billing', (0, billing_1.createBillingRouter)(prisma));
 app.use('/api/dev/plan', (0, devPlans_1.createDevPlanRouter)());
 app.use('/api/backup', (0, backup_1.createBackupRouter)(prisma));
 app.use('/api/documents', (0, documents_1.createDocumentRouter)(prisma, ocrQueue));
+app.use('/api/secure-shares', (0, secureShare_1.createSecureShareRouter)(prisma));
 app.use('/api/sync', (0, sync_1.createSyncRouter)(prisma));
 app.use('/api', (0, mobileScan_1.createMobileScanRouter)(prisma, ocrQueue));
 app.use('/api/scanner', (0, scannerInbox_1.createScannerInboxRouter)(prisma, ocrQueue));

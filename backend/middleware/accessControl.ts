@@ -19,6 +19,11 @@ let pairingCode = createPairingCode();
 let pairingExpiresAt = Date.now() + 10 * 60 * 1000;
 let pairingOwner: { ownerId?: number; ownerKey: string } = { ownerKey: 'desktop-local' };
 const pairingAttempts = new Map<string, number>();
+let accountSessionIsActive: ((token: string, userId: number) => Promise<boolean>) | null = null;
+
+export function configureAccountSessionValidator(validator: (token: string, userId: number) => Promise<boolean>) {
+  accountSessionIsActive = validator;
+}
 
 function savePairedDevices() {
   const temporaryFile = `${pairedDevicesFile}.tmp`;
@@ -44,7 +49,7 @@ export function requireLocalDesktop(request: express.Request, response: express.
   response.status(403).json({ error: 'Ta funkcja jest dostępna tylko z aplikacji desktopowej.' });
 }
 
-export function requireAccess(request: express.Request, response: express.Response, next: express.NextFunction) {
+export async function requireAccess(request: express.Request, response: express.Response, next: express.NextFunction) {
   // Stripe redirects the browser back without the app's Authorization header.
   // The confirmation endpoint validates the Checkout Session itself, so it is
   // safe to let that one GET through the device gate.
@@ -53,6 +58,10 @@ export function requireAccess(request: express.Request, response: express.Respon
   if (token) {
     const account = verifyAccountToken(token);
     if (account) {
+      if (!accountSessionIsActive) return response.status(503).json({ error: 'Weryfikacja sesji jest niedostępna.' });
+      try {
+        if (!await accountSessionIsActive(token, account.userId)) return response.status(401).json({ error: 'Sesja wygasła lub została wylogowana.' });
+      } catch { return response.status(503).json({ error: 'Nie udało się sprawdzić sesji.' }); }
       response.locals.userId = account.userId;
       response.locals.billingOwnerKey = `user:${account.userId}`;
       return next();
@@ -79,7 +88,8 @@ function verifyAccountToken(token: string) {
   if (!encoded || !signature) return null;
   const payload = Buffer.from(encoded, 'base64url').toString('utf8');
   const expected = crypto.createHmac('sha256', AUTH_SECRET).update(payload).digest('base64url');
-  if (signature.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
+  const signatureBytes = Buffer.from(signature, 'utf8'); const expectedBytes = Buffer.from(expected, 'utf8');
+  if (signatureBytes.length !== expectedBytes.length || !crypto.timingSafeEqual(signatureBytes, expectedBytes)) return null;
   const [rawUserId, rawExpiry] = payload.split('.');
   const userId = Number(rawUserId);
   const expiresAt = Number(rawExpiry);

@@ -78,7 +78,7 @@ function recordTransaction(prisma, data) {
         });
     });
 }
-function createBillingRouter(prisma, getStripe = stripeClient) {
+function createBillingRouter(prisma, getStripe = stripeClient, options = {}) {
     const router = express_1.default.Router();
     router.get('/usage', (_request, response) => __awaiter(this, void 0, void 0, function* () {
         try {
@@ -365,6 +365,8 @@ function createBillingRouter(prisma, getStripe = stripeClient) {
     }));
     router.post('/checkout', (request, response) => __awaiter(this, void 0, void 0, function* () {
         var _a, _b, _c, _d, _e, _f;
+        if (!options.allowLegacyCheckout)
+            return response.status(503).json({ code: 'GOOGLE_PLAY_PENDING', error: 'Zakupy przez Google Play są w przygotowaniu. Nowe płatności Stripe są wyłączone.' });
         if ((0, devPlans_1.devPlan)(ownerKey(request)))
             return response.status(409).json({ error: 'W trybie testu planu wyłącz go przed zmianą płatności Stripe.' });
         const stripe = getStripe();

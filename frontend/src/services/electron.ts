@@ -20,6 +20,16 @@ export function getElectronIpc(): IpcRenderer | null {
   return electron?.ipcRenderer ?? null;
 }
 
+export async function openExternalAccountUrl(raw: string, origin: string): Promise<void> {
+  const url = new URL(raw);
+  if (url.protocol !== 'https:' || url.origin !== origin || url.pathname !== '/account' || !/^#[A-Za-z0-9_-]{43}$/.test(url.hash)) throw new Error('Nieprawidłowy adres konta.');
+  const electron = (window as ElectronWindow).require?.('electron') as { shell?: { openExternal: (url: string) => Promise<void> } } | undefined;
+  if (electron?.shell) { await electron.shell.openExternal(url.href); return; }
+  const opened = window.open(url.href, '_blank', 'noopener,noreferrer');
+  // Browsers may return null for noopener even when the tab opened.
+  void opened;
+}
+
 type NodeFileSystem = {
   readFileSync: (path: string) => { toString: (encoding: string) => string };
   unlinkSync: (path: string) => void;

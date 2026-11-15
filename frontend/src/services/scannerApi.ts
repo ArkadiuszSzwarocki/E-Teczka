@@ -35,7 +35,7 @@ export async function uploadPrinterDocument(apiUrl: string, fetcher: Fetcher, pa
     const payload = await response.json().catch(() => ({})) as { error?: string; details?: string };
     throw new Error(payload.details || payload.error || (response.status === 413 ? 'Dokument jest za duży do przesłania.' : `Nie udało się zapisać skanu (HTTP ${response.status}).`));
   }
-  const saved = await response.json() as { id?: string; title?: string; createdAt?: string };
+  const saved = await response.json() as { id?: string; title?: string; createdAt?: string; pdfa?: boolean; pdfaWarning?: string };
   if (!saved.id) throw new Error('Serwer nie potwierdził zapisu dokumentu.');
   return saved;
 }

@@ -34,6 +34,7 @@ export async function uploadScanDocument(input: Input) {
   const response = await withTimeout(fetch(`${apiUrl}/api/mobile-scan-draft/finalize`, {
     method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify({ pageKeys: input.pages.map(page => page.split('/').pop() || page), printerJobs: input.pages.flatMap(page => { const match = /printer_draft_([0-9a-f-]{36})\.jpg$/i.exec(page); return match ? [match[1]] : []; }), draftId, folderId: input.folderId, title: input.title, retentionEnabled: input.retentionEnabled, retentionValue: input.retentionValue, retentionUnit: input.retentionUnit, thumbnail: thumbnail.base64 ? `data:image/jpeg;base64,${thumbnail.base64}` : undefined }),
-  }), 45_000, 'Scalanie trwa zbyt długo. Dokument może być już zapisany — sprawdź kartotekę na komputerze.');
+  }), 180_000, 'Scalanie trwa zbyt długo. Dokument może być już zapisany — sprawdź kartotekę na komputerze.');
   if (!response.ok) { const result = await response.json().catch(() => ({})); throw new Error(result.error || `Serwer odpowiedział kodem ${response.status}`); }
+  return await response.json() as { pdfa?: boolean; pdfaWarning?: string };
 }

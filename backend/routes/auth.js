@@ -12,7 +12,10 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.DeviceLimitError = void 0;
+exports.passwordHash = passwordHash;
 exports.createAuthRouter = createAuthRouter;
+exports.createSession = createSession;
 const crypto_1 = __importDefault(require("crypto"));
 const express_1 = __importDefault(require("express"));
 const authSecret_1 = require("../security/authSecret");
@@ -33,7 +36,7 @@ function passwordMatches(password, stored) {
     return expected.length === actual.length && crypto_1.default.timingSafeEqual(Buffer.from(expected), Buffer.from(actual));
 }
 function sessionToken(userId, expiresAt) {
-    const payload = `${userId}.${expiresAt.getTime()}`;
+    const payload = `${userId}.${expiresAt.getTime()}.${crypto_1.default.randomBytes(16).toString('hex')}`;
     const signature = crypto_1.default.createHmac('sha256', AUTH_SECRET).update(payload).digest('base64url');
     return `${Buffer.from(payload).toString('base64url')}.${signature}`;
 }
@@ -103,6 +106,7 @@ class DeviceLimitError extends Error {
         this.limit = limit;
     }
 }
+exports.DeviceLimitError = DeviceLimitError;
 function createSession(prisma, userId, email, name, body) {
     return __awaiter(this, void 0, void 0, function* () {
         const deviceId = typeof (body === null || body === void 0 ? void 0 : body.deviceId) === 'string' && body.deviceId.trim().length >= 8 ? body.deviceId.trim().slice(0, 128) : crypto_1.default.randomUUID();

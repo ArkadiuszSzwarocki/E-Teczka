@@ -25,6 +25,7 @@ const ocrPremium_1 = require("../services/ocrPremium");
 const planLedger_1 = require("../services/planLedger");
 const ocrEnqueue_1 = require("../services/ocrEnqueue");
 const duplicateDocuments_1 = require("../services/duplicateDocuments");
+const scannedPdfArchive_1 = require("../services/scannedPdfArchive");
 const validId = (id) => /^[0-9a-f-]{36}$/i.test(id);
 function uniqueTitle(title, existing) {
     const used = new Set(existing.map(value => value.toLocaleLowerCase('pl-PL')));
@@ -62,7 +63,10 @@ function createScannerInboxRouter(prisma, ocrQueue) {
         if (typeof title !== 'string' || !title.trim() || title.length > 240 || !retention || typeof retention.enabled !== 'boolean' || !Number.isInteger(retention.value) || retention.value < 1 || !['years', 'months', 'days'].includes(retention.unit))
             return res.status(400).json({ error: 'Sprawdź nazwę i termin życia dokumentu.' });
         try {
-            const pdf = yield (0, mergeDocuments_1.mergeDocuments)(files);
+            const source = yield (0, mergeDocuments_1.mergeDocuments)(files);
+            const imageOnly = files.every((file) => { const parsed = (0, base64DataUrl_1.parseBase64DataUrl)(file.data); return (parsed === null || parsed === void 0 ? void 0 : parsed.mimeType) === 'image/jpeg' || (parsed === null || parsed === void 0 ? void 0 : parsed.mimeType) === 'image/png'; });
+            const archive = imageOnly ? yield (0, scannedPdfArchive_1.prepareScannedPdf)(source) : { bytes: Buffer.from(source), pdfa: false, warning: 'Plik zawiera inne materiały niż obrazy; zapisano zwykły PDF.' };
+            const pdf = archive.bytes;
             const key = (0, ocrPremium_1.ocrOwnerKey)(res);
             const plan = yield (0, planLedger_1.getPlan)(prisma, key);
             yield (0, planLedger_1.ensurePlanLedger)(prisma);
@@ -79,7 +83,7 @@ function createScannerInboxRouter(prisma, ocrQueue) {
                     return [];
                 }
             });
-            const info = { id, title: uniqueTitle(requestedTitle, existingTitles), createdAt: new Date().toISOString(), retentionEnabled: retention.enabled, retentionValue: retention.value, retentionUnit: retention.unit };
+            const info = { id, title: uniqueTitle(requestedTitle, existingTitles), createdAt: new Date().toISOString(), retentionEnabled: retention.enabled, retentionValue: retention.value, retentionUnit: retention.unit, pdfa: archive.pdfa, pdfaWarning: archive.warning };
             yield prisma.$transaction((tx) => __awaiter(this, void 0, void 0, function* () { yield (0, planLedger_1.consumeUsage)(tx, key, plan, 'printerScan', id, files.length); if (files.length > 1)
                 yield (0, planLedger_1.consumeUsage)(tx, key, plan, 'merge', id, 1); fs_1.default.writeFileSync(path_1.default.join(dir, `${id}.pdf`), pdf, { flag: 'wx' }); try {
                 fs_1.default.writeFileSync(path_1.default.join(dir, `${id}.json`), JSON.stringify(info), { flag: 'wx' });

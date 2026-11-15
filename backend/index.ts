@@ -7,7 +7,8 @@ import https from 'node:https';
 import { makeLocalTls } from './services/localTls';
 import { requireSecureRemote } from './middleware/requireSecureRemote';
 import { applyRetentionPolicy } from './services/retention';
-import { registerPairingRoutes, requireAccess } from './middleware/accessControl';
+import { configureAccountSessionValidator, registerPairingRoutes, requireAccess, requireLocalDesktop } from './middleware/accessControl';
+import { createHash } from 'node:crypto';
 import { createTagRouter } from './routes/tags';
 import { createFolderRouter } from './routes/folders';
 import { createPrinterScanRouter } from './routes/printerScan';
@@ -25,8 +26,11 @@ import { createBackupScheduler } from './services/backupScheduler';
 import { createOcrQueue } from './services/ocrQueue';
 import { createOcrRouter } from './routes/ocr';
 import { createDevPlanRouter } from './routes/devPlans';
+import { createSecureShareRouter } from './routes/secureShare';
+import { createCentralAccountRouter } from './routes/centralAccount';
 
 const prisma = new PrismaClient();
+configureAccountSessionValidator(async (token, userId) => Boolean(await prisma.authSession.findFirst({ where: { tokenHash: createHash('sha256').update(token).digest('hex'), userId, expiresAt: { gt: new Date() } }, select: { id: true } })));
 const app = express();
 const ocrQueue = createOcrQueue(prisma, { file: path.join(securityDir, 'ocr-queue.enc'), uploadsDirectory: uploadsDir });
 
@@ -60,6 +64,9 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 registerPairingRoutes(app);
 app.use('/api/auth', createAuthRouter(prisma));
+// The bridge accepts central credentials only from this computer. Linking is
+// explicit and requires a live local session as well as a central session.
+app.use('/api/central-account', requireLocalDesktop, createCentralAccountRouter(prisma));
 
 app.use('/api/backup/oauth', createBackupOAuthCallbackRouter(prisma));
 
@@ -88,6 +95,7 @@ app.use('/api/billing', createBillingRouter(prisma));
 app.use('/api/dev/plan', createDevPlanRouter());
 app.use('/api/backup', createBackupRouter(prisma));
 app.use('/api/documents', createDocumentRouter(prisma, ocrQueue));
+app.use('/api/secure-shares', createSecureShareRouter(prisma));
 app.use('/api/sync', createSyncRouter(prisma));
 app.use('/api', createMobileScanRouter(prisma, ocrQueue));
 

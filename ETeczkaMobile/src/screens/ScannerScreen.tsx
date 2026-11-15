@@ -129,10 +129,10 @@ export default function ScannerScreen() {
     try {
       setIsProcessing(true);
       if (!uploadId.current) { uploadId.current = 'draft_' + Date.now() + '_' + Math.random().toString(36).slice(2, 14); await persistDraft(pages); }
-      await uploadScanDocument({ uploadId: uploadId.current, pages, folderId: targetFolderId, title: title.trim(), retentionEnabled, retentionValue, retentionUnit, onStage: setProcessingLabel });
+      const result = await uploadScanDocument({ uploadId: uploadId.current, pages, folderId: targetFolderId, title: title.trim(), retentionEnabled, retentionValue, retentionUnit, onStage: setProcessingLabel });
       await Promise.all(pages.map((uri) => FileSystem.deleteAsync(uri, { idempotent: true })));
       await clearScanDraft();
-      Alert.alert("Dokument zapisany", `Scalono ${pages.length} ${pages.length === 1 ? "stronę" : "stron"} do jednego PDF i zapisano w kartotece.`, [
+      Alert.alert("Dokument zapisany", `Scalono ${pages.length} ${pages.length === 1 ? "stronę" : "stron"} do jednego PDF i zapisano w kartotece. ${result.pdfa ? "Zgodność PDF/A‑2b potwierdzona." : result.pdfaWarning || ""}`, [
         { text: "OK", onPress: () => navigation.navigate("Kartoteki") },
       ]);
       setPages([]); uploadId.current = null;

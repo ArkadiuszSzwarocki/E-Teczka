@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="pl">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Konto E-Teczki</title>
+<main>
+  <h1>Konto E-Teczki</h1>
+  <p id="status" role="status"></p>
+  <section id="handoff" hidden><p id="handoffInfo"></p><p>Porównaj ten kod z kodem wyświetlonym na Twoim urządzeniu. Zatwierdź tylko, jeśli są takie same.</p><button id="approveHandoff" type="button" disabled>Potwierdź logowanie urządzenia</button></section>
+  <section id="credentials">
+    <form id="form">
+      <label>E-mail <input id="email" type="email" autocomplete="email" required maxlength="254"></label>
+      <label>Hasło <input id="password" type="password" autocomplete="current-password" required minlength="8" maxlength="200"></label>
+      <button type="submit">Zaloguj</button>
+    </form>
+    <button id="register" type="button">Utwórz konto</button><p>W wiadomości potwierdzisz adres i ustawisz własne hasło.</p>
+    <button id="resend" type="button">Wyślij ponownie link potwierdzający</button>
+    <button id="reset" type="button">Nie pamiętam hasła</button>
+    <div id="google"></div>
+  </section>
+  <section id="googleLinkSection" hidden><button id="showGoogleLink" type="button">Połącz z kontem Google</button><div id="googleLink"></div></section>
+  <button id="logout" type="button" hidden>Wyloguj</button>
+</main>
+<script src="/accountUi.js" defer></script>
+</html>

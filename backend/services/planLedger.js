@@ -18,6 +18,7 @@ exports.checkDocumentCapacity = checkDocumentCapacity;
 exports.exportPlanState = exportPlanState;
 exports.parseBackupPlanState = parseBackupPlanState;
 exports.mergePlanState = mergePlanState;
+exports.copyDesktopPlanState = copyDesktopPlanState;
 exports.claimPrinterPages = claimPrinterPages;
 const devPlans_1 = require("./devPlans");
 const planPolicy_1 = require("./planPolicy");
@@ -127,6 +128,19 @@ function mergePlanState(db, ownerKey, state) {
             yield db.$executeRaw `INSERT INTO PlanTrial(ownerKey, feature, startedAt) VALUES (${ownerKey}, ${item.feature}, ${item.startedAt}) ON CONFLICT(ownerKey, feature) DO UPDATE SET startedAt = MIN(startedAt, excluded.startedAt)`;
         for (const item of state.usage)
             yield db.$executeRaw `INSERT OR IGNORE INTO PlanUsage(ownerKey, feature, operationId, amount, usedAt) VALUES (${ownerKey}, ${item.feature}, ${item.operationId}, ${item.amount}, ${item.usedAt})`;
+    });
+}
+/** Keep existing trial dates and usage when the desktop owner receives an account. */
+function copyDesktopPlanState(db, targetOwner) {
+    return __awaiter(this, void 0, void 0, function* () {
+        yield ensurePlanLedger(db);
+        const source = 'desktop-local';
+        yield db.$transaction((tx) => __awaiter(this, void 0, void 0, function* () {
+            const state = yield exportPlanState(tx, source);
+            yield mergePlanState(tx, targetOwner, state);
+            yield tx.$executeRaw `INSERT OR IGNORE INTO PlanPrinterClaim(ownerKey, jobId, draftId) SELECT ${targetOwner}, jobId, draftId FROM PlanPrinterClaim WHERE ownerKey = ${source}`;
+            yield tx.$executeRaw `INSERT OR IGNORE INTO PlanScanReceipt(ownerKey, draftId, documentId, fingerprint) SELECT ${targetOwner}, draftId, documentId, fingerprint FROM PlanScanReceipt WHERE ownerKey = ${source}`;
+        }));
     });
 }
 /** Printer pages count only when backed by a successful server-issued scan job. */

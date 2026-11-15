@@ -79,7 +79,7 @@ async function recordTransaction(prisma: PrismaClient, data: {
   });
 }
 
-export function createBillingRouter(prisma: PrismaClient, getStripe: () => Stripe | null = stripeClient) {
+export function createBillingRouter(prisma: PrismaClient, getStripe: () => Stripe | null = stripeClient, options: { allowLegacyCheckout?: boolean } = {}) {
   const router = express.Router();
 
   router.get('/usage', async (_request, response) => {
@@ -338,6 +338,7 @@ export function createBillingRouter(prisma: PrismaClient, getStripe: () => Strip
   });
 
   router.post('/checkout', async (request, response) => {
+    if (!options.allowLegacyCheckout) return response.status(503).json({ code: 'GOOGLE_PLAY_PENDING', error: 'Zakupy przez Google Play są w przygotowaniu. Nowe płatności Stripe są wyłączone.' });
     if (devPlan(ownerKey(request))) return response.status(409).json({ error: 'W trybie testu planu wyłącz go przed zmianą płatności Stripe.' });
     const stripe = getStripe();
     if (!stripe) return response.status(503).json({ error: 'Płatności testowe nie są jeszcze skonfigurowane.' });

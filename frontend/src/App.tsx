@@ -9,6 +9,7 @@ import DesktopSidebar from './components/DesktopSidebar';
 import DesktopTopBar from './components/DesktopTopBar';
 import BillingHistoryModal from './components/BillingHistoryModal';
 import PlanUsageModal from './components/PlanUsageModal';
+import SecureShareModal from './components/SecureShareModal';
 import PlanLimitModal from './components/PlanLimitModal';
 import AuthModal from './components/AuthModal';
 import BillingPlansModal from './components/BillingPlansModalV2';
@@ -89,9 +90,11 @@ export default function App() {
   const [newTagName, setNewTagName] = useState('');
   const [newTagColor, setNewTagColor] = useState('#2563eb');
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState<{ name?: string | null; email: string } | null>(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isBillingPlansOpen, setIsBillingPlansOpen] = useState(false);
   const [isPlanUsageOpen, setIsPlanUsageOpen] = useState(false);
+  const [secureShareId, setSecureShareId] = useState<number | null>(null);
   const [planLimitMessage, setPlanLimitMessage] = useState('');
   useEffect(() => { const handler = (event: Event) => setPlanLimitMessage(String((event as CustomEvent<string>).detail)); window.addEventListener('eteczka-plan-limit', handler); return () => window.removeEventListener('eteczka-plan-limit', handler); }, []);
   const [billingIsDev, setBillingIsDev] = useState(false);
@@ -153,6 +156,7 @@ export default function App() {
   const showToast = useCallback((message: string, type: string = 'success') => { setToast({ message, type }); setTimeout(() => setToast(null), 3000); }, []);
 
   const fetchData = useCallback(async () => {
+    const sessionAtStart = localStorage.getItem('eteczka_auth_token');
     try {
       const fetchList = async (path: string): Promise<unknown[] | null> => {
         try {
@@ -168,6 +172,7 @@ export default function App() {
         fetchList('/api/tags'),
         getBillingStatus(API_URL, fetch).catch(() => null)
       ]);
+      if (localStorage.getItem('eteczka_auth_token') !== sessionAtStart) return;
       if (resDocs) setDocuments(resDocs as DocumentRecord[]);
       if (resFolders) setFolders(resFolders as FolderRecord[]);
       setFoldersUnavailable(resFolders === null);
@@ -178,7 +183,28 @@ export default function App() {
   }, []);
 
   const handleAuthenticated = useCallback((user: { name?: string | null; email: string }) => {
-    setIsAuthOpen(false); setIsUserMenuOpen(false); showToast(`Zalogowano jako ${user.email}.`, 'success'); void fetchData();
+    setDocuments([]); setFolders([]); setTags([]); setScannerFiles([]); setSelectedDocs([]); setPreviewDoc(null); setSelectedFolderId(null); setActiveView('dashboard');
+    setCurrentUser(user); setIsAuthOpen(false); setIsUserMenuOpen(false); showToast(`Zalogowano jako ${user.email}.`, 'success'); void fetchData();
+  }, [fetchData, showToast]);
+
+  useEffect(() => {
+    const token = localStorage.getItem('eteczka_auth_token'); if (!token) return;
+    let active = true;
+    void fetch(`${API_URL}/api/auth/me`).then(async response => {
+      if (response.status === 401) { if (localStorage.getItem('eteczka_auth_token') === token) localStorage.removeItem('eteczka_auth_token'); return null; }
+      return response.ok ? response.json() : null;
+    }).then(user => { if (active && localStorage.getItem('eteczka_auth_token') === token && user && typeof user.email === 'string') setCurrentUser(user); }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+
+  const logoutAccount = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/auth/logout`, { method: 'POST' });
+      if (!response.ok) throw new Error('Nie udało się wylogować konta.');
+      localStorage.removeItem('eteczka_auth_token'); setCurrentUser(null); setIsUserMenuOpen(false);
+      setDocuments([]); setFolders([]); setTags([]); setScannerFiles([]); setSelectedDocs([]); setPreviewDoc(null); setSelectedFolderId(null); setActiveView('dashboard');
+      await fetchData(); showToast('Wylogowano konto.', 'success');
+    } catch { showToast('Nie udało się wylogować konta. Sprawdź połączenie z aplikacją.', 'error'); }
   }, [fetchData, showToast]);
 
   const openBillingCheckout = useCallback(async (plan: 'standard' | 'premium', interval: 'monthly' | 'yearly', acceptReplacement = false, fromLimit = false) => {
@@ -460,8 +486,30 @@ export default function App() {
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) setFilesToUpload(prev => [...prev, ...Array.from(e.target.files!).map(file => ({ file, enabled: true, value: 5, unit: 'years' as RetentionUnit }))]);
+    if (e.target.files) addFiles(Array.from(e.target.files));
+    e.target.value = '';
   };
+  const addFiles = useCallback((files: File[]) => {
+    const supported = files.filter(file => /\.(pdf|png|jpe?g)$/i.test(file.name));
+    if (supported.length) setFilesToUpload(prev => [...prev, ...supported.map(file => ({ file, enabled: true, value: 5, unit: 'years' as RetentionUnit }))]);
+    if (supported.length !== files.length) showToast('Pominięto nieobsługiwane pliki. Wybierz PDF, JPG lub PNG.', 'error');
+  }, [showToast]);
+  useEffect(() => {
+    const isFiles = (event: DragEvent) => Array.from(event.dataTransfer?.types || []).includes('Files');
+    const over = (event: DragEvent) => { if (isFiles(event)) { event.preventDefault(); if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'; } };
+    const drop = (event: DragEvent) => {
+      if (!isFiles(event)) return;
+      if (event.target instanceof HTMLInputElement && event.target.type === 'file') return;
+      event.preventDefault();
+      const files = Array.from(event.dataTransfer?.files || []);
+      if (!files.length) return;
+      addFiles(files);
+      if (activeView === 'folder' && selectedFolderId && folders.some(folder => folder.id === selectedFolderId && folder.parentId !== null)) setFolderId(String(selectedFolderId));
+      setActiveView('upload');
+    };
+    window.addEventListener('dragover', over); window.addEventListener('drop', drop);
+    return () => { window.removeEventListener('dragover', over); window.removeEventListener('drop', drop); };
+  }, [activeView, selectedFolderId, folders, addFiles]);
   const openWiaScanner = async () => {
     const ipc = getElectronIpc();
     if (!ipc) return showToast('Skanowanie WIA działa w zainstalowanej aplikacji desktopowej.', 'error');
@@ -514,9 +562,10 @@ export default function App() {
     if (!wiaPages.length) return;
     setIsWiaScanning(true); setWiaStage('Łączenie stron i zapisywanie PDF…');
     try {
-      await uploadPrinterDocument(API_URL, fetch, wiaPages, wiaTitle, { enabled: wiaRetentionEnabled, value: wiaRetentionValue, unit: wiaRetentionUnit });
-      setWiaPages([]); setWiaTitle(defaultPrinterScanTitle()); setWiaStage('PDF zapisany w skanach do posortowania.');
-      await fetchData(); showToast('PDF zapisany w skanach do posortowania.', 'success');
+      const result = await uploadPrinterDocument(API_URL, fetch, wiaPages, wiaTitle, { enabled: wiaRetentionEnabled, value: wiaRetentionValue, unit: wiaRetentionUnit });
+      const message = result.pdfa ? 'Skan zapisany jako PDF/A‑2b. Zgodność potwierdził veraPDF.' : result.pdfaWarning || 'PDF zapisany w skanach do posortowania.';
+      setWiaPages([]); setWiaTitle(defaultPrinterScanTitle()); setWiaStage(message);
+      await fetchData(); showToast(message, result.pdfaWarning ? 'error' : 'success');
     } catch (error: unknown) {
       const message = errorMessage(error, 'Nie udało się zapisać PDF.');
       setWiaStage(`Błąd zapisu: ${message}. Strony są zachowane — możesz ponowić zapis.`);
@@ -733,6 +782,7 @@ export default function App() {
       {isBillingCancelOpen && <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"><div className="w-full max-w-md rounded-2xl border border-red-500/40 bg-[#0f172a] p-7 shadow-2xl"><h3 className="text-xl font-bold text-white">Anulować subskrypcję?</h3>{billingCancelPreviewBusy && <p className="mt-3 text-sm text-slate-300">Obliczam rozliczenie…</p>}{billingCancelPreviewError && <p role="alert" className="mt-3 text-sm text-red-300">{billingCancelPreviewError}</p>}{billingCancelPreview && <div className="mt-3 space-y-2 text-sm leading-6 text-slate-300"><p>Odnowienie zostanie wyłączone. Dostęp do planu pozostanie aktywny do <strong className="text-white">{new Date(billingCancelPreview.accessUntil).toLocaleDateString('pl-PL')}</strong>.</p><p>Zwrot za {billingCancelPreview.refundedMonths} pełnych niewykorzystanych miesięcy: <strong className="text-white">{(billingCancelPreview.refundedAmount / 100).toFixed(2)} {billingCancelPreview.currency.toUpperCase()}</strong>.</p><p className="rounded-lg bg-amber-950/40 p-3 text-amber-100">Po przejściu na plan Darmowy {billingCancelPreview.restrictedDocuments} dokumentów będzie tylko do odczytu, a {billingCancelPreview.inactiveTags} tagów stanie się nieaktywnych. Dokumenty zachowają możliwość pobrania i usunięcia. To szacunkowy stan na teraz.</p>{billingCancelPreview.alreadyScheduled && <p className="text-amber-300">Anulowanie zostało już zaplanowane.</p>}</div>}<div className="mt-6 flex gap-3"><button disabled={billingCancelBusy} onClick={() => setIsBillingCancelOpen(false)} className="flex-1 rounded-lg bg-slate-700 py-3 font-bold text-white hover:bg-slate-600 disabled:opacity-50">Wróć</button><button disabled={billingCancelBusy || billingCancelPreviewBusy || !billingCancelPreview || billingCancelPreview.alreadyScheduled} onClick={() => void cancelBilling()} className="flex-1 rounded-lg bg-red-600 py-3 font-bold text-white hover:bg-red-500 disabled:opacity-50">{billingCancelBusy ? 'Rozliczanie…' : 'Potwierdź anulowanie'}</button></div></div></div>}
 
       {planLimitMessage && <PlanLimitModal message={planLimitMessage} plan={billingPlan} busy={billingBusy} onClose={() => setPlanLimitMessage('')} onSelect={(plan, interval) => { setPlanLimitMessage(''); void openBillingCheckout(plan, interval, false, true); }} />}
+      {secureShareId !== null && <SecureShareModal apiUrl={API_URL} fetcher={apiFetch} documentId={secureShareId} title={documents.find(doc => doc.id === secureShareId)?.title || 'Dokument'} onClose={() => setSecureShareId(null)} />}
       {isPlanUsageOpen && <PlanUsageModal apiUrl={API_URL} fetcher={apiFetch} onClose={() => setIsPlanUsageOpen(false)} />}
       {isBillingHistoryOpen && <BillingHistoryModal transactions={billingHistory} loading={billingHistoryBusy} onClose={() => setIsBillingHistoryOpen(false)} />}
       {backupSection && <BackupModal key={backupSection} section={backupSection} apiUrl={API_URL} fetcher={apiFetch} onClose={() => setBackupSection(null)} onDone={() => { setBackupSection(null); void fetchData(); }} />}
@@ -827,6 +877,7 @@ export default function App() {
           retentionAlerts={retentionAlerts}
           notificationsOpen={isNotificationsOpen}
           userMenuOpen={isUserMenuOpen}
+          currentUser={currentUser}
           billingPlan={billingPlan}
           billingIsDev={billingIsDev}
           apiUrl={API_URL}
@@ -847,6 +898,7 @@ export default function App() {
           onOpenPlanUsage={() => { setIsUserMenuOpen(false); setIsPlanUsageOpen(true); }}
           onOpenBillingHistory={() => { setIsUserMenuOpen(false); void openBillingHistory(); }}
           onOpenAuth={() => { setIsAuthOpen(true); setIsUserMenuOpen(false); }}
+          onLogout={() => void logoutAccount()}
           onOpenPairing={() => setIsPairingGuideOpen(true)}
           onOpenAccessSettings={() => { setIsAccessSettingsOpen(true); setIsUserMenuOpen(false); }}
           onOpenSettings={() => { setIsSettingsMenuOpen(true); setIsUserMenuOpen(false); }}
@@ -1060,7 +1112,7 @@ export default function App() {
                             ) : (
                               <button onClick={() => setDocumentMenuId(documentMenuId === doc.id ? null : doc.id)} className="rounded p-2 text-xl text-slate-300 hover:bg-slate-700 hover:text-white" aria-label="Menu dokumentu">⋮</button>
                             )}
-                            {documentMenuId === doc.id && <div className="absolute right-0 top-10 z-40 w-52 rounded-lg border border-slate-600 bg-[#111827] py-1 text-left shadow-2xl">{activeView !== 'trash' && activeView !== 'archive' && <button onClick={() => { setMoveModalDocId(doc.id); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-slate-200 hover:bg-slate-700">Przenieś</button>}{activeView === 'trash' ? <><button onClick={() => { beginRestore(doc, 'trash'); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-emerald-300 hover:bg-slate-700">Przywróć</button><button onClick={() => { initiateAction('delete_doc', doc.id, doc.title); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-red-300 hover:bg-slate-700">Usuń trwale</button></> : <>{activeView === 'archive' ? <button onClick={() => { beginRestore(doc, 'archive'); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-slate-200 hover:bg-slate-700">Przywróć</button> : <button onClick={() => { void updateDocument(doc.id, { isArchived: true }); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-amber-300 hover:bg-slate-700">Archiwizuj</button>}<button onClick={() => { setRetentionModal({ isOpen: true, docId: doc.id, value: doc.retentionValue || 5, unit: doc.retentionUnit || 'years', enabled: doc.retentionEnabled !== false }); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-slate-200 hover:bg-slate-700">Edytuj termin życia</button><button onClick={() => { initiateAction('trash_doc', doc.id, doc.title); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-red-300 hover:bg-slate-700">Do kosza</button></>}<button onClick={() => { setOcrDocumentId(doc.id); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-blue-300 hover:bg-slate-700">Rozpoznany tekst (OCR)</button><div className="my-1 border-t border-slate-700" />{tags.filter(tag => !tag.inactive).map(tag => <button key={tag.id} onClick={() => { const tagIds = (doc.tags || []).filter(entry => !entry.tag.inactive).map((entry) => entry.tagId); void updateDocument(doc.id, { tagIds: tagIds.includes(tag.id) ? tagIds.filter((id) => id !== tag.id) : [...tagIds, tag.id] }); setDocumentMenuId(null); }} className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: tag.color }} />{(doc.tags || []).some((entry) => entry.tagId === tag.id) ? '✓ ' : ''}{tag.name}</button>)}</div>}
+                            {documentMenuId === doc.id && <div className="absolute right-0 top-10 z-40 w-52 rounded-lg border border-slate-600 bg-[#111827] py-1 text-left shadow-2xl">{activeView !== 'trash' && activeView !== 'archive' && <button onClick={() => { setMoveModalDocId(doc.id); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-slate-200 hover:bg-slate-700">Przenieś</button>}{activeView === 'trash' ? <><button onClick={() => { beginRestore(doc, 'trash'); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-emerald-300 hover:bg-slate-700">Przywróć</button><button onClick={() => { initiateAction('delete_doc', doc.id, doc.title); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-red-300 hover:bg-slate-700">Usuń trwale</button></> : <>{activeView === 'archive' ? <button onClick={() => { beginRestore(doc, 'archive'); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-slate-200 hover:bg-slate-700">Przywróć</button> : <button onClick={() => { void updateDocument(doc.id, { isArchived: true }); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-amber-300 hover:bg-slate-700">Archiwizuj</button>}<button onClick={() => { setRetentionModal({ isOpen: true, docId: doc.id, value: doc.retentionValue || 5, unit: doc.retentionUnit || 'years', enabled: doc.retentionEnabled !== false }); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-slate-200 hover:bg-slate-700">Edytuj termin życia</button><button onClick={() => { initiateAction('trash_doc', doc.id, doc.title); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-red-300 hover:bg-slate-700">Do kosza</button></>}{!doc.isDeleted && <button onClick={() => { setSecureShareId(doc.id); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-emerald-300 hover:bg-slate-700">Bezpieczny link</button>}<button onClick={() => { setOcrDocumentId(doc.id); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-blue-300 hover:bg-slate-700">Rozpoznany tekst (OCR)</button><div className="my-1 border-t border-slate-700" />{tags.filter(tag => !tag.inactive).map(tag => <button key={tag.id} onClick={() => { const tagIds = (doc.tags || []).filter(entry => !entry.tag.inactive).map((entry) => entry.tagId); void updateDocument(doc.id, { tagIds: tagIds.includes(tag.id) ? tagIds.filter((id) => id !== tag.id) : [...tagIds, tag.id] }); setDocumentMenuId(null); }} className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: tag.color }} />{(doc.tags || []).some((entry) => entry.tagId === tag.id) ? '✓ ' : ''}{tag.name}</button>)}</div>}
                           </div>
                         </td>
                       </tr>

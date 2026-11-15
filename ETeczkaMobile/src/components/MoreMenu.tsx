@@ -2,10 +2,11 @@ import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-export type MoreSection = 'connection' | 'sync' | 'alerts' | 'settings';
+export type MoreSection = 'connection' | 'sync' | 'alerts' | 'settings' | 'account';
 
 export default function MoreMenu({ onOpen, onLock }: { onOpen: (section: MoreSection) => void; onLock: () => void }) {
   const items: { section: MoreSection; title: string; subtitle: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+    ...(process.env.EXPO_PUBLIC_CENTRAL_ACCOUNT_URL ? [{ section: 'account' as const, title: 'Konto E‑Teczki', subtitle: 'Logowanie i rejestracja', icon: 'person-outline' as const }] : []),
     { section: 'settings', title: 'Ustawienia', subtitle: 'PIN, hasło, biometria i blokada', icon: 'settings-outline' },
     { section: 'connection', title: 'Połączenie z komputerem', subtitle: 'Adres, kod i parowanie', icon: 'desktop-outline' },
     { section: 'sync', title: 'Synchronizacja', subtitle: 'Kopie offline i oczekujące zmiany', icon: 'sync-outline' },

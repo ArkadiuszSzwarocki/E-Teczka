@@ -11,6 +11,7 @@ import { ocrOwnerKey } from '../services/ocrPremium';
 import { getPlan, ensurePlanLedger, checkDocumentCapacity, consumeUsage, claimPrinterPages, PlanLimitError } from '../services/planLedger';
 import { createHash, randomUUID } from 'node:crypto';
 import { assertUniqueDocument, DuplicateDocumentError, hashFile } from '../services/duplicateDocuments';
+import { prepareScannedPdf } from '../services/scannedPdfArchive';
 import type { createOcrQueue } from '../services/ocrQueue';
 // @ts-ignore - multer is used without bundled TypeScript declarations.
 import multer from 'multer';
@@ -84,7 +85,8 @@ export function createMobileScanRouter(prisma: PrismaClient, ocrQueue?: ReturnTy
         page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
       }
       const filename = 'SCAN_DOCUMENT_' + randomUUID() + '.pdf';
-      outputPath = path.join(uploadsDir, filename); fs.writeFileSync(outputPath, await pdf.save(), { flag: 'wx' });
+      const archive = await prepareScannedPdf(await pdf.save());
+      outputPath = path.join(uploadsDir, filename); fs.writeFileSync(outputPath, archive.bytes, { flag: 'wx' });
       removeTemporaryFiles();
       const key = ocrOwnerKey(res); const plan = await getPlan(prisma, key); await ensurePlanLedger(prisma);
       const digest = await hashFile(outputPath);
@@ -94,7 +96,7 @@ export function createMobileScanRouter(prisma: PrismaClient, ocrQueue?: ReturnTy
       } }); });
       outputPath = '';
       void enqueuePremiumOcr(prisma, ocrQueue, res, document.id);
-      res.status(201).json(document);
+      res.status(201).json({ ...document, pdfa: archive.pdfa, pdfaWarning: archive.warning });
     } catch (error: unknown) {
       removeTemporaryFiles();
       if (outputPath && fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
@@ -160,7 +162,8 @@ export function createMobileScanRouter(prisma: PrismaClient, ocrQueue?: ReturnTy
         page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
       }
       const filename = 'SCAN_DOCUMENT_' + randomUUID() + '.pdf';
-      outputPath = path.join(uploadsDir, filename); fs.writeFileSync(outputPath, await pdf.save(), { flag: 'wx' });
+      const archive = await prepareScannedPdf(await pdf.save());
+      outputPath = path.join(uploadsDir, filename); fs.writeFileSync(outputPath, archive.bytes, { flag: 'wx' });
       const printerJobs: unknown = req.body?.printerJobs ?? [];
       if (!Array.isArray(printerJobs) || printerJobs.length > pagePaths.length || printerJobs.some(id => typeof id !== 'string' || !/^[0-9a-f-]{36}$/i.test(id))) { fs.unlinkSync(outputPath); return res.status(400).json({ error: 'Nieprawidłowe strony drukarki.' }); }
       const digest = await hashFile(outputPath);
@@ -172,7 +175,7 @@ export function createMobileScanRouter(prisma: PrismaClient, ocrQueue?: ReturnTy
       outputPath = '';
       void enqueuePremiumOcr(prisma, ocrQueue, res, document.id);
       try { fs.rmSync(draftDir, { recursive: true, force: true }); } catch (error) { console.error('[scan] Nie udało się usunąć szkicu:', errorMessage(error)); }
-      res.status(201).json(document);
+      res.status(201).json({ ...document, pdfa: archive.pdfa, pdfaWarning: archive.warning });
     } catch (error: unknown) {
       if (outputPath && fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
       if (error instanceof DuplicateDocumentError) return res.status(409).json({ code: error.code, error: error.message, existingTitle: error.existingTitle });

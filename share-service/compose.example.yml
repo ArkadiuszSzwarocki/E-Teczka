@@ -1,0 +1,18 @@
+services:
+  share:
+    build: .
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      SHARE_PUBLISH_SECRET: ${SHARE_PUBLISH_SECRET:?Set a random secret}
+      SHARE_MASTER_KEY: ${SHARE_MASTER_KEY:?Set a 64-character hexadecimal key}
+      SHARE_DATA_DIR: /data
+      SHARE_PUBLIC_BASE: ${SHARE_PUBLIC_BASE:?Set a public HTTPS URL}
+    volumes:
+      - ./data:/data
+    ports:
+      - "127.0.0.1:8080:8080"

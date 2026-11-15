@@ -7,7 +7,7 @@ const AUTH_SECRET = authSecret();
 const SESSION_DAYS = 30;
 const DEVICE_LIMITS: Record<string, number> = { free: 1, standard: 2, premium: Number.POSITIVE_INFINITY };
 
-function passwordHash(password: string, salt = crypto.randomBytes(16).toString('hex')) {
+export function passwordHash(password: string, salt = crypto.randomBytes(16).toString('hex')) {
   const digest = crypto.scryptSync(password, salt, 64).toString('hex');
   return `${salt}:${digest}`;
 }
@@ -21,7 +21,7 @@ function passwordMatches(password: string, stored: string | null) {
 }
 
 function sessionToken(userId: number, expiresAt: Date) {
-  const payload = `${userId}.${expiresAt.getTime()}`;
+  const payload = `${userId}.${expiresAt.getTime()}.${crypto.randomBytes(16).toString('hex')}`;
   const signature = crypto.createHmac('sha256', AUTH_SECRET).update(payload).digest('base64url');
   return `${Buffer.from(payload).toString('base64url')}.${signature}`;
 }
@@ -78,9 +78,9 @@ export function createAuthRouter(prisma: PrismaClient) {
   return router;
 }
 
-class DeviceLimitError extends Error { constructor(public readonly limit: number) { super(`Limit urządzeń dla tego planu został osiągnięty (${limit}). Wyloguj inne urządzenie albo wybierz wyższy plan.`); } }
+export class DeviceLimitError extends Error { constructor(public readonly limit: number) { super(`Limit urządzeń dla tego planu został osiągnięty (${limit}). Wyloguj inne urządzenie albo wybierz wyższy plan.`); } }
 
-async function createSession(prisma: PrismaClient, userId: number, email: string, name: string | null, body?: Record<string, unknown>) {
+export async function createSession(prisma: PrismaClient, userId: number, email: string, name: string | null, body?: Record<string, unknown>) {
   const deviceId = typeof body?.deviceId === 'string' && body.deviceId.trim().length >= 8 ? body.deviceId.trim().slice(0, 128) : crypto.randomUUID();
   const deviceName = typeof body?.deviceName === 'string' ? body.deviceName.trim().slice(0, 80) : 'Nieznane urządzenie';
   const subscription = await prisma.subscription.findUnique({ where: { ownerKey: `user:${userId}` } });

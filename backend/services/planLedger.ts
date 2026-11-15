@@ -76,6 +76,18 @@ export async function mergePlanState(db: Prisma.TransactionClient, ownerKey: str
   for (const item of state.usage) await db.$executeRaw`INSERT OR IGNORE INTO PlanUsage(ownerKey, feature, operationId, amount, usedAt) VALUES (${ownerKey}, ${item.feature}, ${item.operationId}, ${item.amount}, ${item.usedAt})`;
 }
 
+/** Keep existing trial dates and usage when the desktop owner receives an account. */
+export async function copyDesktopPlanState(db: PrismaClient, targetOwner: string) {
+  await ensurePlanLedger(db);
+  const source = 'desktop-local';
+  await db.$transaction(async tx => {
+    const state = await exportPlanState(tx, source);
+    await mergePlanState(tx, targetOwner, state);
+    await tx.$executeRaw`INSERT OR IGNORE INTO PlanPrinterClaim(ownerKey, jobId, draftId) SELECT ${targetOwner}, jobId, draftId FROM PlanPrinterClaim WHERE ownerKey = ${source}`;
+    await tx.$executeRaw`INSERT OR IGNORE INTO PlanScanReceipt(ownerKey, draftId, documentId, fingerprint) SELECT ${targetOwner}, draftId, documentId, fingerprint FROM PlanScanReceipt WHERE ownerKey = ${source}`;
+  });
+}
+
 /** Printer pages count only when backed by a successful server-issued scan job. */
 export async function claimPrinterPages(db: Prisma.TransactionClient, ownerKey: string, draftId: string, jobIds: string[]): Promise<number> {
   ownerKey = accountingKey(ownerKey);

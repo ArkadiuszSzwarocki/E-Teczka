@@ -16,6 +16,7 @@ import { errorMessage } from "../utils/errors";
 import ConnectionSettingsCard from "../components/ConnectionSettingsCard";
 import RetentionAlertsCard, { type RetentionAlert } from "../components/RetentionAlertsCard";
 import MoreMenu, { type MoreSection } from "../components/MoreMenu";
+import CentralAccountCard from "../components/CentralAccountCard";
 
 type SyncScreenProps = BottomTabScreenProps<MainTabParamList, "Ustawienia"> & {
   computerOnline: boolean;
@@ -186,9 +187,10 @@ export default function SyncScreen({ navigation, computerOnline, onPaired, onLoc
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       {section !== 'menu' && <TouchableOpacity accessibilityRole="button" onPress={() => setSection('menu')} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 14 }}><Ionicons name="arrow-back" size={20} color="#93c5fd" /><Text style={{ color: '#93c5fd', fontWeight: '700' }}>Menu</Text></TouchableOpacity>}
-      <Text style={styles.title}>{section === 'menu' ? 'Menu' : section === 'connection' ? 'Połączenie z komputerem' : section === 'sync' ? 'Synchronizacja' : section === 'alerts' ? 'Terminy' : 'Ustawienia'}</Text>
+      <Text style={styles.title}>{section === 'menu' ? 'Menu' : section === 'connection' ? 'Połączenie z komputerem' : section === 'sync' ? 'Synchronizacja' : section === 'alerts' ? 'Terminy' : section === 'account' ? 'Konto E‑Teczki' : 'Ustawienia'}</Text>
       {section === 'menu' && <MoreMenu onOpen={next => { setSection(next); if (next === 'alerts') void loadLifeAlerts(); if (next === 'sync') { void loadOfflineFolders(); void refreshOfflineBytes(); void getSyncInfo().then(info => setSyncInfo({ pending: info.pending, conflicts: info.conflicts })).catch(() => undefined); } }} onLock={() => { if (vaultReady) onLock(); else Alert.alert('Ustaw blokadę', 'Najpierw ustaw PIN, hasło lub biometrię w menu Ustawienia.'); }} />}
       
+      {section === 'account' && process.env.EXPO_PUBLIC_CENTRAL_ACCOUNT_URL && <CentralAccountCard origin={process.env.EXPO_PUBLIC_CENTRAL_ACCOUNT_URL} googleWebClientId={process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || ''} />}
       {section === "connection" && <ConnectionSettingsCard status={status} statusColor={statusColor} serverUrl={serverUrl} pairingCode={pairingCode} isPairing={isPairing} onServerUrlChange={setServerUrl} onPairingCodeChange={setPairingCode} onPair={() => void pairComputer()} onRefresh={() => void testConnection()} onQrPairing={(url, code) => { setServerUrl(url); setPairingCode(code); }} />}
       {section === "alerts" && <RetentionAlertsCard alerts={lifeAlerts} loading={alertsLoading} onRefresh={() => void loadLifeAlerts()} />}
       {section === "sync" && <View style={styles.card}><Text style={styles.vaultTitle}>Synchronizacja offline</Text><Text style={styles.subText}>{syncInfo.pending ? `Oczekujące zmiany: ${syncInfo.pending}` : "Brak oczekujących zmian"}{syncInfo.conflicts ? ` · Konflikty: ${syncInfo.conflicts}` : ""}</Text><TouchableOpacity disabled={syncing} style={[styles.btn, syncing && styles.disabledBtn]} onPress={async () => { try { setSyncing(true); const result = await syncNow(); setSyncInfo({ pending: result.pending, conflicts: result.conflicts }); Alert.alert("Synchronizacja zakończona", "Zsynchronizowano zmiany i listę dokumentów. Aby pobrać pliki, wybierz kartoteki i kliknij „Pobierz wybrane na telefon”."); } catch (error: unknown) { Alert.alert("Synchronizacja nie została zakończona", errorMessage(error, "Sprawdź połączenie z komputerem. Zmiany pozostają w kolejce.")); } finally { setSyncing(false); } }}><Text style={styles.btnText}>{syncing ? "Synchronizuję…" : "Synchronizuj teraz"}</Text></TouchableOpacity></View>}

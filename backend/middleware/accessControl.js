@@ -1,8 +1,18 @@
 "use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.configureAccountSessionValidator = configureAccountSessionValidator;
 exports.requireLocalDesktop = requireLocalDesktop;
 exports.requireAccess = requireAccess;
 exports.registerPairingRoutes = registerPairingRoutes;
@@ -25,6 +35,10 @@ let pairingCode = createPairingCode();
 let pairingExpiresAt = Date.now() + 10 * 60 * 1000;
 let pairingOwner = { ownerKey: 'desktop-local' };
 const pairingAttempts = new Map();
+let accountSessionIsActive = null;
+function configureAccountSessionValidator(validator) {
+    accountSessionIsActive = validator;
+}
 function savePairedDevices() {
     const temporaryFile = `${paths_1.pairedDevicesFile}.tmp`;
     fs_1.default.writeFileSync(temporaryFile, JSON.stringify(pairedDevices, null, 2), { encoding: 'utf8', mode: 0o600 });
@@ -46,37 +60,48 @@ function requireLocalDesktop(request, response, next) {
     response.status(403).json({ error: 'Ta funkcja jest dostępna tylko z aplikacji desktopowej.' });
 }
 function requireAccess(request, response, next) {
-    var _a;
-    // Stripe redirects the browser back without the app's Authorization header.
-    // The confirmation endpoint validates the Checkout Session itself, so it is
-    // safe to let that one GET through the device gate.
-    if (request.method === 'GET' && request.path === '/billing/confirm')
-        return next();
-    const token = (_a = request.header('authorization')) === null || _a === void 0 ? void 0 : _a.replace(/^Bearer\s+/i, '');
-    if (token) {
-        const account = verifyAccountToken(token);
-        if (account) {
-            response.locals.userId = account.userId;
-            response.locals.billingOwnerKey = `user:${account.userId}`;
+    return __awaiter(this, void 0, void 0, function* () {
+        var _a;
+        // Stripe redirects the browser back without the app's Authorization header.
+        // The confirmation endpoint validates the Checkout Session itself, so it is
+        // safe to let that one GET through the device gate.
+        if (request.method === 'GET' && request.path === '/billing/confirm')
+            return next();
+        const token = (_a = request.header('authorization')) === null || _a === void 0 ? void 0 : _a.replace(/^Bearer\s+/i, '');
+        if (token) {
+            const account = verifyAccountToken(token);
+            if (account) {
+                if (!accountSessionIsActive)
+                    return response.status(503).json({ error: 'Weryfikacja sesji jest niedostępna.' });
+                try {
+                    if (!(yield accountSessionIsActive(token, account.userId)))
+                        return response.status(401).json({ error: 'Sesja wygasła lub została wylogowana.' });
+                }
+                catch (_b) {
+                    return response.status(503).json({ error: 'Nie udało się sprawdzić sesji.' });
+                }
+                response.locals.userId = account.userId;
+                response.locals.billingOwnerKey = `user:${account.userId}`;
+                return next();
+            }
+        }
+        if (isLoopback(request)) {
+            response.locals.billingOwnerKey = 'desktop-local';
             return next();
         }
-    }
-    if (isLoopback(request)) {
-        response.locals.billingOwnerKey = 'desktop-local';
-        return next();
-    }
-    if (!token)
-        return response.status(401).json({ error: 'Brak autoryzacji urządzenia.' });
-    const tokenHash = crypto_1.default.createHash('sha256').update(token).digest('hex');
-    const device = pairedDevices.find(item => item.tokenHash === tokenHash);
-    if (!device)
-        return response.status(401).json({ error: 'Urządzenie nie jest sparowane.' });
-    device.lastSeenAt = new Date().toISOString();
-    savePairedDevices();
-    if (device.ownerId)
-        response.locals.userId = device.ownerId;
-    response.locals.billingOwnerKey = device.ownerKey || `device:${device.id}`;
-    next();
+        if (!token)
+            return response.status(401).json({ error: 'Brak autoryzacji urządzenia.' });
+        const tokenHash = crypto_1.default.createHash('sha256').update(token).digest('hex');
+        const device = pairedDevices.find(item => item.tokenHash === tokenHash);
+        if (!device)
+            return response.status(401).json({ error: 'Urządzenie nie jest sparowane.' });
+        device.lastSeenAt = new Date().toISOString();
+        savePairedDevices();
+        if (device.ownerId)
+            response.locals.userId = device.ownerId;
+        response.locals.billingOwnerKey = device.ownerKey || `device:${device.id}`;
+        next();
+    });
 }
 function verifyAccountToken(token) {
     if (!AUTH_SECRET)
@@ -86,7 +111,9 @@ function verifyAccountToken(token) {
         return null;
     const payload = Buffer.from(encoded, 'base64url').toString('utf8');
     const expected = crypto_1.default.createHmac('sha256', AUTH_SECRET).update(payload).digest('base64url');
-    if (signature.length !== expected.length || !crypto_1.default.timingSafeEqual(Buffer.from(signature), Buffer.from(expected)))
+    const signatureBytes = Buffer.from(signature, 'utf8');
+    const expectedBytes = Buffer.from(expected, 'utf8');
+    if (signatureBytes.length !== expectedBytes.length || !crypto_1.default.timingSafeEqual(signatureBytes, expectedBytes))
         return null;
     const [rawUserId, rawExpiry] = payload.split('.');
     const userId = Number(rawUserId);
