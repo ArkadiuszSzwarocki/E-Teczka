@@ -33,7 +33,7 @@ function loadPairedDevices() {
 let pairedDevices = loadPairedDevices();
 let pairingCode = createPairingCode();
 let pairingExpiresAt = Date.now() + 10 * 60 * 1000;
-let pairingOwner = { ownerKey: 'desktop-local' };
+let pairingOwner = { ownerKey: 'desktop-local', mobileLimit: 1 };
 const pairingAttempts = new Map();
 let accountSessionIsActive = null;
 function configureAccountSessionValidator(validator) {
@@ -86,8 +86,7 @@ function requireAccess(request, response, next) {
             }
         }
         if (isLoopback(request)) {
-            response.locals.billingOwnerKey = 'desktop-local';
-            return next();
+            return response.status(401).json({ error: 'Zaloguj się na konto E‑Teczki, aby uzyskać dostęp do dokumentów.' });
         }
         if (!token)
             return response.status(401).json({ error: 'Brak autoryzacji urządzenia.' });
@@ -120,15 +119,16 @@ function verifyAccountToken(token) {
     const expiresAt = Number(rawExpiry);
     return Number.isInteger(userId) && userId > 0 && Number.isFinite(expiresAt) && expiresAt > Date.now() ? { userId } : null;
 }
-function registerPairingRoutes(app) {
-    app.get('/api/pairing-code', requireLocalDesktop, requireAccess, (_req, res) => {
+function registerPairingRoutes(app, mobileLimit = () => __awaiter(this, void 0, void 0, function* () { return 1; })) {
+    app.get('/api/pairing-code', requireLocalDesktop, requireAccess, (_req, res) => __awaiter(this, void 0, void 0, function* () {
         const ownerKey = String(res.locals.billingOwnerKey || 'desktop-local');
         const ownerId = res.locals.userId ? Number(res.locals.userId) : undefined;
+        const limit = yield mobileLimit(ownerKey);
         if (Date.now() >= pairingExpiresAt || pairingOwner.ownerKey !== ownerKey)
             rotatePairingCode();
-        pairingOwner = { ownerId, ownerKey };
+        pairingOwner = { ownerId, ownerKey, mobileLimit: limit };
         res.json({ code: pairingCode, expiresAt: pairingExpiresAt });
-    });
+    }));
     app.get('/api/network-info', requireLocalDesktop, (_req, res) => {
         const addresses = Object.values(os_1.default.networkInterfaces()).flat()
             .filter((item) => item !== undefined && item.family === 'IPv4' && !item.internal)
@@ -137,9 +137,11 @@ function registerPairingRoutes(app) {
         addresses.sort((a, b) => Number(b.startsWith('192.168.')) - Number(a.startsWith('192.168.')) || Number(a.startsWith('172.20.')) - Number(b.startsWith('172.20.')));
         res.json({ addresses, port: 3443 });
     });
-    app.get('/api/pairing-status', requireLocalDesktop, (_req, res) => {
-        res.json({ pairedDevices: pairedDevices.length, phoneConnected: pairedDevices.some((device) => Date.now() - Date.parse(device.lastSeenAt) < 30000) });
-    });
+    app.get('/api/pairing-status', requireLocalDesktop, requireAccess, (_req, res) => __awaiter(this, void 0, void 0, function* () {
+        const limit = yield mobileLimit(String(res.locals.billingOwnerKey || 'desktop-local'));
+        const devices = pairedDevices.filter(device => (device.ownerKey || 'desktop-local') === String(res.locals.billingOwnerKey || 'desktop-local'));
+        res.json({ pairedDevices: devices.length, mobileDeviceLimit: limit, phoneConnected: devices.some((device) => Date.now() - Date.parse(device.lastSeenAt) < 30000) });
+    }));
     app.post('/api/pair', (req, res) => {
         var _a, _b;
         const address = req.socket.remoteAddress || 'unknown';
@@ -152,6 +154,11 @@ function registerPairingRoutes(app) {
             pairingAttempts.set(address, attempts + 1);
             return res.status(401).json({ error: 'Nieprawidłowy lub wygasły kod parowania.' });
         }
+        // Individual plans pair one mobile device per archive owner. Multi-device
+        // business/family entitlements must be enforced here when those plans ship.
+        const trustedPhones = pairedDevices.filter(device => (device.ownerKey || 'desktop-local') === pairingOwner.ownerKey);
+        if (trustedPhones.length >= pairingOwner.mobileLimit)
+            return res.status(403).json({ code: 'MOBILE_DEVICE_LIMIT_REACHED', error: `Osiągnięto limit zaufanych telefonów (${pairingOwner.mobileLimit}). Kolejnego telefonu nie można teraz połączyć.` });
         const accessToken = crypto_1.default.randomBytes(32).toString('base64url');
         const now = new Date().toISOString();
         pairedDevices.push({ id: crypto_1.default.randomUUID(), name: String(((_b = req.body) === null || _b === void 0 ? void 0 : _b.deviceName) || 'Telefon').slice(0, 64), tokenHash: crypto_1.default.createHash('sha256').update(accessToken).digest('hex'), createdAt: now, lastSeenAt: now, ownerId: pairingOwner.ownerId, ownerKey: pairingOwner.ownerKey });

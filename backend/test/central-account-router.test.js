@@ -95,3 +95,99 @@ test('desktop browser handoff links and later signs into existing local account'
     assert.equal(created.status, 201); assert.equal((await created.json()).user.id, 2);
   } finally { await new Promise(resolve => server.close(resolve)); await new Promise(resolve => centralServer.close(resolve)); db.close(); centralDb.close(); if (previous === undefined) delete process.env.ETECZKA_CENTRAL_ACCOUNT_URL; else process.env.ETECZKA_CENTRAL_ACCOUNT_URL = previous; }
 });
+
+
+test('registration bridge forwards only credentials and preserves upstream validation', async () => {
+  const previous = process.env.ETECZKA_CENTRAL_ACCOUNT_URL;
+  let forwarded;
+  const upstream = express(); upstream.use(express.json());
+  upstream.post('/register', (req, res) => { forwarded = req.body; return res.status(req.body.email === 'invalid' ? 400 : 202).json(req.body.email === 'invalid' ? { error: 'Nieprawidłowy e-mail.' } : { message: 'Sprawdź pocztę.' }); });
+  const upstreamServer = upstream.listen(0, '127.0.0.1'); await new Promise(resolve => upstreamServer.once('listening', resolve));
+  process.env.ETECZKA_CENTRAL_ACCOUNT_URL = `http://127.0.0.1:${upstreamServer.address().port}`;
+  const app = express(); app.use(express.json()); app.use('/bridge', createCentralAccountRouter({}));
+  const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
+  const post = body => fetch(`http://127.0.0.1:${server.address().port}/bridge/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  try {
+    assert.equal((await post({ email: 'a@example.com', password: 'short' })).status, 400);
+    assert.equal(forwarded, undefined);
+    const response = await post({ email: 'a@example.com', password: 'valid-password', verified: true });
+    assert.equal(response.status, 202); assert.equal((await response.json()).message, 'Sprawdź pocztę.');
+    assert.deepEqual(forwarded, { email: 'a@example.com', password: 'valid-password' });
+    assert.equal((await post({ email: 'invalid', password: 'valid-password' })).status, 400);
+    delete process.env.ETECZKA_CENTRAL_ACCOUNT_URL;
+    assert.equal((await post({ email: 'a@example.com', password: 'valid-password' })).status, 503);
+  } finally {
+    await new Promise(resolve => server.close(resolve)); await new Promise(resolve => upstreamServer.close(resolve));
+    if (previous === undefined) delete process.env.ETECZKA_CENTRAL_ACCOUNT_URL; else process.env.ETECZKA_CENTRAL_ACCOUNT_URL = previous;
+  }
+});
+
+
+test('email credentials sign in without a browser code and preserve explicit local linking', async () => {
+  const previous = process.env.ETECZKA_CENTRAL_ACCOUNT_URL;
+  const db = new DatabaseSync(':memory:'); let verification;
+  const accounts = createAccountService({ db, sendVerification: async (_, code) => { verification = code; }, verifyGoogle: async () => {} });
+  await accounts.register('direct@example.com', 'test-password'); await accounts.verifyEmail(verification);
+  const upstream = createHttpApp(accounts).listen(0, '127.0.0.1'); await new Promise(resolve => upstream.once('listening', resolve));
+  process.env.ETECZKA_CENTRAL_ACCOUNT_URL = `http://127.0.0.1:${upstream.address().port}`;
+  const app = express(); app.use(express.json()); app.use('/bridge', createCentralAccountRouter({ $executeRawUnsafe: async () => 0, $queryRaw: async () => [] }));
+  const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
+  const post = (path, body) => fetch(`http://127.0.0.1:${server.address().port}/bridge${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  try {
+    assert.equal((await post('/credentials', { email: 'direct@example.com', password: 'wrong' })).status, 401);
+    const response = await post('/credentials', { email: 'direct@example.com', password: 'test-password' });
+    assert.equal(response.status, 200); const data = await response.json(); assert.equal(data.user.email, 'direct@example.com'); assert.ok(data.handle); assert.equal(data.token, undefined);
+    const finish = await post('/handoff/finish', { handle: data.handle }); assert.equal(finish.status, 409); assert.equal((await finish.json()).code, 'LOCAL_LINK_REQUIRED');
+    assert.equal(db.prepare('SELECT count(*) AS n FROM sessions').get().n, 1);
+  } finally { await new Promise(resolve => server.close(resolve)); await new Promise(resolve => upstream.close(resolve)); db.close(); if (previous === undefined) delete process.env.ETECZKA_CENTRAL_ACCOUNT_URL; else process.env.ETECZKA_CENTRAL_ACCOUNT_URL = previous; }
+});
+
+
+test('password recovery sends mail only for a verified account and never discloses account existence', async () => {
+  const previous = process.env.ETECZKA_CENTRAL_ACCOUNT_URL;
+  const db = new DatabaseSync(':memory:'); let code; let resetCount = 0; let resetToken;
+  const accounts = createAccountService({ db, sendVerification: async (_, value) => { code = value; }, sendPasswordReset: async (_, value) => { resetCount++; resetToken = value; }, verifyGoogle: async () => {} });
+  await accounts.register('recovery@example.com', 'old-password'); await accounts.verifyEmail(code);
+  const oldSession = await accounts.login('recovery@example.com', 'old-password');
+  const upstream = createHttpApp(accounts).listen(0, '127.0.0.1'); await new Promise(resolve => upstream.once('listening', resolve));
+  process.env.ETECZKA_CENTRAL_ACCOUNT_URL = `http://127.0.0.1:${upstream.address().port}`;
+  const app = express(); app.use(express.json()); app.use('/bridge', createCentralAccountRouter({}));
+  const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
+  const post = email => fetch(`http://127.0.0.1:${server.address().port}/bridge/request-password-reset`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email }) });
+  try {
+    const known = await post('recovery@example.com'), unknown = await post('missing@example.com');
+    assert.equal(known.status, 202); assert.equal(unknown.status, 202); assert.deepEqual(await known.json(), await unknown.json()); assert.equal(resetCount, 1);
+    assert.equal((await post('not-an-email')).status, 400);
+    await accounts.resetPassword(resetToken, 'new-password'); assert.equal(accounts.getSession(oldSession.token), null);
+    await assert.rejects(accounts.resetPassword(resetToken, 'another-password'), /INVALID_TOKEN/);
+    assert.equal((await accounts.login('recovery@example.com', 'new-password')).user.email, 'recovery@example.com');
+  } finally { await new Promise(resolve => server.close(resolve)); await new Promise(resolve => upstream.close(resolve)); db.close(); if (previous === undefined) delete process.env.ETECZKA_CENTRAL_ACCOUNT_URL; else process.env.ETECZKA_CENTRAL_ACCOUNT_URL = previous; }
+});
+
+
+test('a new verified user opens an isolated empty archive without previous PINs or local passwords', async () => {
+  const db = new DatabaseSync(':memory:');
+  db.exec("CREATE TABLE User(id INTEGER PRIMARY KEY AUTOINCREMENT,email TEXT UNIQUE,name TEXT,passwordHash TEXT); INSERT INTO User VALUES(1,'existing@example.com','Existing','unchanged'); CREATE TABLE Document(id INTEGER PRIMARY KEY,userId INTEGER,title TEXT); INSERT INTO Document VALUES(1,1,'Existing document');");
+  const sql = strings => strings.join('?');
+  const prisma = {
+    $executeRawUnsafe: async value => { db.exec(value); return 0; },
+    $executeRaw: async (strings,...args) => Number(db.prepare(sql(strings)).run(...args).changes),
+    $queryRaw: async (strings,...args) => db.prepare(sql(strings)).all(...args),
+    user: { findUnique: async ({where}) => where.email ? db.prepare('SELECT * FROM User WHERE email=?').get(where.email) : db.prepare('SELECT * FROM User WHERE id=?').get(where.id), create: async ({data}) => { const result=db.prepare('INSERT INTO User(email,name,passwordHash) VALUES(?,?,?)').run(data.email,data.name,data.passwordHash);return {id:Number(result.lastInsertRowid),email:data.email,name:data.name}; } },
+    subscription: { findUnique: async () => null }, authSession: { findMany: async () => [], create: async () => ({}) }
+  };
+  prisma.$transaction = async fn => { db.exec('BEGIN');try{const value=await fn(prisma);db.exec('COMMIT');return value;}catch(error){db.exec('ROLLBACK');throw error;} };
+  let email='new-user@example.com'; const handoffs={take:async()=>({origin:'https://accounts.example.com',user:{id:'b'.repeat(32),email,name:null}}),finish:()=>{}};
+  const app=express();app.use(express.json());app.use('/bridge',createCentralAccountRouter(prisma,undefined,handoffs));
+  const server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));
+  const post=body=>fetch(`http://127.0.0.1:${server.address().port}/bridge/handoff/finish`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+  try {
+    const response=await post({handle:'verified',createNew:true,deviceId:'new-device'});assert.equal(response.status,200);const session=await response.json();assert.equal(session.user.email,email);assert.notEqual(session.user.id,1);assert.ok(session.token);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM Document WHERE userId=?').get(session.user.id).n,0);
+    assert.equal(db.prepare('SELECT title FROM Document WHERE userId=1').get().title,'Existing document');
+    assert.equal(db.prepare('SELECT passwordHash FROM User WHERE id=1').get().passwordHash,'unchanged');
+    assert.equal((await post({handle:'verified',createNew:true,deviceId:'new-device'})).status,200);assert.equal(db.prepare('SELECT count(*) AS n FROM User').get().n,2);
+    db.prepare('DELETE FROM CentralAccountLink').run();email='existing@example.com';
+    const conflict=await post({handle:'verified',createNew:true});assert.equal(conflict.status,409);assert.equal((await conflict.json()).code,'LOCAL_ACCOUNT_EXISTS');assert.equal(db.prepare('SELECT count(*) AS n FROM CentralAccountLink').get().n,0);
+  } finally {await new Promise(resolve=>server.close(resolve));db.close();}
+});

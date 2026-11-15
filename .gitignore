@@ -55,3 +55,12 @@ backend/security/local-ca-cert.pem
 *.log.err
 *.log.out
 frontend/dev-launch.err
+
+# Local sign-in MFA secret store
+backend/security/account-login-mfa.enc
+backend/security/account-login-mfa.enc.*.tmp
+
+# Local runtime state and deployment artifacts
+/security/
+backend/security/developer-plan-catalog.json
+/share-service-test.tar

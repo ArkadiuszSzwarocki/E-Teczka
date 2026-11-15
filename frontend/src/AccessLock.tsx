@@ -1,7 +1,8 @@
+import SecretInput from './components/SecretInput';
 import React, { useEffect, useState } from 'react';
 import { getElectronIpc, isAccessResult, isAccessStatus, type AccessMode } from './services/electron';
 
-export default function AccessLock({ children }: { children: React.ReactNode }) {
+export default function AccessLock({ children, optionalSetup = false }: { children: React.ReactNode; optionalSetup?: boolean }) {
   const [loading, setLoading] = useState(true);
   const [configured, setConfigured] = useState(false);
   const [mode, setMode] = useState<AccessMode>('pin');
@@ -15,6 +16,8 @@ export default function AccessLock({ children }: { children: React.ReactNode }) 
   const [recoveryEmail, setRecoveryEmail] = useState('');
   const [recoveryCode, setRecoveryCode] = useState('');
   const [newSecret, setNewSecret] = useState('');
+  const [confirmSecret, setConfirmSecret] = useState('');
+  const [confirmNewSecret, setConfirmNewSecret] = useState('');
   const [recoveryMessage, setRecoveryMessage] = useState('');
   const [recoveryBusy, setRecoveryBusy] = useState(false);
 
@@ -27,10 +30,13 @@ export default function AccessLock({ children }: { children: React.ReactNode }) 
         return;
       }
       try {
+        const token = localStorage.getItem('eteczka_auth_token');
+        if (token && optionalSetup) { const selected = await api.invoke('eteczka-access-use-account', token); if (!isAccessResult(selected) || !selected.ok) throw new Error('Nie udało się wybrać blokady konta.'); }
         const response = await api.invoke('eteczka-access-status');
         if (!isAccessStatus(response)) throw new Error('Nieprawidłowa odpowiedź blokady.');
         const status = response;
         setConfigured(status.configured);
+        if (optionalSetup && (!status.configured || status.loginMethod === 'password')) setUnlocked(true);
         if (status.mode) { setMode(status.mode); setNewMode(status.mode); }
         setRecoveryAvailable(Boolean(status.recoveryAvailable));
         setMailConfigured(Boolean(status.mailConfigured));
@@ -40,9 +46,10 @@ export default function AccessLock({ children }: { children: React.ReactNode }) 
         setLoading(false);
       }
     });
-  }, []);
+  }, [optionalSetup]);
 
   const submit = async () => {
+    if (!configured && secret !== confirmSecret) { setError('Wpisane wartości muszą być identyczne.'); return; }
     const api = getElectronIpc();
     if (!api) return;
     setError('');
@@ -73,6 +80,7 @@ export default function AccessLock({ children }: { children: React.ReactNode }) 
   };
 
   const resetAccess = async () => {
+    if (newSecret !== confirmNewSecret) { setError('Wpisane wartości muszą być identyczne.'); return; }
     const api = getElectronIpc(); if (!api) return;
     setRecoveryBusy(true); setError('');
     try {
@@ -97,8 +105,8 @@ export default function AccessLock({ children }: { children: React.ReactNode }) 
       <h1 className="text-2xl font-bold">{title}</h1>
       <p className="text-slate-400 text-sm leading-6 mt-2">{subtitle}</p>
       {!configured && <div className="flex gap-2 mt-6">
-        <button onClick={() => { setMode('pin'); setSecret(''); setError(''); }} className={`flex-1 rounded-lg py-3 font-bold ${mode === 'pin' ? 'bg-blue-600' : 'bg-slate-700 text-slate-300'}`}>PIN</button>
-        <button onClick={() => { setMode('password'); setSecret(''); setError(''); }} className={`flex-1 rounded-lg py-3 font-bold ${mode === 'password' ? 'bg-blue-600' : 'bg-slate-700 text-slate-300'}`}>Hasło</button>
+        <button onClick={() => { setMode('pin'); setSecret(''); setConfirmSecret(''); setError(''); }} className={`flex-1 rounded-lg py-3 font-bold ${mode === 'pin' ? 'bg-blue-600' : 'bg-slate-700 text-slate-300'}`}>PIN</button>
+        <button onClick={() => { setMode('password'); setSecret(''); setConfirmSecret(''); setError(''); }} className={`flex-1 rounded-lg py-3 font-bold ${mode === 'password' ? 'bg-blue-600' : 'bg-slate-700 text-slate-300'}`}>Hasło</button>
       </div>}
       {recoveryView ? <>
         <p className="mt-5 text-sm text-slate-300">Nie potrzebujesz starego hasła ani PIN-u. Wyślemy kod na potwierdzony adres odzyskiwania.</p>
@@ -107,18 +115,20 @@ export default function AccessLock({ children }: { children: React.ReactNode }) 
         <input value={recoveryCode} onChange={event => setRecoveryCode(event.target.value)} inputMode="numeric" maxLength={8} placeholder="8-cyfrowy kod" className="mt-2 w-full rounded-lg border border-slate-600 bg-[#0f172a] px-4 py-3 text-white" />
         <p className="mt-4 text-sm text-slate-300">Nowa metoda otwierania</p>
         <div className="mt-2 flex gap-2">
-          <button onClick={() => { setNewMode('pin'); setNewSecret(''); }} className={`flex-1 rounded-lg py-2 font-semibold ${newMode === 'pin' ? 'bg-blue-600' : 'bg-slate-700'}`}>PIN</button>
-          <button onClick={() => { setNewMode('password'); setNewSecret(''); }} className={`flex-1 rounded-lg py-2 font-semibold ${newMode === 'password' ? 'bg-blue-600' : 'bg-slate-700'}`}>Hasło</button>
+          <button onClick={() => { setNewMode('pin'); setNewSecret(''); setConfirmNewSecret(''); }} className={`flex-1 rounded-lg py-2 font-semibold ${newMode === 'pin' ? 'bg-blue-600' : 'bg-slate-700'}`}>PIN</button>
+          <button onClick={() => { setNewMode('password'); setNewSecret(''); setConfirmNewSecret(''); }} className={`flex-1 rounded-lg py-2 font-semibold ${newMode === 'password' ? 'bg-blue-600' : 'bg-slate-700'}`}>Hasło</button>
         </div>
-        <input value={newSecret} onChange={event => setNewSecret(event.target.value)} type="password" inputMode={newMode === 'pin' ? 'numeric' : 'text'} placeholder={newMode === 'pin' ? 'Nowy PIN (min. 6 cyfr)' : 'Nowe hasło (min. 8 znaków)'} className="mt-3 w-full rounded-lg border border-slate-600 bg-[#0f172a] px-4 py-3 text-white" />
+        <SecretInput value={newSecret} onChange={event => setNewSecret(event.target.value)}  inputMode={newMode === 'pin' ? 'numeric' : 'text'} placeholder={newMode === 'pin' ? 'Nowy PIN (min. 6 cyfr)' : 'Nowe hasło (min. 8 znaków)'} className="mt-3 w-full rounded-lg border border-slate-600 bg-[#0f172a] px-4 py-3 text-white" />
+        <SecretInput key={newMode+'-repeat'} value={confirmNewSecret} onChange={event => setConfirmNewSecret(event.target.value)} autoComplete="new-password" inputMode={newMode === 'pin' ? 'numeric' : 'text'} placeholder={newMode === 'pin' ? 'Powtórz nowy PIN' : 'Powtórz nowe hasło'} className="mt-3 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3 text-white" />
         {recoveryMessage && <p className="mt-3 text-sm text-emerald-300">{recoveryMessage}</p>}
       </> : <>
         <label className="block text-sm font-semibold text-slate-300 mt-6">{mode === 'pin' ? 'PIN (co najmniej 6 cyfr)' : 'Hasło (co najmniej 8 znaków)'}</label>
-        <input autoFocus value={secret} onChange={event => setSecret(event.target.value)} onKeyDown={event => event.key === 'Enter' && submit()} type="password" inputMode={mode === 'pin' ? 'numeric' : 'text'} className="mt-2 w-full rounded-lg border border-slate-600 bg-[#0f172a] px-4 py-3 text-center text-lg outline-none focus:border-blue-500" placeholder={mode === 'pin' ? 'Wpisz PIN' : 'Wpisz hasło'} />
+        <SecretInput autoFocus value={secret} onChange={event => setSecret(event.target.value)} onKeyDown={event => event.key === 'Enter' && submit()}  inputMode={mode === 'pin' ? 'numeric' : 'text'} className="mt-2 w-full rounded-lg border border-slate-600 bg-[#0f172a] px-4 py-3 text-center text-lg outline-none focus:border-blue-500" placeholder={mode === 'pin' ? 'Wpisz PIN' : 'Wpisz hasło'} />
+        {!configured && <SecretInput key={mode+'-repeat'} value={confirmSecret} onChange={event => setConfirmSecret(event.target.value)} autoComplete="new-password" inputMode={mode === 'pin' ? 'numeric' : 'text'} placeholder={mode === 'pin' ? 'Powtórz PIN' : 'Powtórz hasło'} className="mt-3 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3 text-white" />}
         {!configured && mailConfigured && <><input value={recoveryEmail} onChange={event => setRecoveryEmail(event.target.value)} type="email" placeholder="E-mail do odzyskiwania (opcjonalnie)" className="mt-4 w-full rounded-lg border border-slate-600 bg-[#0f172a] px-4 py-3 text-white" /><button disabled={recoveryBusy || !recoveryEmail} onClick={() => void sendCode('enroll')} className="mt-2 text-sm text-blue-300 disabled:opacity-50">Wyślij kod potwierdzający adres</button>{recoveryEmail && <input value={recoveryCode} onChange={event => setRecoveryCode(event.target.value)} inputMode="numeric" maxLength={8} placeholder="Kod z e-maila" className="mt-2 w-full rounded-lg border border-slate-600 bg-[#0f172a] px-4 py-3 text-white" />}</>}
       </>}
       {error && <p className="text-red-400 text-sm mt-3">{error}</p>}
-      <button disabled={recoveryBusy || (recoveryView && (!recoveryCode || !newSecret))} onClick={() => void (recoveryView ? resetAccess() : submit())} className="mt-5 w-full rounded-lg bg-blue-600 py-3.5 font-bold hover:bg-blue-500 disabled:opacity-50">{recoveryView ? 'Potwierdź kod i ustaw nowy dostęp' : configured ? 'Otwórz E‑Teczkę' : 'Włącz blokadę aplikacji'}</button>
+      <button disabled={recoveryBusy || (recoveryView ? (!recoveryCode || !newSecret || newSecret !== confirmNewSecret) : (!configured && (!secret || secret !== confirmSecret)))} onClick={() => void (recoveryView ? resetAccess() : submit())} className="mt-5 w-full rounded-lg bg-blue-600 py-3.5 font-bold hover:bg-blue-500 disabled:opacity-50">{recoveryView ? 'Potwierdź kod i ustaw nowy dostęp' : configured ? 'Otwórz E‑Teczkę' : 'Włącz blokadę aplikacji'}</button>
       {configured && recoveryAvailable && <button onClick={() => { setRecoveryView(!recoveryView); setError(''); }} className="mt-4 w-full rounded-lg border border-blue-500 px-4 py-3 text-sm font-semibold text-blue-200">{recoveryView ? 'Wróć do wpisywania hasła / PIN-u' : 'Nie pamiętam hasła ani PIN-u — reset e-mailem'}</button>}
       {configured && !recoveryAvailable && <p className="mt-4 text-center text-xs text-slate-400">Reset e-mailem nie był skonfigurowany dla tej blokady.</p>}
       {!configured && <p className="text-xs text-slate-500 leading-5 mt-5">Biometria na komputerze będzie korzystać z Windows Hello. Dodam ją jako natywną funkcję aplikacji po przygotowaniu podpisanej wersji instalacyjnej.</p>}

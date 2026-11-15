@@ -1,105 +1,24 @@
 import { useEffect, useState } from 'react';
+import LocalAccessSettings from './components/LocalAccessSettings';
+import AccountMfaSettings from './components/AccountMfaSettings';
+import SecretInput from './components/SecretInput';
+import { resolveApiBase } from './services/apiBase';
 import { getElectronIpc, isAccessResult, isAccessStatus, type AccessMode } from './services/electron';
-
-export default function DesktopAccessSettings({ onClose }: { onClose: () => void }) {
-  const [currentMode, setCurrentMode] = useState<AccessMode>('pin');
-  const [nextMode, setNextMode] = useState<AccessMode>('pin');
-  const [currentSecret, setCurrentSecret] = useState('');
-  const [nextSecret, setNextSecret] = useState('');
-  const [mailConfigured, setMailConfigured] = useState(false);
-  const [recoveryAvailable, setRecoveryAvailable] = useState(false);
-  const [recoveryEmail, setRecoveryEmail] = useState('');
-  const [recoveryCode, setRecoveryCode] = useState('');
-  const [message, setMessage] = useState('');
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    void (async () => {
-      try {
-        const response = await getElectronIpc()?.invoke('eteczka-access-status');
-        if (!isAccessStatus(response)) throw new Error('Invalid lock status');
-        if (response.mode) {
-          setCurrentMode(response.mode);
-          setNextMode(response.mode);
-        }
-        setMailConfigured(Boolean(response.mailConfigured));
-        setRecoveryAvailable(Boolean(response.recoveryAvailable));
-      } catch { setMessage('Nie można odczytać ustawień zabezpieczeń.'); }
-    })();
-  }, []);
-
-  const verifyCurrent = async () => {
-    const api = getElectronIpc();
-    if (!api) throw new Error('Aplikacja komputerowa jest niedostępna.');
-    const result = await api.invoke('eteczka-access-verify', currentSecret);
-    if (!isAccessResult(result) || !result.ok) throw new Error('Podaj prawidłowy obecny PIN lub hasło.');
-    return api;
-  };
-
-  const sendRecoveryCode = async () => {
-    setBusy(true); setMessage('');
-    try {
-      const api = await verifyCurrent();
-      const result = await api.invoke('eteczka-recovery-enroll-request', recoveryEmail);
-      if (!isAccessResult(result) || !result.ok) throw new Error(isAccessResult(result) ? result.error : 'Nie udało się wysłać kodu.');
-      setMessage('Kod wysłany. Wpisz go poniżej i potwierdź adres.');
-    } catch (error) { setMessage(error instanceof Error ? error.message : 'Nie udało się wysłać kodu.'); }
-    finally { setBusy(false); }
-  };
-
-  const confirmRecoveryEmail = async () => {
-    setBusy(true); setMessage('');
-    try {
-      const api = await verifyCurrent();
-      const result = await api.invoke('eteczka-recovery-enroll-complete', recoveryEmail, recoveryCode);
-      if (!isAccessResult(result) || !result.ok) throw new Error(isAccessResult(result) ? result.error : 'Nie udało się potwierdzić adresu.');
-      setRecoveryAvailable(true);
-      setRecoveryCode('');
-      setMessage('Adres potwierdzony. Reset dostępu e-mailem jest aktywny.');
-    } catch (error) { setMessage(error instanceof Error ? error.message : 'Nie udało się potwierdzić adresu.'); }
-    finally { setBusy(false); }
-  };
-
-  const savePassword = async () => {
-    setBusy(true); setMessage('');
-    try {
-      const api = await verifyCurrent();
-      const result = await api.invoke('eteczka-access-configure', { mode: nextMode, secret: nextSecret });
-      if (!isAccessResult(result) || !result.ok) throw new Error(isAccessResult(result) ? result.error : 'Nie udało się zapisać zmian.');
-      onClose();
-    } catch (error) { setMessage(error instanceof Error ? error.message : 'Nie udało się zapisać zmian.'); }
-    finally { setBusy(false); }
-  };
-
-  const field = 'mt-2 w-full rounded-lg border border-slate-600 bg-[#0f172a] px-3 py-3 text-white outline-none focus:border-blue-500';
-  return <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-950/80 p-5">
-    <section className="my-6 w-full max-w-md rounded-xl border border-slate-600 bg-[#1e293b] p-6 shadow-2xl">
-      <div className="flex items-center justify-between gap-4">
-        <h2 className="text-xl font-bold text-white">🔐 Zabezpieczenia</h2>
-        <button onClick={onClose} className="text-xl text-slate-400 hover:text-white" aria-label="Zamknij">×</button>
-      </div>
-      <label className="mt-5 block text-sm font-semibold text-slate-300">Obecne {currentMode === 'pin' ? 'PIN' : 'hasło'}</label>
-      <input autoFocus type="password" inputMode={currentMode === 'pin' ? 'numeric' : 'text'} value={currentSecret} onChange={event => setCurrentSecret(event.target.value)} className={field} />
-
-      {mailConfigured && <div className="mt-6 border-t border-slate-600 pt-5">
-        <h3 className="font-semibold text-white">Odzyskiwanie e-mailem</h3>
-        <p className="mt-1 text-sm text-slate-400">{recoveryAvailable ? 'Adres odzyskiwania jest aktywny. Możesz go zmienić poniżej.' : 'Potwierdź adres kodem, aby włączyć reset hasła.'}</p>
-        <input type="email" value={recoveryEmail} onChange={event => setRecoveryEmail(event.target.value)} placeholder="Adres e-mail do odzyskiwania" className={field} />
-        <button disabled={busy || !recoveryEmail} onClick={() => void sendRecoveryCode()} className="mt-3 rounded-lg border border-blue-500 px-4 py-2 text-sm text-blue-200 disabled:opacity-50">Wyślij kod</button>
-        <input value={recoveryCode} onChange={event => setRecoveryCode(event.target.value)} inputMode="numeric" maxLength={8} placeholder="8-cyfrowy kod z e-maila" className={field} />
-        <button disabled={busy || !recoveryCode} onClick={() => void confirmRecoveryEmail()} className="mt-3 w-full rounded-lg bg-emerald-700 py-2.5 font-semibold text-white disabled:opacity-50">Potwierdź adres odzyskiwania</button>
-      </div>}
-
-      <div className="mt-6 border-t border-slate-600 pt-5">
-        <h3 className="font-semibold text-white">Zmiana PIN-u lub hasła</h3>
-        <div className="mt-3 flex gap-2">
-          <button onClick={() => setNextMode('pin')} className={`flex-1 rounded-lg py-2.5 font-bold ${nextMode === 'pin' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}>PIN</button>
-          <button onClick={() => setNextMode('password')} className={`flex-1 rounded-lg py-2.5 font-bold ${nextMode === 'password' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}>Hasło</button>
-        </div>
-        <input type="password" inputMode={nextMode === 'pin' ? 'numeric' : 'text'} value={nextSecret} onChange={event => setNextSecret(event.target.value)} placeholder={nextMode === 'pin' ? 'Nowy PIN: min. 6 cyfr' : 'Nowe hasło: min. 8 znaków'} className={field} />
-        <button disabled={busy || !nextSecret} onClick={() => void savePassword()} className="mt-4 w-full rounded-lg bg-blue-600 py-3 font-bold text-white disabled:opacity-50">Zmień PIN lub hasło</button>
-      </div>
-      {message && <p className="mt-4 text-sm text-blue-200" role="status">{message}</p>}
-    </section>
-  </div>;
+type Section='login'|'mfa'|'password'|'pin';
+export default function DesktopAccessSettings({onClose}:{onClose:()=>void}){
+ const [section,setSection]=useState<Section>('login'),[localMode,setLocalMode]=useState<AccessMode|null>(null);
+ const [configuredMode,setConfiguredMode]=useState<AccessMode|null>(null),[method,setMethod]=useState<'password'|'pin'>('password'),[savedMethod,setSavedMethod]=useState<'password'|'pin'>('password');
+ const [currentSecret,setCurrentSecret]=useState(''),[email,setEmail]=useState(''),[message,setMessage]=useState(''),[busy,setBusy]=useState(false),[sent,setSent]=useState(false);
+ const [desktop]=useState(()=>Boolean(getElectronIpc()));const api=resolveApiBase(window.location,import.meta.env.VITE_API_URL);
+ async function load(){const value=await getElectronIpc()?.invoke('eteczka-access-status');if(isAccessStatus(value)){setConfiguredMode(value.configured?value.mode:null);const selected=value.loginMethod||'password';setMethod(selected);setSavedMethod(selected);}}
+ useEffect(()=>{void load().catch(()=>undefined);let active=true;const token=localStorage.getItem('eteczka_auth_token');void fetch(`${api}/api/auth/me`,{headers:{authorization:`Bearer ${token||''}`}}).then(r=>r.ok?r.json():null).then(value=>{if(active&&typeof value?.email==='string')setEmail(value.email);}).catch(()=>undefined);return()=>{active=false;};},[api]);
+ async function saveMethod(){setBusy(true);setMessage('');try{const result=await getElectronIpc()?.invoke('eteczka-access-set-method',{method,currentSecret});if(!isAccessResult(result)||!result.ok)throw new Error(isAccessResult(result)?result.error:'Nie można zapisać metody. Uruchom ponownie aplikację desktopową.');setSavedMethod(method);setCurrentSecret('');setMessage('Zapisano sposób logowania na tym komputerze.');}catch(error){setMessage(error instanceof Error?error.message:'Błąd zapisu.');}finally{setBusy(false);}}
+ async function resetPassword(){if(!email||busy||sent)return;setBusy(true);setMessage('');try{const r=await fetch(`${api}/api/central-account/request-password-reset`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email})});const data=await r.json();if(!r.ok)throw new Error(data.error||'Nie udało się wysłać linku.');setSent(true);setMessage(data.message);}catch(error){setMessage(error instanceof Error?error.message:'Błąd połączenia.');}finally{setBusy(false);}}
+ if(localMode)return <LocalAccessSettings key={localMode} initialMode={localMode} onClose={()=>{setLocalMode(null);void load();}}/>;
+ return <div className="fixed inset-0 z-[110] flex items-center justify-center overflow-y-auto bg-slate-950/80 p-5 backdrop-blur-sm"><section role="dialog" aria-modal="true" aria-labelledby="security-title" className="my-auto max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-slate-600 bg-[#0f172a] p-7 shadow-2xl"><header className="flex justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-widest text-blue-400">Ustawienia konta</p><h2 id="security-title" className="mt-2 text-2xl font-semibold text-white">Zabezpieczenia</h2></div><button aria-label="Zamknij zabezpieczenia" onClick={onClose} className="rounded-lg px-3 py-1 text-2xl text-slate-400 hover:bg-slate-800">×</button></header><nav className="my-6 flex flex-wrap gap-2">{([['login','Sposób logowania'],['mfa','Weryfikacja dwuetapowa'],['password','Zmiana hasła'],['pin','Zmiana PIN-u']] as const).map(([id,label])=><button key={id} aria-pressed={section===id} onClick={()=>{setSection(id);setMessage('');}} className={`rounded-xl border px-4 py-3 text-sm font-semibold ${section===id?'border-blue-400 bg-blue-950 text-blue-100':'border-slate-700 text-slate-400'}`}>{label}</button>)}</nav>
+ {section==='login'&&<section><h3 className="text-lg font-semibold text-white">Wybierz sposób logowania</h3><p className="mt-3 text-sm leading-6 text-slate-400">Pierwsze logowanie i wygaśnięcie 20-minutowej sesji wymagają hasła konta. PIN służy do dodatkowego odblokowania aplikacji na tym komputerze.</p><label className="mt-5 block text-sm text-slate-300">Metoda<select value={method} onChange={e=>{setMethod(e.target.value as 'password'|'pin');setMessage('');}} disabled={!desktop} className="mt-2 w-full rounded-xl border border-slate-600 bg-slate-950 p-3 text-white"><option value="password">Hasło konta</option><option value="pin">PIN na tym komputerze</option><option value="hello" disabled>Windows Hello — jeszcze niedostępne</option></select></label><p className="mt-3 text-xs text-slate-400">Zapisana metoda: {savedMethod==='pin'?'PIN':'Hasło konta'}</p>{method==='pin'&&configuredMode!=='pin'&&<p className="mt-4 text-sm text-amber-200">Najpierw ustaw PIN w zakładce „Zmiana PIN-u”, a następnie zapisz wybór na tej liście.</p>}{configuredMode&&method!==savedMethod&&<label className="mt-4 block text-sm text-slate-300">Potwierdź obecną blokadę ({configuredMode==='pin'?'PIN':'hasło lokalne'})<SecretInput value={currentSecret} onChange={e=>setCurrentSecret(e.target.value)} inputMode={configuredMode==='pin'?'numeric':'text'} className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 p-3 text-white"/></label>}<button disabled={!desktop||busy||method===savedMethod||(method==='pin'&&configuredMode!=='pin')||Boolean(configuredMode&&!currentSecret)} onClick={()=>void saveMethod()} className="mt-5 rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white disabled:opacity-50">Zapisz sposób logowania</button></section>}
+ {section==='mfa'&&<AccountMfaSettings/>}
+ {section==='password'&&<section><h3 className="text-lg font-semibold text-white">Zmiana hasła konta</h3><p className="mt-3 text-sm leading-6 text-slate-400">Jednorazowy link do ustawienia nowego hasła wyślemy na potwierdzony adres konta. Link jest ważny przez godzinę.</p><input readOnly aria-label="E-mail konta" value={email} className="mt-4 w-full rounded-lg border border-slate-600 bg-slate-950 p-3 text-slate-300"/><button disabled={!email||busy||sent} onClick={()=>void resetPassword()} className="mt-5 rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white disabled:opacity-50">{busy?'Wysyłanie…':sent?'Prośba została przyjęta':'Wyślij link do zmiany hasła'}</button></section>}
+ {section==='pin'&&<section><h3 className="text-lg font-semibold text-white">{configuredMode==='pin'?'Zmiana PIN-u':'Ustaw PIN'}</h3><p className="mt-3 text-sm leading-6 text-slate-400">PIN przypisany do konta na tym komputerze. Wpiszesz go dwukrotnie; przy zmianie najpierw potwierdzisz dotychczasową blokadę.</p><button disabled={!desktop} onClick={()=>setLocalMode('pin')} className="mt-5 rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white disabled:opacity-50">{configuredMode==='pin'?'Zmień PIN':'Ustaw nowy PIN'}</button></section>}
+ {message&&<p role="status" className="mt-5 text-sm leading-6 text-blue-200">{message}</p>}</section></div>;
 }

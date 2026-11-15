@@ -22,7 +22,12 @@ if ($backend) {
     }
     Write-Host 'Korzystam z dzialajacego serwera E-Teczki. Interfejs bedzie odswiezany po zmianach.' -ForegroundColor Green
     Write-Host 'Zmiany backendu wymagaja restartu serwera, jesli nie jest uruchomiony w trybie deweloperskim.' -ForegroundColor Yellow
-    & npm.cmd run 'dev:desktop:existing-backend'
+    $accounts = Get-NetTCPConnection -State Listen -LocalPort 3001 -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($accounts) {
+        & npm.cmd run 'dev:desktop:existing-backend'
+    } else {
+        & npm.cmd run 'dev:desktop:existing-backend-accounts'
+    }
 } else {
     if ($tls) {
         Write-Host 'Port 3443 jest zajety przez inny proces. Nie zamykam go automatycznie.' -ForegroundColor Yellow

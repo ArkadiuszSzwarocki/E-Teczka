@@ -20,6 +20,7 @@ exports.parseBackupPlanState = parseBackupPlanState;
 exports.mergePlanState = mergePlanState;
 exports.copyDesktopPlanState = copyDesktopPlanState;
 exports.claimPrinterPages = claimPrinterPages;
+const planCatalog_1 = require("./planCatalog");
 const devPlans_1 = require("./devPlans");
 const planPolicy_1 = require("./planPolicy");
 class PlanLimitError extends Error {
@@ -55,7 +56,7 @@ function getPlan(db_1, ownerKey_1) {
 function featureTrial(db_1, ownerKey_1, feature_1, start_1) {
     return __awaiter(this, arguments, void 0, function* (db, ownerKey, feature, start, now = new Date()) {
         const plan = yield getPlan(db, ownerKey, now);
-        if (plan === 'premium')
+        if ((0, planCatalog_1.getCatalog)().plans[plan][feature === 'ocr' ? 'ocr' : 'cloudBackup'])
             return { allowed: true, startedAt: null, endsAt: null };
         yield ensurePlanLedger(db);
         ownerKey = (0, devPlans_1.accountingKey)(ownerKey);

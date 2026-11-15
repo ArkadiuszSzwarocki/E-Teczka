@@ -12,6 +12,10 @@ import PlanUsageModal from './components/PlanUsageModal';
 import SecureShareModal from './components/SecureShareModal';
 import PlanLimitModal from './components/PlanLimitModal';
 import AuthModal from './components/AuthModal';
+import SettingsDialog from './components/SettingsDialog';
+import MobileOnboarding from './components/MobileOnboarding';
+import MobileAppDownload from './components/MobileAppDownload';
+import WelcomeScreen from './components/WelcomeScreen';
 import BillingPlansModal from './components/BillingPlansModalV2';
 import BackupModal, { type BackupSection } from './components/BackupModal';
 import OcrPanel from './components/OcrPanel';
@@ -43,6 +47,7 @@ const apiFetch = async (input: RequestInfo | URL, init: RequestInit = {}) => {
   const headers = new Headers(init.headers || (input instanceof Request ? input.headers : undefined));
   if (token && requestUrl.origin === new URL(API_URL).origin) headers.set('Authorization', `Bearer ${token}`);
   const response = await window.fetch(input, { ...init, headers });
+  if (token && response.status === 401 && requestUrl.origin === new URL(API_URL).origin) { localStorage.removeItem('eteczka_auth_token'); window.dispatchEvent(new Event('eteczka-auth-changed')); }
   const method = (init.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
   if (requestUrl.origin === new URL(API_URL).origin && (method !== 'GET' || /\/api\/backup\/oauth\/[^/]+\/start$/.test(requestUrl.pathname)) && (response.status === 403 || response.status === 402)) {
     const data = await response.clone().json().catch(() => ({})) as { code?: string; error?: string; resetsAt?: string };
@@ -92,6 +97,7 @@ export default function App() {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<{ name?: string | null; email: string } | null>(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('eteczka_auth_token'));
   const [isBillingPlansOpen, setIsBillingPlansOpen] = useState(false);
   const [isPlanUsageOpen, setIsPlanUsageOpen] = useState(false);
   const [secureShareId, setSecureShareId] = useState<number | null>(null);
@@ -198,14 +204,14 @@ export default function App() {
   }, []);
 
   const logoutAccount = useCallback(async () => {
-    try {
-      const response = await fetch(`${API_URL}/api/auth/logout`, { method: 'POST' });
-      if (!response.ok) throw new Error('Nie udało się wylogować konta.');
-      localStorage.removeItem('eteczka_auth_token'); setCurrentUser(null); setIsUserMenuOpen(false);
+    try { await fetch(`${API_URL}/api/auth/logout`, { method: 'POST' }); }
+    catch { /* Local sign-out remains possible when the server is unavailable. */ }
+    finally {
+      localStorage.removeItem('eteczka_auth_token'); window.dispatchEvent(new Event('eteczka-auth-changed'));
+      setCurrentUser(null); setIsUserMenuOpen(false);
       setDocuments([]); setFolders([]); setTags([]); setScannerFiles([]); setSelectedDocs([]); setPreviewDoc(null); setSelectedFolderId(null); setActiveView('dashboard');
-      await fetchData(); showToast('Wylogowano konto.', 'success');
-    } catch { showToast('Nie udało się wylogować konta. Sprawdź połączenie z aplikacją.', 'error'); }
-  }, [fetchData, showToast]);
+    }
+  }, []);
 
   const openBillingCheckout = useCallback(async (plan: 'standard' | 'premium', interval: 'monthly' | 'yearly', acceptReplacement = false, fromLimit = false) => {
     setBillingBusy(true);
@@ -770,6 +776,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-[#111827] text-slate-300 font-sans text-sm">
+      {showWelcome && !currentUser && <WelcomeScreen onContinue={() => setShowWelcome(false)} onAuthenticated={user => { setShowWelcome(false); handleAuthenticated(user); }} />}
       {toast && (
         <div role="status" className={`fixed bottom-5 right-5 z-50 min-w-80 border-l-4 px-5 py-4 rounded-md shadow-2xl font-medium ${toast.type === 'error' ? 'border-red-400 bg-red-950 text-red-50' : 'border-emerald-400 bg-emerald-950 text-emerald-50'}`}>
           {toast.message}
@@ -855,15 +862,12 @@ export default function App() {
       <DesktopSidebar
         activeView={activeView}
         documents={documents}
-        isSettingsMenuOpen={isSettingsMenuOpen}
         onViewChange={(view) => { setActiveView(view); if (view === 'dashboard') setSelectedFolderId(null); }}
         onOpenScanner={() => void openWiaScanner()}
-        onToggleSettings={() => setIsSettingsMenuOpen((value) => !value)}
-        onOpenPairing={() => setIsPairingGuideOpen(true)}
-        onOpenAccessSettings={() => setIsAccessSettingsOpen(true)}
-        onOpenTags={() => setIsTagManagerOpen(true)}
+        onToggleSettings={() => setIsSettingsMenuOpen(true)}
         onOpenBackup={setBackupSection}
       />
+      {isSettingsMenuOpen && <SettingsDialog onClose={() => setIsSettingsMenuOpen(false)} onPair={() => setIsPairingGuideOpen(true)} onSecurity={() => setIsAccessSettingsOpen(true)} onTags={() => setIsTagManagerOpen(true)} onBackup={() => setBackupSection('settings')} onLogout={() => void logoutAccount()} />}
       {/* GŁÓWNA ZAWARTOŚĆ */}
       {isAccessSettingsOpen && <DesktopAccessSettings onClose={() => setIsAccessSettingsOpen(false)} />}
       <div className="flex-1 flex flex-col overflow-hidden bg-[#0f172a]">
@@ -1127,6 +1131,7 @@ export default function App() {
       {isAuthOpen && <AuthModal onClose={() => setIsAuthOpen(false)} onAuthenticated={handleAuthenticated} />}
       {isBillingPlansOpen && <BillingPlansModal busy={billingBusy} currentPlan={billingPlan} developmentOverride={billingIsDev} cancellationScheduled={billingDetails?.cancellationScheduled === true} onSelectFree={() => { if (billingIsDev) { void (async () => { try { const response = await apiFetch(`${API_URL}/api/dev/plan`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan: 'free' }) }); if (!response.ok) throw new Error('Nie udało się zmienić planu testowego.'); setIsBillingPlansOpen(false); setBillingDetails(null); await fetchData(); showToast('Wybrano testowy plan Darmowy.'); } catch (error) { showToast(errorMessage(error), 'error'); } })(); } else { setIsBillingPlansOpen(false); void openBillingCancel(); } }} onClose={() => setIsBillingPlansOpen(false)} onSelect={(plan, interval) => { if (billingDetails?.cancellationScheduled) { const amount = plan === 'standard' ? (interval === 'yearly' ? '49,90 zł za rok' : '4,99 zł miesięcznie') : (interval === 'yearly' ? '99,90 zł za rok' : '9,99 zł miesięcznie'); const end = billingDetails.renewalAt ? new Date(billingDetails.renewalAt).toLocaleDateString('pl-PL') : 'końca opłaconego okresu'; if (!window.confirm(`Obecny plan pozostaje opłacony do ${end}. Nowy plan zacznie działać od razu, a nowa płatność (${amount}) zostanie pobrana po jej zatwierdzeniu w Stripe. Niewykorzystana część bieżącego miesiąca nie zostanie ponownie rozliczona. Czy chcesz kontynuować?`)) return; } setIsBillingPlansOpen(false); void openBillingCheckout(plan, interval, billingDetails?.cancellationScheduled === true); }} />}
 
+      {currentUser && <MobileOnboarding key={currentUser.email} email={currentUser.email} phoneConnected={phoneConnected} onPair={() => setIsPairingGuideOpen(true)} />}
       {isPairingGuideOpen && (
         <div className="fixed inset-0 z-[100] bg-slate-950/80 flex items-center justify-center p-6" onClick={() => setIsPairingGuideOpen(false)}>
           <div className="w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-600 bg-[#1e293b] shadow-2xl p-7" onClick={(event) => event.stopPropagation()}>
@@ -1134,6 +1139,7 @@ export default function App() {
               <div><h2 className="text-2xl font-bold text-white">Połącz telefon z E‑Teczką</h2><p className="text-slate-400 mt-1">Połączenie działa wyłącznie w Twojej sieci lokalnej.</p></div>
               <button onClick={() => setIsPairingGuideOpen(false)} className="text-slate-400 hover:text-white text-2xl">×</button>
             </div>
+            <div className="mb-5"><MobileAppDownload /><p className="mt-3 rounded-xl border border-blue-500/30 bg-blue-950/30 p-4 text-sm leading-6 text-blue-100">Kod QR lub kod parowania łączy telefon z tym komputerem jako zaufanym urządzeniem. Dzięki temu skanujesz dokumenty telefonem i przesyłasz je do archiwum przez Wi‑Fi. Konto indywidualne obsługuje jeden telefon; plany Rodzinny i Firmowy dla wielu telefonów są w przygotowaniu.</p></div>
             <div className="grid md:grid-cols-3 gap-4">
               <div className="rounded-xl border border-blue-500/50 bg-blue-950/30 p-5"><div className="text-4xl mb-3">🖥️</div><div className="text-blue-300 font-bold">1. Połącz urządzenia z Wi‑Fi</div><p className="text-sm text-slate-300 mt-2">Telefon i komputer muszą być w tej samej sieci lokalnej. Otwórz E‑Teczkę na obu urządzeniach.</p></div>
               <div className="rounded-xl border border-emerald-500/50 bg-emerald-950/30 p-5"><div className="text-4xl mb-3">📱</div><div className="text-emerald-300 font-bold">2. Zeskanuj kod QR</div><p className="text-sm text-slate-300 mt-2">W telefonie wybierz <b>Połączenie z komputerem → Skanuj kod QR</b> i skieruj aparat na ekran.</p></div>

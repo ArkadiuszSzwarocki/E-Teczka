@@ -38,19 +38,22 @@ function createMariaEmailAccounts({ pool, sendVerification, sendPasswordReset, n
           if (account?.verified) return false;
           let id = account?.id;
           if (!account) id = (await execute(db, 'INSERT INTO accounts (public_id,email,password_hash,created_at) VALUES (?,?,?,?)', [crypto.randomBytes(16).toString('hex'), email, hashed, now()])).insertId;
+          if (account) {
+            await execute(db, 'UPDATE accounts SET password_hash = ? WHERE id = ? AND verified = 0', [hashed, id]);
+            await execute(db, 'DELETE FROM verifications WHERE account_id = ?', [id]);
+          }
           await execute(db, 'INSERT INTO verifications (token_hash,account_id,expires_at) VALUES (?,?,?)', [hash(code), id, now() + 3600000]);
           return true;
         });
         if (created) await sendCode(email, code, 'verifications', sendVerification);
       } catch (error) { if (error.code !== 'ER_DUP_ENTRY') throw error; }
     },
-    async verifyEmail(code, password) {
-      if (!validToken(code) || !validPassword(password)) throw new Error('INVALID_INPUT');
-      const hashed = await passwordHash(password);
+    async verifyEmail(code) {
+      if (!validToken(code)) throw new Error('INVALID_TOKEN');
       await transaction(async db => {
         const row = await first(db, 'SELECT account_id FROM verifications WHERE token_hash = ? AND expires_at > ? FOR UPDATE', [hash(code), now()]);
         if (!row) throw new Error('INVALID_TOKEN');
-        await execute(db, 'UPDATE accounts SET verified = 1, password_hash = ? WHERE id = ?', [hashed, row.account_id]);
+        await execute(db, 'UPDATE accounts SET verified = 1 WHERE id = ? AND verified = 0', [row.account_id]);
         await execute(db, 'DELETE FROM verifications WHERE account_id = ?', [row.account_id]);
       });
     },

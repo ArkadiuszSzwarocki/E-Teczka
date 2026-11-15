@@ -1,3 +1,6 @@
+import { createAccountSecurityRouter } from './routes/accountSecurity';
+import { activeSessionWhere } from './services/sessionPolicy';
+import 'dotenv/config';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import cors from 'cors';
 import { PrismaClient } from '@prisma/client';
@@ -25,12 +28,15 @@ import { runScheduledCloudBackup } from './routes/backup';
 import { createBackupScheduler } from './services/backupScheduler';
 import { createOcrQueue } from './services/ocrQueue';
 import { createOcrRouter } from './routes/ocr';
+import { getPlan } from './services/planLedger';
+import { getCatalog } from './services/planCatalog';
+import { createDeveloperCatalogRouter } from './routes/developerCatalog';
 import { createDevPlanRouter } from './routes/devPlans';
 import { createSecureShareRouter } from './routes/secureShare';
 import { createCentralAccountRouter } from './routes/centralAccount';
 
 const prisma = new PrismaClient();
-configureAccountSessionValidator(async (token, userId) => Boolean(await prisma.authSession.findFirst({ where: { tokenHash: createHash('sha256').update(token).digest('hex'), userId, expiresAt: { gt: new Date() } }, select: { id: true } })));
+configureAccountSessionValidator(async (token, userId) => Boolean(await prisma.authSession.findFirst({ where: { tokenHash: createHash('sha256').update(token).digest('hex'), userId, ...activeSessionWhere() }, select: { id: true } })));
 const app = express();
 const ocrQueue = createOcrQueue(prisma, { file: path.join(securityDir, 'ocr-queue.enc'), uploadsDirectory: uploadsDir });
 
@@ -62,7 +68,7 @@ app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), crea
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-registerPairingRoutes(app);
+registerPairingRoutes(app, async owner => getCatalog().plans[await getPlan(prisma, owner)].mobileDevices);
 app.use('/api/auth', createAuthRouter(prisma));
 // The bridge accepts central credentials only from this computer. Linking is
 // explicit and requires a live local session as well as a central session.
@@ -70,6 +76,7 @@ app.use('/api/central-account', requireLocalDesktop, createCentralAccountRouter(
 
 app.use('/api/backup/oauth', createBackupOAuthCallbackRouter(prisma));
 
+app.use('/api/dev/catalog', createDeveloperCatalogRouter());
 app.use('/api', requireAccess);
 app.use('/uploads', requireAccess, express.static(uploadsDir));
 app.use(requireAccess, express.static(uploadsDir));
@@ -85,6 +92,7 @@ const checkBackupsSafely = () => { void checkScheduledBackups().catch(error => c
 checkBackupsSafely();
 cron.schedule('* * * * *', checkBackupsSafely);
 
+app.use('/api/account-security', createAccountSecurityRouter(prisma));
 app.use('/api/folders', createFolderRouter(prisma));
 
 app.use('/api/printer-scan', createPrinterScanRouter(prisma));

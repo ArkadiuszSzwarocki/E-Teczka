@@ -38,15 +38,17 @@ async function decrypt(value: string) {
 const chunkCodec = { encrypt, decrypt, ...createOfflineChunkCodec(key, Crypto.getRandomBytesAsync) };
 
 export async function hasVault() { return Boolean(await SecureStore.getItemAsync(KEY)); }
-export type VaultMode = "pin" | "password" | "biometric";
+export type VaultMode = "pin" | "password" | "pattern" | "biometric";
 export async function vaultMode(): Promise<VaultMode> { return (await SecureStore.getItemAsync(MODE) as VaultMode) || "pin"; }
-export type SecretMode = "pin" | "password";
+export type SecretMode = "pin" | "password" | "pattern";
 export async function vaultFallbackMode(): Promise<SecretMode | null> { return (await SecureStore.getItemAsync(BACKUP_MODE) as SecretMode) || null; }
 function validateSecret(secret: string, mode: SecretMode) {
+  if (mode === "pattern" && (!/^[0-8](?:-[0-8]){3,8}$/.test(secret) || new Set(secret.split("-")).size !== secret.split("-").length)) throw new Error("Wzór musi łączyć co najmniej 4 różne punkty.");
   if (mode === "pin" && !/^\d{6,}$/.test(secret)) throw new Error("PIN musi mieć co najmniej 6 cyfr.");
   if (mode === "password" && secret.length < 8) throw new Error("Hasło musi mieć co najmniej 8 znaków.");
 }
 export async function createVault(secret: string, mode: VaultMode, backup?: { mode: SecretMode; secret: string }) {
+  if (await hasVault()) throw new Error("Sejf już istnieje. Zmień metodę dostępu w ustawieniach, aby zachować dokumenty.");
   if (mode === "biometric") {
     if (!backup) throw new Error("Dla biometrii ustaw dodatkowy PIN albo hasło awaryjne.");
     validateSecret(backup.secret, backup.mode);
@@ -69,7 +71,15 @@ export async function changeVaultAccess(secret: string, mode: VaultMode, backup?
   else await SecureStore.deleteItemAsync(BACKUP_MODE);
   await SecureStore.setItemAsync(MODE, mode);
 }
-export async function unlockWithPin(pin: string) { return (await SecureStore.getItemAsync(PIN_HASH)) === await hashPin(pin); }
+export async function unlockWithPin(pin: string) {
+  const raw = await SecureStore.getItemAsync('eteczka.vault.attempts');
+  const attempts = raw ? JSON.parse(raw) as { count: number; blockedUntil: number } : { count: 0, blockedUntil: 0 };
+  if (attempts.blockedUntil > Date.now()) throw new Error('Zbyt wiele prób. Poczekaj chwilę i spróbuj ponownie.');
+  const valid = (await SecureStore.getItemAsync(PIN_HASH)) === await hashPin(pin);
+  if (valid) await SecureStore.deleteItemAsync('eteczka.vault.attempts');
+  else { attempts.count++; attempts.blockedUntil = attempts.count >= 5 ? Date.now() + Math.min(300000, 30000 * (attempts.count - 4)) : 0; await SecureStore.setItemAsync('eteczka.vault.attempts', JSON.stringify(attempts)); }
+  return valid;
+}
 export async function getOfflineFolderIds(): Promise<number[]> { try { return JSON.parse(await SecureStore.getItemAsync(SELECTED_FOLDERS) || "[]"); } catch { return []; } }
 export async function setOfflineFolderIds(ids: number[]) { await SecureStore.setItemAsync(SELECTED_FOLDERS, JSON.stringify([...new Set(ids)])); }
 export async function getVaultStorageBytes() {

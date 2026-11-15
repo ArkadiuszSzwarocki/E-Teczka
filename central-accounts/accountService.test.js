@@ -33,13 +33,15 @@ test('failed verification email does not leave an unusable account', async () =>
   db.close();
 });
 
-test('email owner chooses the password at verification even after a pre-registration attempt', async () => {
+test('new registration invalidates earlier links and keeps the latest registration password', async () => {
   const db = new DatabaseSync(':memory:'); let code; let messages = 0;
   const service = createAccountService({ db, sendVerification: async (_email, value) => { code = value; messages++; }, verifyGoogle: async () => {} });
   await service.register('owner@example.com', 'attacker-password');
+  const oldCode = code;
   await service.register('owner@example.com', 'owner-password');
   assert.equal(messages, 2);
-  await service.verifyEmail(code, 'owner-password');
+  await assert.rejects(service.verifyEmail(oldCode), /INVALID_TOKEN/);
+  await service.verifyEmail(code);
   await assert.rejects(service.login('owner@example.com', 'attacker-password'), /INVALID_CREDENTIALS/);
   assert.equal((await service.login('owner@example.com', 'owner-password')).user.email, 'owner@example.com');
   db.close();
@@ -108,6 +110,7 @@ test('resend restores verification and password reset invalidates all sessions',
 test('linking Google requires an authenticated session and cannot steal an identity', async () => {
   const db = new DatabaseSync(':memory:'); let code;
   const service = createAccountService({ db, sendVerification: async (_email, value) => { code = value; }, verifyGoogle: async credential => ({ subject: credential, email: 'google@example.com', name: 'User' }) });
+  const oldCode = code;
   await service.register('owner@example.com', 'owner-password'); await service.verifyEmail(code, 'owner-password');
   const owner = await service.login('owner@example.com', 'owner-password');
   await assert.rejects(service.linkGoogle('invalid', 'google-sub', service.createGoogleChallenge()), /UNAUTHORIZED/);

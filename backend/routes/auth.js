@@ -16,12 +16,13 @@ exports.DeviceLimitError = void 0;
 exports.passwordHash = passwordHash;
 exports.createAuthRouter = createAuthRouter;
 exports.createSession = createSession;
+const accountMfa_1 = require("../services/accountMfa");
+const sessionPolicy_1 = require("../services/sessionPolicy");
+const planCatalog_1 = require("../services/planCatalog");
 const crypto_1 = __importDefault(require("crypto"));
 const express_1 = __importDefault(require("express"));
 const authSecret_1 = require("../security/authSecret");
 const AUTH_SECRET = (0, authSecret_1.authSecret)();
-const SESSION_DAYS = 30;
-const DEVICE_LIMITS = { free: 1, standard: 2, premium: Number.POSITIVE_INFINITY };
 function passwordHash(password, salt = crypto_1.default.randomBytes(16).toString('hex')) {
     const digest = crypto_1.default.scryptSync(password, salt, 64).toString('hex');
     return `${salt}:${digest}`;
@@ -75,6 +76,8 @@ function createAuthRouter(prisma) {
             return response.json(yield createSession(prisma, user.id, user.email, user.name, request.body));
         }
         catch (error) {
+            if (error instanceof accountMfa_1.AccountMfaRequired)
+                return response.status(401).json({ code: error.code, error: error.message });
             if (error instanceof DeviceLimitError)
                 return response.status(403).json({ error: error.message, code: 'DEVICE_LIMIT_REACHED', limit: error.limit });
             return response.status(500).json({ error: 'Nie udało się utworzyć sesji.' });
@@ -92,11 +95,11 @@ function createAuthRouter(prisma) {
         const token = (_a = request.header('authorization')) === null || _a === void 0 ? void 0 : _a.replace(/^Bearer\s+/i, '');
         if (!token)
             return response.status(401).json({ error: 'Brak aktywnej sesji.' });
-        const session = yield prisma.authSession.findFirst({ where: { tokenHash: crypto_1.default.createHash('sha256').update(token).digest('hex'), expiresAt: { gt: new Date() } }, include: { user: true } });
+        const session = yield prisma.authSession.findFirst({ where: Object.assign({ tokenHash: crypto_1.default.createHash('sha256').update(token).digest('hex') }, (0, sessionPolicy_1.activeSessionWhere)()), include: { user: true } });
         const user = session === null || session === void 0 ? void 0 : session.user;
         if (!user)
             return response.status(401).json({ error: 'Sesja wygasła.' });
-        response.json({ id: user.id, email: user.email, name: user.name });
+        response.json({ id: user.id, email: user.email, name: user.name, expiresAt: (0, sessionPolicy_1.effectiveSessionExpiry)(session.createdAt, session.expiresAt) });
     }));
     return router;
 }
@@ -109,19 +112,21 @@ class DeviceLimitError extends Error {
 exports.DeviceLimitError = DeviceLimitError;
 function createSession(prisma, userId, email, name, body) {
     return __awaiter(this, void 0, void 0, function* () {
+        var _a;
+        (0, accountMfa_1.verifyAccountMfa)(userId, body === null || body === void 0 ? void 0 : body.mfaCode);
         const deviceId = typeof (body === null || body === void 0 ? void 0 : body.deviceId) === 'string' && body.deviceId.trim().length >= 8 ? body.deviceId.trim().slice(0, 128) : crypto_1.default.randomUUID();
         const deviceName = typeof (body === null || body === void 0 ? void 0 : body.deviceName) === 'string' ? body.deviceName.trim().slice(0, 80) : 'Nieznane urządzenie';
         const subscription = yield prisma.subscription.findUnique({ where: { ownerKey: `user:${userId}` } });
         const plan = (subscription === null || subscription === void 0 ? void 0 : subscription.plan) === 'premium' && ['active', 'trialing'].includes(subscription.status) ? 'premium' : (subscription === null || subscription === void 0 ? void 0 : subscription.plan) === 'standard' && ['active', 'trialing'].includes(subscription.status) ? 'standard' : 'free';
-        const limit = DEVICE_LIMITS[plan];
+        const limit = (_a = (0, planCatalog_1.getCatalog)().plans[plan].accountDevices) !== null && _a !== void 0 ? _a : Number.POSITIVE_INFINITY;
         if (Number.isFinite(limit)) {
-            const activeSessions = yield prisma.authSession.findMany({ where: { userId, expiresAt: { gt: new Date() } }, select: { deviceId: true } });
+            const activeSessions = yield prisma.authSession.findMany({ where: Object.assign({ userId }, (0, sessionPolicy_1.activeSessionWhere)()), select: { deviceId: true } });
             const deviceCount = new Set(activeSessions.map(session => session.deviceId).filter(Boolean)).size;
             const alreadyRegistered = activeSessions.some(session => session.deviceId === deviceId);
             if (!alreadyRegistered && deviceCount >= limit)
                 throw new DeviceLimitError(limit);
         }
-        const expiresAt = new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000);
+        const expiresAt = new Date(Date.now() + sessionPolicy_1.SESSION_DURATION_MS);
         const token = sessionToken(userId, expiresAt);
         yield prisma.authSession.create({ data: { tokenHash: crypto_1.default.createHash('sha256').update(token).digest('hex'), userId, expiresAt, deviceId, deviceName } });
         return { token, expiresAt, user: { id: userId, email, name } };

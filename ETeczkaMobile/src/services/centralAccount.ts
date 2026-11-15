@@ -1,3 +1,4 @@
+import { DeviceEventEmitter } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 
 const SESSION_KEY = 'eteczka_central_account_session_v1';
@@ -65,4 +66,5 @@ export async function logoutCentralAccount(origin: string) {
   // Keep the local credential if the server cannot revoke it, so the user can retry.
   if (session) await post(origin, '/logout', {}, session.token);
   await SecureStore.deleteItemAsync(SESSION_KEY);
+  DeviceEventEmitter.emit('eteczka-central-logout');
 }

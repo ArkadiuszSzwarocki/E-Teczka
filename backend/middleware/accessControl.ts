@@ -17,7 +17,7 @@ function loadPairedDevices(): PairedDevice[] {
 let pairedDevices = loadPairedDevices();
 let pairingCode = createPairingCode();
 let pairingExpiresAt = Date.now() + 10 * 60 * 1000;
-let pairingOwner: { ownerId?: number; ownerKey: string } = { ownerKey: 'desktop-local' };
+let pairingOwner: { ownerId?: number; ownerKey: string; mobileLimit: number } = { ownerKey: 'desktop-local', mobileLimit: 1 };
 const pairingAttempts = new Map<string, number>();
 let accountSessionIsActive: ((token: string, userId: number) => Promise<boolean>) | null = null;
 
@@ -68,8 +68,7 @@ export async function requireAccess(request: express.Request, response: express.
     }
   }
   if (isLoopback(request)) {
-    response.locals.billingOwnerKey = 'desktop-local';
-    return next();
+    return response.status(401).json({ error: 'Zaloguj się na konto E‑Teczki, aby uzyskać dostęp do dokumentów.' });
   }
   if (!token) return response.status(401).json({ error: 'Brak autoryzacji urządzenia.' });
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
@@ -96,11 +95,12 @@ function verifyAccountToken(token: string) {
   return Number.isInteger(userId) && userId > 0 && Number.isFinite(expiresAt) && expiresAt > Date.now() ? { userId } : null;
 }
 
-export function registerPairingRoutes(app: express.Express) {
-  app.get('/api/pairing-code', requireLocalDesktop, requireAccess, (_req, res) => {
+export function registerPairingRoutes(app: express.Express, mobileLimit: (ownerKey: string) => Promise<number> = async () => 1) {
+  app.get('/api/pairing-code', requireLocalDesktop, requireAccess, async (_req, res) => {
     const ownerKey = String(res.locals.billingOwnerKey || 'desktop-local'); const ownerId = res.locals.userId ? Number(res.locals.userId) : undefined;
+    const limit = await mobileLimit(ownerKey);
     if (Date.now() >= pairingExpiresAt || pairingOwner.ownerKey !== ownerKey) rotatePairingCode();
-    pairingOwner = { ownerId, ownerKey };
+    pairingOwner = { ownerId, ownerKey, mobileLimit: limit };
     res.json({ code: pairingCode, expiresAt: pairingExpiresAt });
   });
 
@@ -112,8 +112,10 @@ export function registerPairingRoutes(app: express.Express) {
     addresses.sort((a, b) => Number(b.startsWith('192.168.')) - Number(a.startsWith('192.168.')) || Number(a.startsWith('172.20.')) - Number(b.startsWith('172.20.')));
     res.json({ addresses, port: 3443 });
   });
-  app.get('/api/pairing-status', requireLocalDesktop, (_req, res) => {
-    res.json({ pairedDevices: pairedDevices.length, phoneConnected: pairedDevices.some((device) => Date.now() - Date.parse(device.lastSeenAt) < 30_000) });
+  app.get('/api/pairing-status', requireLocalDesktop, requireAccess, async (_req, res) => {
+    const limit = await mobileLimit(String(res.locals.billingOwnerKey || 'desktop-local'));
+    const devices = pairedDevices.filter(device => (device.ownerKey || 'desktop-local') === String(res.locals.billingOwnerKey || 'desktop-local'));
+    res.json({ pairedDevices: devices.length, mobileDeviceLimit: limit, phoneConnected: devices.some((device) => Date.now() - Date.parse(device.lastSeenAt) < 30_000) });
   });
 
   app.post('/api/pair', (req, res) => {
@@ -121,6 +123,10 @@ export function registerPairingRoutes(app: express.Express) {
     const attempts = pairingAttempts.get(address) || 0;
     if (attempts >= 5) { rotatePairingCode(); return res.status(429).json({ error: 'Za dużo nieudanych prób. Na komputerze wyświetlono nowy kod.' }); }
     if (Date.now() >= pairingExpiresAt || req.body?.pairingCode !== pairingCode) { pairingAttempts.set(address, attempts + 1); return res.status(401).json({ error: 'Nieprawidłowy lub wygasły kod parowania.' }); }
+    // Individual plans pair one mobile device per archive owner. Multi-device
+    // business/family entitlements must be enforced here when those plans ship.
+    const trustedPhones = pairedDevices.filter(device => (device.ownerKey || 'desktop-local') === pairingOwner.ownerKey);
+    if (trustedPhones.length >= pairingOwner.mobileLimit) return res.status(403).json({ code: 'MOBILE_DEVICE_LIMIT_REACHED', error: `Osiągnięto limit zaufanych telefonów (${pairingOwner.mobileLimit}). Kolejnego telefonu nie można teraz połączyć.` });
     const accessToken = crypto.randomBytes(32).toString('base64url');
     const now = new Date().toISOString();
     pairedDevices.push({ id: crypto.randomUUID(), name: String(req.body?.deviceName || 'Telefon').slice(0, 64), tokenHash: crypto.createHash('sha256').update(accessToken).digest('hex'), createdAt: now, lastSeenAt: now, ownerId: pairingOwner.ownerId, ownerKey: pairingOwner.ownerKey });

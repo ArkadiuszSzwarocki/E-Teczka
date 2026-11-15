@@ -1,0 +1,35 @@
+services:
+  accounts:
+    build:
+      context: .
+    image: eteczka-accounts:local
+    container_name: eteczka-accounts
+    restart: unless-stopped
+    env_file:
+      - .env.nas
+    environment:
+      NODE_ENV: production
+      CENTRAL_LISTEN_HOST: 0.0.0.0
+      CENTRAL_PORT: 3001
+      CENTRAL_PUBLIC_ORIGIN: https://konto.arecki.pl
+      CENTRAL_VERIFY_URL: https://konto.arecki.pl/verify
+      CENTRAL_TRUSTED_PROXY_IP: 172.29.23.250
+      CENTRAL_TRUSTED_CLOUDFLARED_IP: ""
+      CENTRAL_APP_URL: ""
+    networks:
+      - proxy_shared
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+networks:
+  proxy_shared:
+    external: true

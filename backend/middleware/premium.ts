@@ -1,3 +1,4 @@
+import { getCatalog } from '../services/planCatalog';
 import express from 'express';
 import type { PrismaClient } from '@prisma/client';
 import { getPlan } from '../services/planLedger';
@@ -10,12 +11,12 @@ function planKey(response: express.Response) { const key = billingOwnerKey(respo
 
 export function requirePremium(prisma: PrismaClient) {
   return async (_request: express.Request, response: express.Response, next: express.NextFunction) => {
-    const active = await getPlan(prisma, planKey(response)) === 'premium';
+    const active = getCatalog().plans[await getPlan(prisma, planKey(response))].premiumTools;
     if (active) return next();
     return response.status(402).json({ code: 'PREMIUM_REQUIRED', error: 'Ta funkcja wymaga aktywnego planu Premium.' });
   };
 }
 
 export async function hasPremium(prisma: PrismaClient, response: express.Response) {
-  return await getPlan(prisma, planKey(response)) === 'premium';
+  return getCatalog().plans[await getPlan(prisma, planKey(response))].premiumTools;
 }

@@ -5,20 +5,16 @@ import type { BackupSection } from './BackupModal';
 type Props = {
   activeView: string;
   documents: DocumentRecord[];
-  isSettingsMenuOpen: boolean;
   onViewChange: (view: string) => void;
   onOpenScanner: () => void;
   onToggleSettings: () => void;
-  onOpenPairing: () => void;
-  onOpenAccessSettings: () => void;
-  onOpenTags: () => void;
   onOpenBackup: (section: BackupSection) => void;
 };
 
 /** Persistent desktop navigation. Kept independent from document-table rendering. */
 export default function DesktopSidebar({
-  activeView, documents, isSettingsMenuOpen, onViewChange, onOpenScanner,
-  onToggleSettings, onOpenPairing, onOpenAccessSettings, onOpenTags, onOpenBackup,
+  activeView, documents, onViewChange, onOpenScanner,
+  onToggleSettings, onOpenBackup,
 }: Props) {
   const [backupMenuOpen, setBackupMenuOpen] = useState(false);
   const navClass = (view: string) => `w-full px-2 py-2 text-left flex items-center gap-2 rounded transition-colors ${activeView === view ? 'text-white bg-white/10' : 'text-slate-400 hover:text-white hover:bg-white/5'}`;
@@ -47,13 +43,7 @@ export default function DesktopSidebar({
       </div>
     </div>
     <div className="border-t border-slate-700 p-4">
-      <button onClick={onToggleSettings} className="flex w-full items-center gap-2 px-2 py-2 text-left text-sm text-slate-400 hover:text-white">⚙️ Ustawienia <span className="ml-auto">{isSettingsMenuOpen ? '⌃' : '›'}</span></button>
-      {isSettingsMenuOpen && <div className="ml-3 mt-2 space-y-1 text-sm">
-        <button onClick={onOpenPairing} className="w-full px-2 py-2 text-left text-slate-400 hover:text-white">📱 Połącz telefon</button>
-        <button onClick={onOpenAccessSettings} className="w-full px-2 py-2 text-left text-slate-400 hover:text-white">🔐 Zabezpieczenia</button>
-        <button onClick={onOpenTags} className="w-full px-2 py-2 text-left text-slate-400 hover:text-white">🏷️ Tagi dokumentów</button>
-        <button onClick={() => window.location.reload()} className="w-full px-2 py-2 text-left text-slate-400 hover:text-white">⇥ Zablokuj aplikację</button>
-      </div>}
+      <button onClick={onToggleSettings} aria-haspopup="dialog" className="flex w-full items-center gap-2 px-2 py-2 text-left text-sm text-slate-400 hover:text-white">⚙️ Ustawienia <span className="ml-auto">↗</span></button>
     </div>
   </aside>;
 }

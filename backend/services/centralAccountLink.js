@@ -12,13 +12,14 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.centralAccountOrigin = centralAccountOrigin;
 exports.verifyCentralSession = verifyCentralSession;
 exports.createCentralAccountLinks = createCentralAccountLinks;
+const sessionPolicy_1 = require("./sessionPolicy");
 const node_crypto_1 = require("node:crypto");
 function centralAccountOrigin(value) {
     if (!value)
         return null;
     try {
         const url = new URL(value);
-        return url.protocol === 'https:' && !url.username && !url.password && url.pathname === '/' && !url.search && !url.hash ? url.origin : null;
+        return (url.protocol === 'https:' || (url.protocol === 'http:' && url.hostname === '127.0.0.1')) && !url.username && !url.password && url.pathname === '/' && !url.search && !url.hash ? url.origin : null;
     }
     catch (_a) {
         return null;
@@ -47,7 +48,7 @@ function createCentralAccountLinks(prisma) {
                 if (typeof localToken !== 'string' || localToken.length < 1 || localToken.length > 4096)
                     return null;
                 const tokenHash = (0, node_crypto_1.createHash)('sha256').update(localToken).digest('hex');
-                const session = yield prisma.authSession.findFirst({ where: { tokenHash, expiresAt: { gt: new Date() } }, select: { userId: true } });
+                const session = yield prisma.authSession.findFirst({ where: Object.assign({ tokenHash }, (0, sessionPolicy_1.activeSessionWhere)()), select: { userId: true } });
                 return (_a = session === null || session === void 0 ? void 0 : session.userId) !== null && _a !== void 0 ? _a : null;
             });
         },

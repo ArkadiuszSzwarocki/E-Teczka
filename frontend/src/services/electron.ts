@@ -1,6 +1,6 @@
 export type AccessMode = 'pin' | 'password';
 
-export type AccessStatus = { configured: boolean; mode: AccessMode | null; recoveryAvailable?: boolean; mailConfigured?: boolean };
+export type AccessStatus = { configured: boolean; mode: AccessMode | null; loginMethod?: 'password' | 'pin'; recoveryAvailable?: boolean; mailConfigured?: boolean };
 export type AccessResult = { ok: boolean; error?: string };
 export type WiaDevice = { id: string; name: string; manufacturer?: string };
 export type WiaScanResult = { ok: boolean; path?: string };
@@ -22,7 +22,7 @@ export function getElectronIpc(): IpcRenderer | null {
 
 export async function openExternalAccountUrl(raw: string, origin: string): Promise<void> {
   const url = new URL(raw);
-  if (url.protocol !== 'https:' || url.origin !== origin || url.pathname !== '/account' || !/^#[A-Za-z0-9_-]{43}$/.test(url.hash)) throw new Error('Nieprawidłowy adres konta.');
+  if (!(url.protocol === 'https:' || (url.protocol === 'http:' && url.hostname === '127.0.0.1')) || url.origin !== origin || url.pathname !== '/account' || !/^#[A-Za-z0-9_-]{43}$/.test(url.hash)) throw new Error('Nieprawidłowy adres konta.');
   const electron = (window as ElectronWindow).require?.('electron') as { shell?: { openExternal: (url: string) => Promise<void> } } | undefined;
   if (electron?.shell) { await electron.shell.openExternal(url.href); return; }
   const opened = window.open(url.href, '_blank', 'noopener,noreferrer');

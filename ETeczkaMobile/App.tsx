@@ -1,3 +1,4 @@
+import MobileAccountGate from './src/components/MobileAccountGate';
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, AppState, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { NavigationContainer, createNavigationContainerRef } from "@react-navigation/native";
@@ -138,7 +139,7 @@ function ConnectionStatusBar({ computerOnline }: { computerOnline: boolean }) {
   return <View style={appTabsStyles.statusBar} accessibilityLabel={`Komputer ${computerOnline ? "połączony" : "rozłączony"}`}><View style={appTabsStyles.statusItem}><Ionicons name="desktop-outline" size={17} color={computerColor} /><Text style={[appTabsStyles.statusText, { color: computerColor }]}>Komputer</Text>{!computerOnline && <Ionicons name="close-circle" size={12} color="#94a3b8" style={appTabsStyles.offlineMark} />}</View></View>;
 }
 
-export default function App() {
+function AppContent({ initiallyUnlocked = false }: { initiallyUnlocked?: boolean }) {
   const [vaultChecked, setVaultChecked] = useState(false); const [vaultUnlocked, setVaultUnlocked] = useState(false); const [initialTab, setInitialTab] = useState<keyof MainTabParamList>("Ustawienia");
   const [vaultInitializationError, setVaultInitializationError] = useState<string | null>(null);
   const [navigationReady, setNavigationReady] = useState(false);
@@ -200,7 +201,7 @@ export default function App() {
         const mode = active ? await vaultMode() : null;
         if (!mounted) return;
         setInitialTab(mode === "biometric" ? "Kartoteki" : "Ustawienia");
-        setVaultUnlocked(!active);
+        setVaultUnlocked(!active || initiallyUnlocked);
       } catch {
         if (!mounted) return;
         setVaultInitializationError("Nie można odczytać lokalnego sejfu. Spróbuj ponownie uruchomić aplikację.");
@@ -209,7 +210,7 @@ export default function App() {
       }
     })();
     return () => { mounted = false; };
-  }, []);
+  }, [initiallyUnlocked]);
   useEffect(() => checkVault(), [checkVault]);
   useEffect(() => { const subscription = AppState.addEventListener("change", (state) => { if (state !== "active") { backgroundAt.current = Date.now(); return; } const returnedAt = backgroundAt.current; backgroundAt.current = null; if (returnedAt) getAutoLockMinutes().then((minutes) => { if (Date.now() - returnedAt >= minutes * 60_000) setVaultUnlocked(false); }); }); return () => subscription.remove(); }, []);
   // Notification listeners are registered only by a native build that includes
@@ -251,3 +252,5 @@ const appTabsStyles = StyleSheet.create({
   statusText: { fontSize: 10, fontWeight: "700" },
   offlineMark: { marginLeft: -7, marginTop: -10 },
 });
+
+export default function App() { return <MobileAccountGate>{fresh => <AppContent initiallyUnlocked={fresh} />}</MobileAccountGate>; }

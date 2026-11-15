@@ -83,11 +83,15 @@ function createAccountService({ db, sendVerification, sendPasswordReset = async 
       if (!emailValid(email) || typeof password !== 'string' || password.length < 8 || password.length > 200) throw new Error('INVALID_INPUT');
       const hashed = await hashPassword(password);
       const existing = db.prepare('SELECT id, verified FROM accounts WHERE email = ?').get(email);
-      if (existing) { if (!existing.verified) await this.resendVerification(email); return; }
+      if (existing?.verified) return;
       const code = token(); let id;
       db.exec('BEGIN IMMEDIATE');
       try {
-        id = Number(db.prepare('INSERT INTO accounts(email, password_hash, created_at, public_id) VALUES (?, ?, ?, ?)').run(email, hashed, now(), crypto.randomBytes(16).toString('hex')).lastInsertRowid);
+        if (existing) {
+          id = existing.id;
+          db.prepare('UPDATE accounts SET password_hash = ? WHERE id = ? AND verified = 0').run(hashed, id);
+          db.prepare('DELETE FROM verifications WHERE account_id = ?').run(id);
+        } else id = Number(db.prepare('INSERT INTO accounts(email, password_hash, created_at, public_id) VALUES (?, ?, ?, ?)').run(email, hashed, now(), crypto.randomBytes(16).toString('hex')).lastInsertRowid);
         db.prepare('INSERT INTO verifications VALUES (?, ?, ?)').run(digest(code), id, now() + 3600000);
         db.exec('COMMIT');
       } catch (error) { db.exec('ROLLBACK'); if (db.prepare('SELECT id FROM accounts WHERE email = ?').get(email)) return; throw error; }
@@ -98,15 +102,13 @@ function createAccountService({ db, sendVerification, sendPasswordReset = async 
         throw error;
       }
     },
-    async verifyEmail(code, password) {
+    async verifyEmail(code) {
       if (typeof code !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(code)) throw new Error('INVALID_TOKEN');
-      if (typeof password !== 'string' || password.length < 8 || password.length > 200) throw new Error('INVALID_INPUT');
-      const hashed = await hashPassword(password);
       db.exec('BEGIN IMMEDIATE');
       try {
         const item = db.prepare('SELECT account_id FROM verifications WHERE token_hash = ? AND expires_at > ?').get(digest(code), now());
         if (!item) throw new Error('INVALID_TOKEN');
-        db.prepare('UPDATE accounts SET verified = 1, password_hash = ? WHERE id = ?').run(hashed, item.account_id);
+        db.prepare('UPDATE accounts SET verified = 1 WHERE id = ? AND verified = 0').run(item.account_id);
         db.prepare('DELETE FROM verifications WHERE account_id = ?').run(item.account_id);
         db.exec('COMMIT');
       } catch (error) { db.exec('ROLLBACK'); throw error; }

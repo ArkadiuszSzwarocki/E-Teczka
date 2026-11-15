@@ -12,6 +12,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+const accountSecurity_1 = require("./routes/accountSecurity");
+const sessionPolicy_1 = require("./services/sessionPolicy");
+require("dotenv/config");
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const client_1 = require("@prisma/client");
@@ -39,11 +42,14 @@ const backup_2 = require("./routes/backup");
 const backupScheduler_1 = require("./services/backupScheduler");
 const ocrQueue_1 = require("./services/ocrQueue");
 const ocr_1 = require("./routes/ocr");
+const planLedger_1 = require("./services/planLedger");
+const planCatalog_1 = require("./services/planCatalog");
+const developerCatalog_1 = require("./routes/developerCatalog");
 const devPlans_1 = require("./routes/devPlans");
 const secureShare_1 = require("./routes/secureShare");
 const centralAccount_1 = require("./routes/centralAccount");
 const prisma = new client_1.PrismaClient();
-(0, accessControl_1.configureAccountSessionValidator)((token, userId) => __awaiter(void 0, void 0, void 0, function* () { return Boolean(yield prisma.authSession.findFirst({ where: { tokenHash: (0, node_crypto_1.createHash)('sha256').update(token).digest('hex'), userId, expiresAt: { gt: new Date() } }, select: { id: true } })); }));
+(0, accessControl_1.configureAccountSessionValidator)((token, userId) => __awaiter(void 0, void 0, void 0, function* () { return Boolean(yield prisma.authSession.findFirst({ where: Object.assign({ tokenHash: (0, node_crypto_1.createHash)('sha256').update(token).digest('hex'), userId }, (0, sessionPolicy_1.activeSessionWhere)()), select: { id: true } })); }));
 const app = (0, express_1.default)();
 const ocrQueue = (0, ocrQueue_1.createOcrQueue)(prisma, { file: node_path_1.default.join(paths_1.securityDir, 'ocr-queue.enc'), uploadsDirectory: paths_1.uploadsDir });
 const localTls = (0, localTls_1.makeLocalTls)(paths_1.securityDir);
@@ -75,12 +81,13 @@ app.get('/api/local-ca-info', (req, res) => {
 app.post('/api/billing/webhook', express_1.default.raw({ type: 'application/json' }), (0, billing_1.createBillingWebhookHandler)(prisma));
 app.use(express_1.default.json({ limit: '50mb' }));
 app.use(express_1.default.urlencoded({ extended: true, limit: '50mb' }));
-(0, accessControl_1.registerPairingRoutes)(app);
+(0, accessControl_1.registerPairingRoutes)(app, (owner) => __awaiter(void 0, void 0, void 0, function* () { return (0, planCatalog_1.getCatalog)().plans[yield (0, planLedger_1.getPlan)(prisma, owner)].mobileDevices; }));
 app.use('/api/auth', (0, auth_1.createAuthRouter)(prisma));
 // The bridge accepts central credentials only from this computer. Linking is
 // explicit and requires a live local session as well as a central session.
 app.use('/api/central-account', accessControl_1.requireLocalDesktop, (0, centralAccount_1.createCentralAccountRouter)(prisma));
 app.use('/api/backup/oauth', (0, backup_1.createBackupOAuthCallbackRouter)(prisma));
+app.use('/api/dev/catalog', (0, developerCatalog_1.createDeveloperCatalogRouter)());
 app.use('/api', accessControl_1.requireAccess);
 app.use('/uploads', accessControl_1.requireAccess, express_1.default.static(paths_1.uploadsDir));
 app.use(accessControl_1.requireAccess, express_1.default.static(paths_1.uploadsDir));
@@ -93,6 +100,7 @@ const checkScheduledBackups = (0, backupScheduler_1.createBackupScheduler)(prism
 const checkBackupsSafely = () => { void checkScheduledBackups().catch(error => console.error('[backup] Scheduler:', (0, errors_1.errorMessage)(error))); };
 checkBackupsSafely();
 node_cron_1.default.schedule('* * * * *', checkBackupsSafely);
+app.use('/api/account-security', (0, accountSecurity_1.createAccountSecurityRouter)(prisma));
 app.use('/api/folders', (0, folders_1.createFolderRouter)(prisma));
 app.use('/api/printer-scan', (0, printerScan_1.createPrinterScanRouter)(prisma));
 app.use('/api/ocr', (0, ocr_1.createOcrRouter)(prisma, ocrQueue));

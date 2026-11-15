@@ -6,17 +6,53 @@ const fs = require('fs');
 const { createAccessLock } = require('./desktop/accessLock');
 const { createRecoveryMailer } = require('./desktop/recoveryMail');
 
+// Isolated first-run testing keeps the real profile, PIN and sessions intact.
+if (process.env.ETECZKA_PROFILE_DIR) {
+  if (!path.isAbsolute(process.env.ETECZKA_PROFILE_DIR)) throw new Error('The test profile path must be absolute.');
+  fs.mkdirSync(process.env.ETECZKA_PROFILE_DIR, { recursive: true });
+  app.setPath('userData', process.env.ETECZKA_PROFILE_DIR);
+}
+
 let mainWindow;
 let backendProcess;
 let tray;
 let quitting = false;
 
 const recoveryMailer = createRecoveryMailer(path.join(__dirname, 'backend'));
-const accessLock = createAccessLock({ file: path.join(app.getPath('userData'), 'access-lock.json'), sendRecoveryMail: recoveryMailer.send, mailConfigured: recoveryMailer.configured });
+let accessLock = createAccessLock({ file: path.join(app.getPath('userData'), 'access-lock.json'), sendRecoveryMail: recoveryMailer.send, mailConfigured: recoveryMailer.configured });
+let loginMethodFile = path.join(app.getPath('userData'), 'login-method.json');
+function loginMethod() { try { const saved = JSON.parse(fs.readFileSync(loginMethodFile, 'utf8')); if (saved.method === 'pin' || saved.method === 'password') return saved.method; } catch {} return accessLock.status().mode === 'pin' ? 'pin' : 'password'; }
 const verifiedSenders = new Map();
 const isVerified = (event) => (verifiedSenders.get(event.sender.id) || 0) > Date.now();
 
-ipcMain.handle('eteczka-access-status', () => accessLock.status());
+ipcMain.handle('eteczka-access-use-account', async (_event, token) => {
+  if (typeof token !== 'string' || token.length > 4096) return { ok: false, error: 'Nieprawidłowa sesja.' };
+  try {
+    const response = await fetch('http://127.0.0.1:3000/api/auth/me', { headers: { authorization: `Bearer ${token}` }, redirect: 'error', signal: AbortSignal.timeout(5000) });
+    if (!response.ok) throw new Error('SESSION_INVALID');
+    const user = await response.json();
+    if (!Number.isSafeInteger(user.id) || user.id < 1) throw new Error('SESSION_INVALID');
+    const root = app.getPath('userData');
+    const legacy = path.join(root, 'access-lock.json');
+    const file = user.id === 1 && fs.existsSync(legacy) ? legacy : path.join(root, 'accounts', String(user.id), 'access-lock.json');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    loginMethodFile = path.join(path.dirname(file), 'login-method.json');
+    accessLock = createAccessLock({ file, sendRecoveryMail: recoveryMailer.send, mailConfigured: recoveryMailer.configured });
+    if (!fs.existsSync(loginMethodFile)) fs.writeFileSync(loginMethodFile, JSON.stringify({method:accessLock.status().mode === 'pin' ? 'pin' : 'password'}), {mode:0o600});
+    verifiedSenders.clear();
+    return { ok: true };
+  } catch { return { ok: false, error: 'Nie udało się sprawdzić konta dla lokalnej blokady.' }; }
+});
+
+ipcMain.handle('eteczka-access-status', () => ({ ...accessLock.status(), loginMethod: loginMethod() }));
+ipcMain.handle('eteczka-access-set-method', (_event, settings) => {
+  if (!settings || !['password','pin'].includes(settings.method)) return { ok: false, error: 'Niedostępna metoda logowania.' };
+  const status = accessLock.status();
+  if (status.configured && !accessLock.verify(settings.currentSecret).ok) return { ok: false, error: 'Potwierdź obecną blokadę, aby zmienić sposób logowania.' };
+  if (settings.method === 'pin' && (!status.configured || status.mode !== 'pin')) return { ok: false, error: 'Najpierw ustaw PIN w sekcji Zmiana PIN-u.' };
+  try { fs.writeFileSync(loginMethodFile + '.tmp', JSON.stringify({method:settings.method}), {mode:0o600}); fs.renameSync(loginMethodFile + '.tmp', loginMethodFile); return {ok:true}; }
+  catch { return {ok:false,error:'Nie udało się zapisać metody.'}; }
+});
 ipcMain.handle('eteczka-access-verify', (event, secret) => {
   const result = accessLock.verify(secret);
   if (result.ok) verifiedSenders.set(event.sender.id, Date.now() + 5 * 60_000);
@@ -147,6 +183,10 @@ function createWindow() {
   });
 
   mainWindow.maximize();
+  if (process.env.ETECZKA_PROFILE_DIR) {
+    mainWindow.on('page-title-updated', event => { event.preventDefault(); mainWindow.setTitle('E-Teczka - TEST NOWEGO UZYTKOWNIKA'); });
+    mainWindow.setTitle('E-Teczka - TEST NOWEGO UZYTKOWNIKA');
+  }
   const startUrl = process.env.ETECZKA_DEV_URL || `file://${path.join(__dirname, 'frontend', 'dist', 'index.html')}`;
   mainWindow.loadURL(startUrl);
 

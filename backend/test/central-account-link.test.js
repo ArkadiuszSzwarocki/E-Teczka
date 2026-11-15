@@ -5,6 +5,9 @@ const { DatabaseSync } = require('node:sqlite');
 
 test('central account session is sent only to the configured HTTPS origin', async () => {
   assert.equal(centralAccountOrigin('http://example.com'), null);
+  assert.equal(centralAccountOrigin('http://192.168.0.12:3001'), null);
+  assert.equal(centralAccountOrigin('http://127.0.0.1:3001'), 'http://127.0.0.1:3001');
+  assert.equal(centralAccountOrigin('http://127.0.0.1:3001/path'), null);
   assert.equal(centralAccountOrigin('https://user:password@example.com'), null);
   assert.equal(centralAccountOrigin('https://example.com/path'), null);
   assert.equal(centralAccountOrigin('https://example.com'), 'https://example.com');

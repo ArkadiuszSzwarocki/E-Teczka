@@ -1,9 +1,9 @@
-node_modules
 .env
 .env.*
-!.env.example
-*.db
-*.db-*
-data
+node_modules
 *.test.js
-README.md
+mariadb/*.test.js
+data
+*.db*
+*.log
+.git

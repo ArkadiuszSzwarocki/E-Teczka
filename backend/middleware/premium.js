@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.billingOwnerKey = billingOwnerKey;
 exports.requirePremium = requirePremium;
 exports.hasPremium = hasPremium;
+const planCatalog_1 = require("../services/planCatalog");
 const planLedger_1 = require("../services/planLedger");
 function billingOwnerKey(response) {
     return String(response.locals.billingOwnerKey || 'desktop-local');
@@ -19,7 +20,7 @@ function billingOwnerKey(response) {
 function planKey(response) { const key = billingOwnerKey(response); return key.startsWith('device:') && !response.locals.userId ? 'desktop-local' : key; }
 function requirePremium(prisma) {
     return (_request, response, next) => __awaiter(this, void 0, void 0, function* () {
-        const active = (yield (0, planLedger_1.getPlan)(prisma, planKey(response))) === 'premium';
+        const active = (0, planCatalog_1.getCatalog)().plans[yield (0, planLedger_1.getPlan)(prisma, planKey(response))].premiumTools;
         if (active)
             return next();
         return response.status(402).json({ code: 'PREMIUM_REQUIRED', error: 'Ta funkcja wymaga aktywnego planu Premium.' });
@@ -27,6 +28,6 @@ function requirePremium(prisma) {
 }
 function hasPremium(prisma, response) {
     return __awaiter(this, void 0, void 0, function* () {
-        return (yield (0, planLedger_1.getPlan)(prisma, planKey(response))) === 'premium';
+        return (0, planCatalog_1.getCatalog)().plans[yield (0, planLedger_1.getPlan)(prisma, planKey(response))].premiumTools;
     });
 }

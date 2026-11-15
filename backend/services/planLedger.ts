@@ -1,3 +1,4 @@
+import { getCatalog } from './planCatalog';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { accountingKey, devPlan } from './devPlans';
 import { activePlan, PLAN_LIMITS, trialAvailable, trialEnd, USAGE_WINDOW_MS, type MeteredFeature, type Plan, type TrialFeature } from './planPolicy';
@@ -23,7 +24,7 @@ export async function getPlan(db: Db, ownerKey: string, now = new Date()): Promi
 /** Check or explicitly start a trial. Read-only checks never start the clock. */
 export async function featureTrial(db: Db, ownerKey: string, feature: TrialFeature, start: boolean, now = new Date()) {
   const plan = await getPlan(db, ownerKey, now);
-  if (plan === 'premium') return { allowed: true, startedAt: null, endsAt: null };
+  if (getCatalog().plans[plan][feature === 'ocr' ? 'ocr' : 'cloudBackup']) return { allowed: true, startedAt: null, endsAt: null };
   await ensurePlanLedger(db);
   ownerKey = accountingKey(ownerKey);
   if (start) await db.$executeRaw`INSERT OR IGNORE INTO PlanTrial(ownerKey, feature, startedAt) VALUES (${ownerKey}, ${feature}, ${now.getTime()})`;

@@ -1,3 +1,4 @@
+import { activeSessionWhere } from './sessionPolicy';
 import { createHash } from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
 
@@ -5,7 +6,7 @@ type RemoteUser = { id: string; email: string; name: string | null };
 
 export function centralAccountOrigin(value: string | undefined): string | null {
   if (!value) return null;
-  try { const url = new URL(value); return url.protocol === 'https:' && !url.username && !url.password && url.pathname === '/' && !url.search && !url.hash ? url.origin : null; }
+  try { const url = new URL(value); return (url.protocol === 'https:' || (url.protocol === 'http:' && url.hostname === '127.0.0.1')) && !url.username && !url.password && url.pathname === '/' && !url.search && !url.hash ? url.origin : null; }
   catch { return null; }
 }
 
@@ -25,7 +26,7 @@ export function createCentralAccountLinks(prisma: PrismaClient) {
     async localUserId(localToken: string): Promise<number | null> {
       if (typeof localToken !== 'string' || localToken.length < 1 || localToken.length > 4096) return null;
       const tokenHash = createHash('sha256').update(localToken).digest('hex');
-      const session = await prisma.authSession.findFirst({ where: { tokenHash, expiresAt: { gt: new Date() } }, select: { userId: true } });
+      const session = await prisma.authSession.findFirst({ where: { tokenHash, ...activeSessionWhere() }, select: { userId: true } });
       return session?.userId ?? null;
     },
     async link(origin: string, centralId: string, localUserId: number) {

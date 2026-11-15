@@ -15,7 +15,7 @@ test('HTTP flow confirms email, resets password and revokes sessions', async () 
   try {
     assert.equal((await post('/register', { email: 'a@example.com', password: 'password1' })).status, 202);
     assert.equal((await post('/login', { email: 'a@example.com', password: 'password1' })).status, 401);
-    assert.equal((await post('/verify-email', { token: code, password: 'password1' })).status, 200);
+    assert.equal((await post('/verify-email', { token: code })).status, 200);
     const session = await (await post('/login', { email: 'a@example.com', password: 'password1' })).json();
     const headers = { authorization: `Bearer ${session.token}` };
     assert.equal((await fetch(base + '/me', { headers })).status, 200);
