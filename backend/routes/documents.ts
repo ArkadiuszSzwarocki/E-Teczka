@@ -1,6 +1,7 @@
 import express from 'express';
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
+import multer from 'multer';
 import type { PrismaClient } from '@prisma/client';
 import { uploadsDir } from '../config/paths';
 import { isDocumentFolder } from '../services/folders';
@@ -17,8 +18,9 @@ import { canAccessFolder, getAccessibleFolderIds } from '../services/familyAcces
 import { initResumableSession, writeResumableChunk, completeResumableSession } from '../services/resumableUpload';
 import { activeDocumentIds, activeTagIds } from '../services/planRestrictions';
 import { assertUniqueDocument, DuplicateDocumentError, hashFile } from '../services/duplicateDocuments';
-import { exportDocumentsAsPdf } from '../services/documentExportPdf';
 import { saveBatchBase64Documents, saveMergedBase64Document } from '../services/documentBase64Upload';
+import { saveBatchBinaryDocuments } from '../services/documentBinaryUpload';
+import { createDocumentExportRouter } from './documentExport';
 
 const retentionUnits = new Set(['years', 'months', 'days', 'minutes']);
 
@@ -282,21 +284,37 @@ export function createDocumentRouter(prisma: PrismaClient, ocrQueue?: ReturnType
     }
   });
 
-  router.post('/export-pdf', async (req, res) => {
+  const binaryUpload = multer({ storage: multer.memoryStorage(), limits: { files: 50, fileSize: 50 * 1024 * 1024 } });
+
+  router.post('/upload-binary', binaryUpload.array('files', 50), async (req, res) => {
     try {
-      if (!await hasPremium(prisma, res)) return res.status(402).json({ code: 'PREMIUM_REQUIRED', error: 'Eksport grupowy wymaga planu Premium.' });
-      const ids = Array.isArray(req.body?.documentIds) ? req.body.documentIds.map(Number).filter((id: number) => Number.isInteger(id) && id > 0) : [];
-      if (!ids.length || ids.length > 100) return res.status(400).json({ error: 'Wybierz od 1 do 100 dokumentów.' });
-      const accessible = await getAccessibleFolderIds(prisma, ownerId(res));
-      const records = await prisma.document.findMany({ where: { id: { in: ids }, folderId: { in: accessible } } });
-      if (records.length !== ids.length) return res.status(403).json({ error: 'Nie masz dostępu do wszystkich wybranych dokumentów.' });
-      const active = await activeDocumentIds(prisma, ownerId(res), await getPlan(prisma, ocrOwnerKey(res)));
-      if (active && ids.some((docId: number) => !active.has(docId))) return res.status(403).json({ code: 'PLAN_LIMIT_REACHED', error: 'Co najmniej jeden wybrany dokument jest tylko do odczytu w obecnym planie.' });
-      const bytes = await exportDocumentsAsPdf(records);
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="eteczka-eksport-${Date.now()}.pdf"`);
-      res.send(bytes);
-    } catch (error: unknown) { console.error('[POST /api/documents/export-pdf]', error); res.status(500).json({ error: 'Nie udało się utworzyć połączonego PDF-a.', details: errorMessage(error) }); }
+      const files = Array.isArray(req.files) ? req.files : [];
+      if (!files.length) return res.status(400).json({ error: 'Nie wybrano żadnych plików.' });
+      const folderId = Number(req.body?.folderId);
+      if (!await canAccessFolder(prisma, ownerId(res), folderId) || !await isDocumentFolder(prisma, folderId)) {
+        return res.status(400).json({ error: 'Dokumenty można dodawać wyłącznie do dostępnej kartoteki.' });
+      }
+      const retentions = JSON.parse(String(req.body?.retentions || '[]'));
+      const thumbnails = JSON.parse(String(req.body?.thumbnails || '[]'));
+      const physicalLocation = req.body?.physicalLocation ? String(req.body.physicalLocation) : null;
+      const plan = await getPlan(prisma, ocrOwnerKey(res));
+      const { savedDocs, skippedDuplicates } = await saveBatchBinaryDocuments(prisma, {
+        owner: ownerId(res), userId: res.locals.userId || null, plan, folderId, physicalLocation,
+        files: files.map(f => ({ originalname: f.originalname, mimetype: f.mimetype, buffer: f.buffer })),
+        retentions: Array.isArray(retentions) ? retentions : [],
+        thumbnails: Array.isArray(thumbnails) ? thumbnails : [],
+      });
+      for (const saved of savedDocs) void enqueuePremiumOcr(prisma, ocrQueue, res, saved.id);
+      return res.json({ success: true, savedDocs, skippedDuplicates });
+    } catch (error: unknown) {
+      if (error instanceof PlanLimitError) return res.status(403).json({ code: error.code, error: error.message, resetsAt: error.resetsAt });
+      if (error instanceof DuplicateDocumentError) return res.status(409).json({ code: error.code, error: error.message, existingTitle: error.existingTitle });
+      const details = errorMessage(error);
+      console.error('[POST /api/documents/upload-binary]', details);
+      return res.status(500).json({ error: details ? `Błąd wgrywania: ${details}` : 'Błąd wgrywania', details });
+    }
   });
+
+  router.use(createDocumentExportRouter(prisma, ownerId));
   return router;
 }

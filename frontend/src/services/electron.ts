@@ -34,12 +34,35 @@ export function closeExternalAccountPopup(): void {
   try { window.focus(); } catch { /* ignore focus errors */ }
 }
 
-export async function openExternalAccountUrl(raw: string, origin: string): Promise<void> {
+export type AccountEmbedBounds = { x: number; y: number; width: number; height: number };
+
+export function getScaledElementBounds(element: HTMLElement | null): AccountEmbedBounds | undefined {
+  if (!element) return undefined;
+  const rect = element.getBoundingClientRect();
+  if (rect.width < 100 || rect.height < 100) return undefined;
+  const electron = (window as ElectronWindow).require?.('electron') as { webFrame?: { getZoomFactor: () => number } } | undefined;
+  const zoom = electron?.webFrame?.getZoomFactor?.() || 1;
+  return {
+    x: Math.round(rect.left * zoom),
+    y: Math.round(rect.top * zoom),
+    width: Math.round(rect.width * zoom),
+    height: Math.round(rect.height * zoom),
+  };
+}
+
+export async function updateExternalAccountBounds(bounds: AccountEmbedBounds): Promise<void> {
+  const ipc = getElectronIpc();
+  if (ipc) {
+    await ipc.invoke('eteczka-resize-external-account', bounds).catch(() => undefined);
+  }
+}
+
+export async function openExternalAccountUrl(raw: string, origin: string, bounds?: AccountEmbedBounds): Promise<void> {
   const url = new URL(raw);
   if (!(url.protocol === 'https:' || (url.protocol === 'http:' && url.hostname === '127.0.0.1')) || url.origin !== origin || url.pathname !== '/account' || !/^#[A-Za-z0-9_-]{43}$/.test(url.hash)) throw new Error('Nieprawidłowy adres konta.');
   const ipc = getElectronIpc();
   if (ipc) {
-    try { await ipc.invoke('eteczka-open-external-account', url.href); return; }
+    try { await ipc.invoke('eteczka-open-external-account', url.href, bounds); return; }
     catch { /* fall back to direct shell/window open */ }
   }
   const electron = (window as ElectronWindow).require?.('electron') as { shell?: { openExternal: (url: string, options?: { activate?: boolean }) => Promise<void> } } | undefined;

@@ -139,7 +139,7 @@ export function useCentralSignIn(apiUrl: string, origin: string, deviceId: strin
     }
   }
 
-  async function beginBrowser() {
+  async function beginBrowser(embedBounds?: { x: number; y: number; width: number; height: number }) {
     setBusy(true); setMessage(''); setInfo(''); setNeedsLink(false); setUser(null);
     try {
       const { response, payload } = await post('/api/central-account/handoff/start', {});
@@ -147,8 +147,10 @@ export function useCentralSignIn(apiUrl: string, origin: string, deviceId: strin
       const googleUrl = new URL(payload.url);
       googleUrl.searchParams.set('login', 'google');
       payload.url = googleUrl.href;
-      await openExternalAccountUrl(payload.url, origin);
       setStart(payload as CentralStart);
+      if (!embedBounds) {
+        await openExternalAccountUrl(payload.url, origin);
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Nie udało się rozpocząć logowania.');
     } finally {

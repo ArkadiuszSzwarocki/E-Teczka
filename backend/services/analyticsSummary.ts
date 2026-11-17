@@ -19,7 +19,13 @@ function computeRetentionExpiry(createdAt: Date, value: number, unit: string): D
 }
 
 /** Computes real financial, storage, security, and deadline analytics for the dashboard. */
-export async function buildAnalyticsSummary(prisma: PrismaClient, ownerId: number, selectedMonth?: string) {
+export async function buildAnalyticsSummary(
+  prisma: PrismaClient,
+  ownerId: number,
+  selectedMonth?: string,
+  options?: { allowReceiptInvoiceReading?: boolean; receiptReadingTrialEndsAt?: string | null },
+) {
+  const allowReceiptInvoiceReading = options?.allowReceiptInvoiceReading !== false;
   const now = new Date();
   const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const targetMonth = selectedMonth && /^\d{4}-\d{2}$/.test(selectedMonth) ? selectedMonth : currentMonthKey;
@@ -45,7 +51,7 @@ export async function buildAnalyticsSummary(prisma: PrismaClient, ownerId: numbe
 
   // Backfill existing OCR-processed receipts that were uploaded before line-item parsing was added.
   const documents = await Promise.all(rawDocuments.map(async doc => {
-    if (!doc.ocrText || doc.lineItems.length > 0) return doc;
+    if (!allowReceiptInvoiceReading || !doc.ocrText || doc.lineItems.length > 0) return doc;
     try {
       const parsed = parseReceiptFromOcr(readOcrText(doc.ocrText));
       if (!parsed.isReceipt) return doc;
@@ -263,8 +269,10 @@ export async function buildAnalyticsSummary(prisma: PrismaClient, ownerId: numbe
 
   return {
     selectedMonth: targetMonth,
-    costsThisMonth: { totalCents, paidCents, unpaidCents, currency: 'PLN' },
-    monthlyExpenses,
+    receiptReadingLocked: !allowReceiptInvoiceReading,
+    receiptReadingTrialEndsAt: options?.receiptReadingTrialEndsAt ?? null,
+    costsThisMonth: allowReceiptInvoiceReading ? { totalCents, paidCents, unpaidCents, currency: 'PLN' } : { totalCents: 0, paidCents: 0, unpaidCents: 0, currency: 'PLN' },
+    monthlyExpenses: allowReceiptInvoiceReading ? monthlyExpenses : [],
     documentStats: { last30DaysCount, totalCount: documents.length },
     vaultCount,
     structure: topFour,
@@ -275,11 +283,11 @@ export async function buildAnalyticsSummary(prisma: PrismaClient, ownerId: numbe
       createdAt: d.createdAt.toISOString(),
       mimeType: d.mimeType,
       folderId: d.folderId,
-      amountCents: d.amountCents,
+      amountCents: allowReceiptInvoiceReading ? d.amountCents : null,
       currency: d.currency,
     })),
-    receiptMerchants: Array.from(merchantMap.values()).sort((a, b) => b.totalCents - a.totalCents),
-    receiptCategories: Array.from(itemCategoryMap.values()).sort((a, b) => b.totalCents - a.totalCents),
-    receiptItems: receiptItems.slice(0, 150),
+    receiptMerchants: allowReceiptInvoiceReading ? Array.from(merchantMap.values()).sort((a, b) => b.totalCents - a.totalCents) : [],
+    receiptCategories: allowReceiptInvoiceReading ? Array.from(itemCategoryMap.values()).sort((a, b) => b.totalCents - a.totalCents) : [],
+    receiptItems: allowReceiptInvoiceReading ? receiptItems.slice(0, 150) : [],
   };
 }

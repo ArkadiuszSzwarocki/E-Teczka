@@ -12,6 +12,7 @@ import { getPlan, ensurePlanLedger, checkDocumentCapacity, consumeUsage, claimPr
 import { createHash, randomUUID } from 'node:crypto';
 import { assertUniqueDocument, DuplicateDocumentError, hashFile } from '../services/duplicateDocuments';
 import { prepareScannedPdf } from '../services/scannedPdfArchive';
+import { optimizeScanImageForPdf } from '../services/scanImageOptimizer';
 import type { createOcrQueue } from '../services/ocrQueue';
 // @ts-ignore - multer is used without bundled TypeScript declarations.
 import multer from 'multer';
@@ -77,15 +78,16 @@ export function createMobileScanRouter(prisma: PrismaClient, ocrQueue?: ReturnTy
         removeTemporaryFiles();
         return res.status(400).json({ error: 'Nieprawidłowa nazwa dokumentu lub retencja.' });
       }
+      const grayscale = req.body?.grayscale !== false && req.body?.grayscale !== 'false';
       const pdf = await PDFDocument.create();
       for (const file of files) {
-        const bytes = fs.readFileSync(file.path);
-        const image = file.mimetype === 'image/png' ? await pdf.embedPng(new Uint8Array(bytes)) : await pdf.embedJpg(new Uint8Array(bytes));
+        const optimized = await optimizeScanImageForPdf(fs.readFileSync(file.path), { grayscale });
+        const image = await pdf.embedJpg(new Uint8Array(optimized));
         const page = pdf.addPage([image.width, image.height]);
         page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
       }
       const filename = 'SCAN_DOCUMENT_' + randomUUID() + '.pdf';
-      const archive = await prepareScannedPdf(await pdf.save());
+      const archive = await prepareScannedPdf(await pdf.save({ useObjectStreams: true }));
       outputPath = path.join(uploadsDir, filename); fs.writeFileSync(outputPath, archive.bytes, { flag: 'wx' });
       removeTemporaryFiles();
       const key = ocrOwnerKey(res); const plan = await getPlan(prisma, key); await ensurePlanLedger(prisma);
@@ -155,14 +157,16 @@ export function createMobileScanRouter(prisma: PrismaClient, ocrQueue?: ReturnTy
       const pagePaths = fs.readdirSync(draftDir).filter((name) => /^page-\d{3}\.jpg$/.test(name)).sort().map((name) => path.join(draftDir, name));
       if (!pagePaths.length) return res.status(400).json({ error: 'Wersja robocza nie zawiera stron.' });
       if (pageKeys.length && pageKeys.length !== pagePaths.length) return res.status(400).json({ error: 'Liczba przesłanych stron nie zgadza się ze szkicem.' });
+      const grayscale = req.body?.grayscale !== false && req.body?.grayscale !== 'false';
       const pdf = await PDFDocument.create();
       for (const pagePath of pagePaths) {
-        const image = await pdf.embedJpg(new Uint8Array(fs.readFileSync(pagePath)));
+        const optimized = await optimizeScanImageForPdf(fs.readFileSync(pagePath), { grayscale });
+        const image = await pdf.embedJpg(new Uint8Array(optimized));
         const page = pdf.addPage([image.width, image.height]);
         page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
       }
       const filename = 'SCAN_DOCUMENT_' + randomUUID() + '.pdf';
-      const archive = await prepareScannedPdf(await pdf.save());
+      const archive = await prepareScannedPdf(await pdf.save({ useObjectStreams: true }));
       outputPath = path.join(uploadsDir, filename); fs.writeFileSync(outputPath, archive.bytes, { flag: 'wx' });
       const printerJobs: unknown = req.body?.printerJobs ?? [];
       if (!Array.isArray(printerJobs) || printerJobs.length > pagePaths.length || printerJobs.some(id => typeof id !== 'string' || !/^[0-9a-f-]{36}$/i.test(id))) { fs.unlinkSync(outputPath); return res.status(400).json({ error: 'Nieprawidłowe strony drukarki.' }); }

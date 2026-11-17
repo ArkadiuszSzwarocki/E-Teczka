@@ -10,7 +10,7 @@ import { getApiUrl, getAuthHeaders } from "../services/localConnection";
 import { isRetentionDocument, type RetentionDocument } from "../services/retentionNotifications";
 import type { FolderStackParamList, MainTabParamList, RootStackParamList } from "../types/navigation";
 import { loadCachedDocuments, saveCachedDocuments } from "../services/offlineCatalog";
-import { queueOfflineChange, syncNow } from "../services/offlineSync";
+import { cancelPendingUploadsForDocument, queueOfflineChange, syncNow } from "../services/offlineSync";
 import { downloadSecureFile } from "../services/secureFileTransfer";
 import { getOfflineOcr } from "../services/offlineVault";
 import { fetchWithTimeout } from "../services/networkRequest";
@@ -81,7 +81,7 @@ export default function FolderScreen() {
     } finally { clearTimeout(timeout); setLoading(false); setRefreshing(false); }
   };
   useEffect(() => { if (isFocused) void fetchDocuments(); }, [isFocused]);
-  const updateDocument = async (id: number, data: Record<string, unknown>) => { const current = documents.find(item => item.id === id); const value = { ...(current || {}), ...data, id, folderId: folder.id, updatedAt: new Date().toISOString() }; try { const response = await fetch(await getApiUrl(`/api/documents/${id}`), { method: "PATCH", headers: { "Content-Type": "application/json", ...await getAuthHeaders() }, body: JSON.stringify(data) }); if (!response.ok) { Alert.alert("Nie udało się zapisać", "Komputer odrzucił zmianę dokumentu."); return; } await fetchDocuments(); void syncNow().catch(() => undefined); } catch { await queueOfflineChange({ entity: "documents", operation: "updated", value }); const next = documents.map(item => item.id === id ? { ...item, ...data } as FolderDocument : item).filter(item => !item.isArchived && !item.isDeleted); setDocuments(next); await saveCachedDocuments(folder.id, next); Alert.alert("Zapisano offline", "Zmiana zostanie wysłana do komputera po ponownym połączeniu."); } };
+  const updateDocument = async (id: number, data: Record<string, unknown>) => { const current = documents.find(item => item.id === id); if (data.isDeleted === true) { void cancelPendingUploadsForDocument({ documentId: id, fileName: current?.title, folderId: folder.id }).catch(() => undefined); } const value = { ...(current || {}), ...data, id, folderId: folder.id, updatedAt: new Date().toISOString() }; try { const response = await fetch(await getApiUrl(`/api/documents/${id}`), { method: "PATCH", headers: { "Content-Type": "application/json", ...await getAuthHeaders() }, body: JSON.stringify(data) }); if (!response.ok) { Alert.alert("Nie udało się zapisać", "Komputer odrzucił zmianę dokumentu."); return; } await fetchDocuments(); void syncNow().catch(() => undefined); } catch { await queueOfflineChange({ entity: "documents", operation: "updated", value }); const next = documents.map(item => item.id === id ? { ...item, ...data } as FolderDocument : item).filter(item => !item.isArchived && !item.isDeleted); setDocuments(next); await saveCachedDocuments(folder.id, next); Alert.alert("Zapisano offline", "Zmiana zostanie wysłana do komputera po ponownym połączeniu."); } };
   const openDocument = (doc: FolderDocument) => rootNavigation?.navigate("DocumentViewer", { document: doc });
   const toggleSelection = (id: number) => setSelectedIds((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id]);
   const emailSelected = async () => {

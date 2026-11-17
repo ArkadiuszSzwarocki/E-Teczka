@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { getUseClassicIcons, setUseClassicIcons } from './FolderIconPicker';
 import { APP_ZOOM_PRESETS, getAppZoom, setAppZoom } from '../services/appZoom';
-type Props = { embedded?: boolean; onClose: () => void; onPair: () => void; onSecurity: () => void; onTags: () => void; onBackup: () => void; onBackupSecurity: () => void; onDeleteAccount: () => void; onLogout: () => void };
-export default function SettingsDialog({ embedded = false, onClose, onPair, onSecurity, onTags, onBackup, onBackupSecurity, onDeleteAccount, onLogout }: Props) {
+type Props = { embedded?: boolean; isPremiumPlan?: boolean; onClose: () => void; onPair: () => void; onSecurity: () => void; onTags: () => void; onBackup: () => void; onBackupSecurity: () => void; onSelfHostGuide?: () => void; onDeleteAccount: () => void; onLogout: () => void };
+export default function SettingsDialog({ embedded = false, isPremiumPlan = false, onClose, onPair, onSecurity, onTags, onBackup, onBackupSecurity, onSelfHostGuide, onDeleteAccount, onLogout }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [classicIcons, setClassicIcons] = useState(getUseClassicIcons);
   const [appZoom, setAppZoomState] = useState(getAppZoom);
@@ -19,6 +19,7 @@ export default function SettingsDialog({ embedded = false, onClose, onPair, onSe
     { icon: '🏷️', title: 'Tagi dokumentów', description: 'Zarządzaj nazwami i kolorami oznaczeń dokumentów.', action: onTags },
     { icon: '☁️', title: 'Kopia zapasowa', description: 'Skonfiguruj miejsce zapisu, folder docelowy i harmonogram kopii.', action: onBackup },
     { icon: '🛡️', title: 'Zabezpieczenia kopii', description: 'Microsoft Authenticator (MFA) oraz klucz odzyskiwania zaszyfrowanej kopii.', action: onBackupSecurity },
+    ...(isPremiumPlan && onSelfHostGuide ? [{ icon: '🖥️', title: 'Własny serwer i migracja bazy', description: 'Instrukcja szybkiej konfiguracji własnego serwera oraz przeniesienia bazy danych i plików (Premium / Firmowy).', action: onSelfHostGuide }] : []),
   ];
   function choose(action: () => void) { onClose(); action(); }
   const content = (

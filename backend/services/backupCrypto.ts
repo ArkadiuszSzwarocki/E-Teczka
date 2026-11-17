@@ -39,6 +39,15 @@ export function importRecoveryKey(contents: string, passphrase: string): Buffer 
     return Buffer.concat([decipher.update(encrypted), decipher.final()]);
   } catch { throw new Error('Nieprawidłowy plik klucza odzyskiwania lub hasło.'); }
 }
+
+/** Verifies that an exported recovery key file can be decrypted with the given passphrase. */
+export function verifyRecoveryKey(contents: string, passphrase: string): boolean {
+  try {
+    return importRecoveryKey(contents, passphrase).length === 32;
+  } catch {
+    return false;
+  }
+}
 export function decryptBackup(data: Buffer, recoveryKey: Buffer = key) {
   if (!data.subarray(0, header.length).equals(header)) return data;
   const ivStart = header.length; const tagStart = ivStart + 12; const payloadStart = tagStart + 16;

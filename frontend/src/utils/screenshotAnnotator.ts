@@ -1,8 +1,9 @@
-export type AnnotationTool = 'arrow' | 'rect' | 'text';
+export type AnnotationTool = 'arrow' | 'rect' | 'text' | 'blur';
 
 export type ScreenshotAnnotation =
   | { id: string; type: 'arrow'; color: string; x1: number; y1: number; x2: number; y2: number }
   | { id: string; type: 'rect'; color: string; x1: number; y1: number; x2: number; y2: number }
+  | { id: string; type: 'blur'; x1: number; y1: number; x2: number; y2: number }
   | { id: string; type: 'text'; color: string; x: number; y: number; text: string };
 
 export const ANNOTATION_COLORS = [
@@ -64,6 +65,31 @@ function drawText(ctx: CanvasRenderingContext2D, x: number, y: number, text: str
   ctx.fillText(text, x + paddingX, y + paddingY);
 }
 
+function drawBlur(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number) {
+  const x = Math.max(0, Math.round(Math.min(x1, x2)));
+  const y = Math.max(0, Math.round(Math.min(y1, y2)));
+  const w = Math.round(Math.abs(x2 - x1));
+  const h = Math.round(Math.abs(y2 - y1));
+  if (w < 4 || h < 4) return;
+  const pixelSize = Math.max(8, Math.round(Math.min(w, h) / 4));
+  const cols = Math.max(1, Math.floor(w / pixelSize));
+  const rows = Math.max(1, Math.floor(h / pixelSize));
+  const small = document.createElement('canvas');
+  small.width = cols;
+  small.height = rows;
+  const sctx = small.getContext('2d');
+  if (sctx) {
+    sctx.drawImage(ctx.canvas, x, y, w, h, 0, 0, cols, rows);
+    const prevSmoothing = ctx.imageSmoothingEnabled;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(small, 0, 0, cols, rows, x, y, w, h);
+    ctx.imageSmoothingEnabled = prevSmoothing;
+  }
+  ctx.strokeStyle = 'rgba(148, 163, 184, 0.7)';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(x, y, w, h);
+}
+
 /** Draws all vector annotations onto a 2D canvas scaled to its pixel dimensions. */
 export function drawAnnotationsOnCanvas(
   ctx: CanvasRenderingContext2D,
@@ -74,7 +100,9 @@ export function drawAnnotationsOnCanvas(
   const stroke = Math.max(3, Math.round(width * 0.0035));
   const fontSize = Math.max(16, Math.round(width * 0.018));
   for (const item of annotations) {
-    if (item.type === 'arrow') {
+    if (item.type === 'blur') {
+      drawBlur(ctx, item.x1 * width, item.y1 * height, item.x2 * width, item.y2 * height);
+    } else if (item.type === 'arrow') {
       drawArrow(ctx, item.x1 * width, item.y1 * height, item.x2 * width, item.y2 * height, item.color, stroke);
     } else if (item.type === 'rect') {
       drawRect(ctx, item.x1 * width, item.y1 * height, item.x2 * width, item.y2 * height, item.color, stroke);

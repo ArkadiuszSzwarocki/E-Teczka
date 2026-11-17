@@ -72,6 +72,12 @@ export default function AnalyticsDashboard({
         </button>
       </div>
 
+      {summary.receiptReadingLocked && (
+        <div role="status" className="rounded-xl border border-amber-500/40 bg-amber-950/30 px-4 py-3 text-xs text-amber-200">
+          Okres próbny odczytu paragonów i faktur w panelu analiz wygasł{summary.receiptReadingTrialEndsAt ? ` (${new Date(summary.receiptReadingTrialEndsAt).toLocaleDateString('pl-PL')})` : ''}. Przejdź na wyższy plan, aby ponownie wyświetlać podsumowanie wydatków z paragonów i faktur.
+        </div>
+      )}
+
       {/* Top KPI Row */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <button type="button" onClick={() => focusExpensesMonth()} className="cyber-card flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-slate-700 bg-[#1e293b] p-4 text-left hover:border-cyan-400">

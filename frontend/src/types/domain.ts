@@ -56,5 +56,7 @@ export interface FolderRecord {
   name: string;
   parentId: number | null;
   order: number;
+  createdAt?: string;
+  updatedAt?: string;
   _count?: { documents: number };
 }

@@ -22,7 +22,6 @@ type Props = {
   onToggleSelect: (id: number) => void;
   onSelectAllVisible: () => void;
   onClearSelected: () => void;
-  onRecognizeSelected: () => void;
   onOpenBulkMove: () => void;
   onInitiateAction: (type: PendingAction['type'], id: number, name: string) => void;
   onOpenPreview: (doc: DocumentRecord) => void;
@@ -34,6 +33,8 @@ type Props = {
   onEditRetention: (doc: DocumentRecord) => void;
   onOpenSecureShare: (docId: number) => void;
   onOpenOcr: (docId: number) => void;
+  onExportPdf: (doc: DocumentRecord, watermark?: boolean) => void;
+  onPropertiesDoc: (doc: DocumentRecord) => void;
   showToast: (msg: string, type?: string) => void;
 };
 
@@ -41,9 +42,9 @@ type Props = {
 export default function DocumentTableView({
   apiUrl, fetcher, activeView, documents, displayedDocs, selectedDocs, tags,
   documentMenuId, setDocumentMenuId, renamingDocId, setRenamingDocId, renamingDocTitle, setRenamingDocTitle,
-  onToggleSelect, onSelectAllVisible, onClearSelected, onRecognizeSelected, onOpenBulkMove, onInitiateAction,
+  onToggleSelect, onSelectAllVisible, onClearSelected, onOpenBulkMove, onInitiateAction,
   onOpenPreview, onHoverEnter, onHoverLeave, onUpdateDocument, onOpenMoveModal, onBeginRestore,
-  onEditRetention, onOpenSecureShare, onOpenOcr, showToast,
+  onEditRetention, onOpenSecureShare, onOpenOcr, onExportPdf, onPropertiesDoc, showToast,
 }: Props) {
   const hasReadOnlySelected = documents.some(d => selectedDocs.includes(d.id) && d.readOnly);
 
@@ -56,11 +57,6 @@ export default function DocumentTableView({
         {selectedDocs.length > 0 && (
           <>
             <span className="px-1 text-xs font-semibold text-blue-200">Wybrano: {selectedDocs.length}</span>
-            {activeView !== 'trash' && (
-              <button type="button" disabled={hasReadOnlySelected} onClick={onRecognizeSelected} className="rounded border border-blue-400 px-3 py-1.5 text-xs font-semibold text-blue-200 hover:bg-blue-500/10 disabled:opacity-40">
-                Rozpoznaj tekst (OCR)
-              </button>
-            )}
             <button type="button" disabled={hasReadOnlySelected && (activeView === 'trash' || activeView === 'archive')} onClick={onOpenBulkMove} className="rounded border border-indigo-500/70 px-3 py-1.5 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/10 disabled:opacity-40">
               {activeView === 'trash' || activeView === 'archive' ? 'Przywróć do kartoteki' : 'Przenieś'}
             </button>
@@ -161,10 +157,8 @@ export default function DocumentTableView({
                           <>
                             <p className="px-3 py-2 text-xs text-amber-300">Tylko do odczytu — zmień plan lub usuń starsze dokumenty.</p>
                             {activeView !== 'trash' && activeView !== 'archive' && <button type="button" onClick={() => { onOpenMoveModal(doc.id); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-slate-200 hover:bg-slate-700">Przenieś</button>}
-                            {activeView !== 'trash' && activeView !== 'archive' && <button type="button" onClick={() => { onInitiateAction('archive_doc', doc.id, doc.title); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-amber-300 hover:bg-slate-700">Archiwizuj</button>}
-                            {activeView === 'trash'
-                              ? <button type="button" onClick={() => { onInitiateAction('delete_doc', doc.id, doc.title); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-red-300 hover:bg-slate-700">Usuń trwale</button>
-                              : <button type="button" onClick={() => { onInitiateAction('trash_doc', doc.id, doc.title); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-red-300 hover:bg-slate-700">Do kosza</button>}
+                            {activeView === 'trash' && <button type="button" onClick={() => { onInitiateAction('delete_doc', doc.id, doc.title); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-red-300 hover:bg-slate-700">Usuń trwale</button>}
+                            <button type="button" onClick={() => { onPropertiesDoc(doc); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-slate-200 hover:bg-slate-700">ℹ️ Właściwości</button>
                           </>
                         ) : (
                           <>
@@ -176,16 +170,16 @@ export default function DocumentTableView({
                               </>
                             ) : (
                               <>
-                                {activeView === 'archive'
-                                  ? <button type="button" onClick={() => { onBeginRestore(doc, 'archive'); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-slate-200 hover:bg-slate-700">Przywróć</button>
-                                  : <button type="button" onClick={() => { onInitiateAction('archive_doc', doc.id, doc.title); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-amber-300 hover:bg-slate-700">Archiwizuj</button>}
+                                {activeView === 'archive' && <button type="button" onClick={() => { onBeginRestore(doc, 'archive'); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-slate-200 hover:bg-slate-700">Przywróć</button>}
                                 {!doc.isArchived && <button type="button" onClick={() => { onEditRetention(doc); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-slate-200 hover:bg-slate-700">Edytuj termin życia</button>}
-                                <button type="button" onClick={() => { onInitiateAction('trash_doc', doc.id, doc.title); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-red-300 hover:bg-slate-700">Do kosza</button>
                               </>
                             )}
                             {!doc.isDeleted && <button type="button" onClick={() => { onOpenSecureShare(doc.id); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-emerald-300 hover:bg-slate-700">Bezpieczny link</button>}
                             {!doc.isDeleted && <button type="button" onClick={() => { setDocumentMenuId(null); void shareDocumentClassic(apiUrl, fetcher, doc).then(mode => showToast(mode === 'shared' ? 'Udostępniono dokument.' : 'Pobrano dokument na dysk do wysłania.', 'success')).catch(error => { if ((error as { name?: string })?.name !== 'AbortError') showToast(errorMessage(error, 'Nie udało się udostępnić dokumentu.'), 'error'); }); }} className="w-full px-3 py-2 text-sm text-slate-200 hover:bg-slate-700">Udostępnij klasycznie</button>}
                             <button type="button" onClick={() => { onOpenOcr(doc.id); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-blue-300 hover:bg-slate-700">Rozpoznany tekst (OCR)</button>
+                            {!doc.isDeleted && <button type="button" onClick={() => { onExportPdf(doc); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-emerald-300 hover:bg-slate-700">Eksportuj do PDF</button>}
+                            {!doc.isDeleted && <button type="button" onClick={() => { onExportPdf(doc, true); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-cyan-300 hover:bg-slate-700">Znak wodny (PDF)</button>}
+                            <button type="button" onClick={() => { onPropertiesDoc(doc); setDocumentMenuId(null); }} className="w-full px-3 py-2 text-sm text-slate-200 hover:bg-slate-700">ℹ️ Właściwości</button>
                             <div className="my-1 border-t border-slate-700" />
                             {tags.filter(tag => !tag.inactive).map(tag => (
                               <button key={tag.id} type="button" onClick={() => { const tagIds = (doc.tags || []).filter(entry => !entry.tag.inactive).map(entry => entry.tagId); void onUpdateDocument(doc.id, { tagIds: tagIds.includes(tag.id) ? tagIds.filter(id => id !== tag.id) : [...tagIds, tag.id] }); setDocumentMenuId(null); }} className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700">

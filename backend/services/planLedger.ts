@@ -41,7 +41,7 @@ export async function featureTrial(db: Db, ownerKey: string, feature: TrialFeatu
   const rows = await db.$queryRaw<Array<{ startedAt: bigint | number }>>`SELECT CAST(startedAt AS TEXT) AS startedAt FROM PlanTrial WHERE ownerKey = ${ownerKey} AND feature = ${feature}`;
   if (!rows.length) return { allowed: false, startedAt: null, endsAt: null };
   const startedAt = new Date(Number(rows[0].startedAt));
-  return { allowed: trialAvailable(plan, feature, startedAt, now), startedAt, endsAt: trialEnd(feature, startedAt) };
+  return { allowed: trialAvailable(plan, feature, startedAt, now), startedAt, endsAt: trialEnd(feature, startedAt, plan) };
 }
 /** Must be called in the same write transaction as the operation being metered. */
 export async function consumeUsage(db: Prisma.TransactionClient, ownerKey: string, plan: Plan, feature: MeteredFeature, operationId: string, amount: number, now = new Date()): Promise<void> {

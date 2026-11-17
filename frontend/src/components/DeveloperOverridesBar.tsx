@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react';
 import { resolveApiBase } from '../services/apiBase';
 
 type Plan = 'free' | 'standard' | 'premium';
-type Overrides = { bypassDeviceLimit: boolean; bypassPlanLimits: boolean };
+type Overrides = { bypassDeviceLimit: boolean; bypassPlanLimits: boolean; bypassRateLimit: boolean };
 const api = resolveApiBase(window.location, import.meta.env.VITE_API_URL);
 
 export default function DeveloperOverridesBar({ onRefresh, onStatus }: { onRefresh: () => void; onStatus: (msg: string) => void }) {
-  const [overrides, setOverrides] = useState<Overrides>({ bypassDeviceLimit: false, bypassPlanLimits: false });
+  const [overrides, setOverrides] = useState<Overrides>({ bypassDeviceLimit: false, bypassPlanLimits: false, bypassRateLimit: false });
   const [planOverride, setPlanOverride] = useState<Plan | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -90,7 +90,7 @@ export default function DeveloperOverridesBar({ onRefresh, onStatus }: { onRefre
         </div>
       </div>
 
-      <div className="mt-4 grid gap-4 md:grid-cols-2">
+      <div className="mt-4 grid gap-4 md:grid-cols-3">
         <div className="flex items-center justify-between gap-4 rounded-xl border border-slate-700 bg-slate-950/60 p-4">
           <div>
             <p className="text-sm font-semibold text-white">Pomiń limit urządzeń przy logowaniu</p>
@@ -108,6 +108,16 @@ export default function DeveloperOverridesBar({ onRefresh, onStatus }: { onRefre
           </div>
           <button type="button" role="switch" aria-checked={overrides.bypassPlanLimits} disabled={busy} onClick={() => void toggle('bypassPlanLimits', !overrides.bypassPlanLimits)} className={toggleCls(overrides.bypassPlanLimits)}>
             <span className={knobCls(overrides.bypassPlanLimits)} />
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between gap-4 rounded-xl border border-slate-700 bg-slate-950/60 p-4">
+          <div>
+            <p className="text-sm font-semibold text-white">Pomiń czas i limit prób logowania</p>
+            <p className="text-xs text-slate-400">Wyłącza lokalne blokady czasowe po nieudanych próbach logowania (429).</p>
+          </div>
+          <button type="button" role="switch" aria-checked={overrides.bypassRateLimit} disabled={busy} onClick={() => void toggle('bypassRateLimit', !overrides.bypassRateLimit)} className={toggleCls(overrides.bypassRateLimit)}>
+            <span className={knobCls(overrides.bypassRateLimit)} />
           </button>
         </div>
       </div>

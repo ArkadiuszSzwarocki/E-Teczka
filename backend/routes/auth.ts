@@ -9,6 +9,42 @@ import { centralEntitlement, hasCentralLink } from '../services/centralEntitleme
 import { getDevOverrides } from '../services/devOverrides';
 
 const AUTH_SECRET = authSecret();
+const DUMMY_HASH = `00000000000000000000000000000000:${'0'.repeat(128)}`;
+const TRIVIAL_PASSWORDS = new Set(['12345678', '123456789', '1234567890', 'password', 'password1', 'qwerty123', 'admin123', 'eteczka123']);
+
+type AttemptBucket = { count: number; lockedUntil: number; resetAt: number };
+const loginAttempts = new Map<string, AttemptBucket>();
+
+function attemptKey(req: express.Request, email: string) {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  return `${ip}:${email}`;
+}
+
+function checkLoginRateLimit(key: string, now = Date.now()): number | null {
+  const entry = loginAttempts.get(key);
+  if (!entry) return null;
+  if (entry.lockedUntil > now) return Math.ceil((entry.lockedUntil - now) / 1000);
+  if (entry.resetAt <= now) {
+    loginAttempts.delete(key);
+    return null;
+  }
+  return null;
+}
+
+function recordLoginFailure(key: string, now = Date.now()) {
+  const current = loginAttempts.get(key);
+  const count = current && current.resetAt > now ? current.count + 1 : 1;
+  const lockedUntil = count >= 5 ? now + Math.min(900_000, 60_000 * 2 ** (count - 5)) : 0;
+  loginAttempts.set(key, { count, lockedUntil, resetAt: now + 900_000 });
+}
+
+function isStrongEnoughPassword(password: string, email: string): boolean {
+  const lower = password.toLowerCase();
+  if (TRIVIAL_PASSWORDS.has(lower)) return false;
+  if (email && lower.includes(email.split('@')[0]) && email.split('@')[0].length >= 4 && lower === email.split('@')[0]) return false;
+  if (/^(.)\1+$/.test(password)) return false;
+  return true;
+}
 
 
 
@@ -45,9 +81,22 @@ export function createAuthRouter(prisma: PrismaClient) {
   router.post('/register', async (request, response) => {
     if (!validCredentials(request.body)) return response.status(400).json({ error: 'Podaj poprawny e‑mail i hasło (minimum 8 znaków).' });
     const email = request.body.email.trim().toLowerCase();
+    const key = attemptKey(request, `reg:${email}`);
+    const bypassRate = getDevOverrides().bypassRateLimit;
+    const retryAfter = bypassRate ? null : checkLoginRateLimit(key);
+    if (retryAfter) {
+      response.setHeader('Retry-After', String(retryAfter));
+      return response.status(429).json({ error: `Zbyt wiele prób rejestracji. Spróbuj ponownie za ${retryAfter} s.` });
+    }
+    if (!isStrongEnoughPassword(request.body.password, email)) {
+      return response.status(400).json({ error: 'Wybierz silniejsze hasło (unikaj prostych ciągów typu 12345678 lub nazwy konta).' });
+    }
     try {
       const existing = await prisma.user.findUnique({ where: { email } });
-      if (existing) return response.status(409).json({ error: 'Konto z tym adresem już istnieje.' });
+      if (existing) {
+        recordLoginFailure(key);
+        return response.status(409).json({ error: 'Konto z tym adresem już istnieje.' });
+      }
       const user = await prisma.user.create({ data: { email, name: email.split('@')[0], passwordHash: passwordHash(request.body.password) } });
       return response.status(201).json(await createSession(prisma, user.id, user.email, user.name, request.body));
     } catch { return response.status(500).json({ error: 'Nie udało się utworzyć konta.' }); }
@@ -56,8 +105,20 @@ export function createAuthRouter(prisma: PrismaClient) {
   router.post('/login', async (request, response) => {
     if (!validCredentials(request.body)) return response.status(400).json({ error: 'Podaj e‑mail i hasło.' });
     const email = request.body.email.trim().toLowerCase();
+    const key = attemptKey(request, email);
+    const bypassRate = getDevOverrides().bypassRateLimit;
+    const retryAfter = bypassRate ? null : checkLoginRateLimit(key);
+    if (retryAfter) {
+      response.setHeader('Retry-After', String(retryAfter));
+      return response.status(429).json({ error: `Zbyt wiele nieudanych prób logowania. Spróbuj ponownie za ${retryAfter} s.` });
+    }
     const user = await prisma.user.findUnique({ where: { email } });
-    if (!user || !passwordMatches(request.body.password, user.passwordHash)) return response.status(401).json({ error: 'Nieprawidłowy e‑mail lub hasło.' });
+    const valid = passwordMatches(request.body.password, user?.passwordHash ?? DUMMY_HASH) && Boolean(user);
+    if (!valid || !user) {
+      if (!bypassRate) recordLoginFailure(key);
+      return response.status(401).json({ error: 'Nieprawidłowy e‑mail lub hasło.' });
+    }
+    loginAttempts.delete(key);
     try {
       return response.json(await createSession(prisma, user.id, user.email, user.name, request.body));
     } catch (error) {

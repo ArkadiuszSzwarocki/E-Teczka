@@ -5,8 +5,8 @@ export type CatalogPlan = typeof planIds[number];
 export const limitKeys = ['documents', 'tags', 'cameraScan', 'printerScan', 'merge'] as const;
 export type PlanSettings = { name: string; ocr: boolean; cloudBackup: boolean; premiumTools: boolean; monthly: number; yearly: number; mobileDevices: number; accountDevices: number | null; limits: Record<typeof limitKeys[number], number | null> };
 export type Promotion = { id: string; name: string; plan: CatalogPlan; interval: 'monthly' | 'yearly'; percent: number; startsAt: string; endsAt: string; enabled: boolean };
-export type Catalog = { version: 1; usageDays: number; ocrTrialDays: number; backupTrialMonths: number; plans: Record<CatalogPlan, PlanSettings>; promotions: Promotion[] };
-export const defaultCatalog: Catalog = { version: 1, usageDays: 7, ocrTrialDays: 14, backupTrialMonths: 2, plans: {
+export type Catalog = { version: 1; usageDays: number; ocrTrialDays: number; standardOcrTrialDays?: number; backupTrialMonths: number; plans: Record<CatalogPlan, PlanSettings>; promotions: Promotion[] };
+export const defaultCatalog: Catalog = { version: 1, usageDays: 7, ocrTrialDays: 30, standardOcrTrialDays: 60, backupTrialMonths: 2, plans: {
  free: { name: 'Darmowy', ocr: false, cloudBackup: false, premiumTools: false, monthly: 0, yearly: 0, mobileDevices: 1, accountDevices: 1, limits: { documents: 200, tags: 3, cameraScan: 50, printerScan: 50, merge: 10 } },
  standard: { name: 'Standard', ocr: false, cloudBackup: false, premiumTools: false, monthly: 499, yearly: 4990, mobileDevices: 1, accountDevices: 2, limits: { documents: 400, tags: 6, cameraScan: 100, printerScan: 100, merge: 20 } },
  premium: { name: 'Premium', ocr: true, cloudBackup: true, premiumTools: true, monthly: 999, yearly: 9990, mobileDevices: 1, accountDevices: null, limits: { documents: null, tags: null, cameraScan: null, printerScan: null, merge: null } },
@@ -27,7 +27,7 @@ export function validateCatalog(value: unknown): Catalog {
   },
  } : raw) as Catalog;
  const integer = (n: unknown, min: number, max: number) => Number.isSafeInteger(n) && Number(n) >= min && Number(n) <= max;
- if (!data || data.version !== 1 || !integer(data.usageDays, 1, 365) || !integer(data.ocrTrialDays, 0, 3650) || !integer(data.backupTrialMonths, 0, 120) || !data.plans || !Array.isArray(data.promotions) || data.promotions.length > 100) throw new Error('Nieprawidłowe okresy lub format konfiguracji.');
+ if (!data || data.version !== 1 || !integer(data.usageDays, 1, 365) || !integer(data.ocrTrialDays, 0, 3650) || (data.standardOcrTrialDays !== undefined && !integer(data.standardOcrTrialDays, 0, 3650)) || !integer(data.backupTrialMonths, 0, 120) || !data.plans || !Array.isArray(data.promotions) || data.promotions.length > 100) throw new Error('Nieprawidłowe okresy lub format konfiguracji.');
  for (const id of planIds) {
   const p = data.plans[id];
   if (!p || typeof p.ocr !== 'boolean' || typeof p.cloudBackup !== 'boolean' || typeof p.premiumTools !== 'boolean' || typeof p.name !== 'string' || !p.name.trim() || p.name.length > 60 || !integer(p.monthly, 0, 100000000) || !integer(p.yearly, 0, 100000000) || !integer(p.mobileDevices, 1, 10000) || !(p.accountDevices === null || integer(p.accountDevices, 1, 10000)) || !p.limits) throw new Error('Nieprawidłowe ustawienia planu.');

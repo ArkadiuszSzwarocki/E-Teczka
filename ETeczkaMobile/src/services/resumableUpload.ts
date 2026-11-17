@@ -23,10 +23,20 @@ export function sliceBase64ForResumable(base64: string, chunkChars = 262_144): s
   return parts.length ? parts : [''];
 }
 
+const cancelledUploads = new Set<string>();
+
+/** Marks a resumable upload as cancelled so any pending chunk loop stops immediately. */
+export function cancelResumableUpload(uploadId?: string) {
+  if (uploadId) cancelledUploads.add(uploadId);
+}
+
 /** Uploads chunks with resume support: queries already-received chunks on `/init` and skips them. */
 export async function uploadChunksResumable(options: ResumableUploadOptions) {
   const doFetch = options.fetchFn || fetch;
   const totalChunks = options.chunksBase64.length;
+  if (options.uploadId && cancelledUploads.has(options.uploadId)) {
+    throw new Error('Przesyłanie pliku zostało anulowane po usunięciu dokumentu.');
+  }
 
   const initRes = await doFetch(`${options.apiBaseUrl}/api/documents/upload-resumable/init`, {
     method: 'POST',
@@ -48,6 +58,9 @@ export async function uploadChunksResumable(options: ResumableUploadOptions) {
   options.onProgress?.(received.size, totalChunks);
 
   for (let i = 0; i < totalChunks; i++) {
+    if (cancelledUploads.has(initData.uploadId)) {
+      throw new Error('Przesyłanie pliku zostało anulowane po usunięciu dokumentu.');
+    }
     if (received.has(i)) continue;
     const chunkRes = await doFetch(`${options.apiBaseUrl}/api/documents/upload-resumable/${initData.uploadId}/chunk/${i}`, {
       method: 'PUT',

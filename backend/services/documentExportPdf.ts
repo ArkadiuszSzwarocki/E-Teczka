@@ -32,9 +32,12 @@ export async function exportDocumentsAsPdf(records: Array<{ filePath: string; mi
       }
     } else {
       const img = await loadImage(file);
-      const canvas = createCanvas(img.width, img.height);
-      canvas.getContext('2d').drawImage(img, 0, 0);
-      embedded = await output.embedPng(canvas.toBuffer('image/png'));
+      const scale = Math.min(1, 1600 / img.width, 1600 / img.height);
+      const w = Math.max(1, Math.round(img.width * scale));
+      const h = Math.max(1, Math.round(img.height * scale));
+      const canvas = createCanvas(w, h);
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      embedded = await output.embedJpg(canvas.toBuffer('image/jpeg', 80));
     }
 
     const [a4W, a4H] = [595.28, 841.89];

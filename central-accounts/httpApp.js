@@ -14,7 +14,7 @@ function createHttpApp(accounts, { ledger, catalog, playBilling, entitlements, f
   if (rateLimit) app.use(['/register', '/login', '/google', '/google-challenge', '/link-google', '/verify-email', '/resend-verification', '/request-password-reset', '/reset-password'], rateLimit);
   if (handoffRateLimit) app.use('/handoff', handoffRateLimit);
   if (handoffRateLimit) app.use(['/entitlements','/devices','/billing'], handoffRateLimit);
-  if (handoffRateLimit) app.use(['/ledger','/admin','/feedback'], handoffRateLimit);
+  if (handoffRateLimit) app.use('/ledger', handoffRateLimit);
   app.use(['/ledger','/admin','/feedback'],express.json({limit:'4mb'}));
   app.use(express.json({ limit: '20kb' }));
   if (accountRateLimit) app.use(['/register', '/login', '/resend-verification', '/request-password-reset'], accountRateLimit);
@@ -118,6 +118,10 @@ function createHttpApp(accounts, { ledger, catalog, playBilling, entitlements, f
   app.post('/delete-account', async (req, res) => {
     try { await accounts.deleteAccount(bearer(req)); return res.status(204).end(); }
     catch { return res.status(401).json({ error: 'Sesja wygasła.' }); }
+  });
+  app.get(['/', '/updates'], (_req, res) => {
+    res.set({ 'Content-Security-Policy': "default-src 'none'; style-src 'self'; base-uri 'none'; frame-ancestors 'none'", 'Referrer-Policy': 'strict-origin-when-cross-origin', 'X-Content-Type-Options': 'nosniff' });
+    res.type('html').send('<!doctype html><html lang="pl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Historia aktualizacji — E-Teczka</title><link rel="stylesheet" href="/account.css"><main><h1>Historia aktualizacji — E‑Teczka</h1><p>Serwer kont i aktualizacji usługi E‑Teczka (<code>konto.arecki.pl</code>).</p><ul><li><strong>Aktualne wydanie:</strong> poprawki stabilności synchronizacji, wgrywania dokumentów, wagi plików, właściwości kartotek oraz bezpieczeństwa sesji.</li><li><strong>Konto i plany:</strong> <a href="/account">Zarządzanie kontem</a> · <a href="/privacy">Polityka prywatności</a></li></ul></main></html>');
   });
   app.get('/privacy', (_req, res) => {
     res.set({ 'Content-Security-Policy': "default-src 'none'; style-src 'self'; base-uri 'none'; frame-ancestors 'none'", 'Referrer-Policy': 'strict-origin-when-cross-origin', 'X-Content-Type-Options': 'nosniff' });

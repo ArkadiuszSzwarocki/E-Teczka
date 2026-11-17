@@ -30,6 +30,7 @@ import { createFolderVaultRouter } from './routes/folderVault';
 import cron from 'node-cron';
 import { runScheduledCloudBackup } from './routes/backup';
 import { createBackupScheduler } from './services/backupScheduler';
+import { cleanupExpiredResumableSessions } from './services/resumableUpload';
 import { createOcrQueue } from './services/ocrQueue';
 import { createOcrRouter } from './routes/ocr';
 import { getPlan } from './services/planLedger';
@@ -58,6 +59,12 @@ const ocrQueue = createOcrQueue(prisma, { file: path.join(securityDir, 'ocr-queu
 
 const localTls = makeLocalTls(securityDir);
 app.use(cors());
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  next();
+});
 // Local desktop can keep using loopback HTTP. Remote clients must use TLS;
 // never redirect bearer tokens or pairing codes after receiving them over HTTP.
 // The public certificate contains no credentials. Its fingerprint is verified
@@ -95,7 +102,7 @@ app.use('/api/central-account', requireLocalDesktop, createCentralAccountRouter(
 app.use('/api/backup/oauth', createBackupOAuthCallbackRouter(prisma));
 
 app.use('/api/dev/catalog', createDeveloperCatalogRouter(prisma));
-app.use('/api/dev/feedback', createDeveloperFeedbackRouter());
+app.use('/api/dev/feedback', createDeveloperFeedbackRouter(prisma));
 app.use('/api/legal', createLegalRouter());
 app.use('/api/app-version', createAppVersionRouter());
 const mobileTestApkPath = path.resolve(__dirname, '../ETeczkaMobile/android/app/build/outputs/apk/debug/app-debug.apk');
@@ -130,6 +137,17 @@ const checkScheduledBackups = createBackupScheduler(prisma, runScheduledCloudBac
 const checkBackupsSafely = () => { void checkScheduledBackups().catch(error => console.error('[backup] Scheduler:', errorMessage(error))); };
 checkBackupsSafely();
 cron.schedule('* * * * *', checkBackupsSafely);
+
+const cleanupUploadsSafely = () => {
+  try {
+    const removed = cleanupExpiredResumableSessions();
+    if (removed > 0) console.log(`[uploads] Usunięto osierocone sesje uploadu: ${removed}`);
+  } catch (error) {
+    console.error('[uploads] Cleanup:', errorMessage(error));
+  }
+};
+cleanupUploadsSafely();
+cron.schedule('0 * * * *', cleanupUploadsSafely);
 
 app.use('/api/account-security', createAccountSecurityRouter(prisma));
 app.use('/api/folders', createFolderRouter(prisma));

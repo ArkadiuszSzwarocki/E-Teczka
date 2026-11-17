@@ -25,12 +25,13 @@ type Props = {
   onToggleSettings: () => void;
   onOpenBackup: (section: BackupSection) => void;
   onOpenFeedback: () => void;
+  userFeedbackReplyCount?: number;
 };
 
 /** Persistent desktop navigation. Kept independent from document-table rendering. */
 export default function DesktopSidebar({
   activeView, documents, mobileOpen = false, onCloseMobile, onViewChange, onOpenScanner, onOpenPairing,
-  onToggleSettings, onOpenBackup, onOpenFeedback,
+  onToggleSettings, onOpenBackup, onOpenFeedback, userFeedbackReplyCount = 0,
 }: Props) {
   const closeIfMobile = (action: () => void) => () => { onCloseMobile?.(); action(); };
   const [backupMenuOpen, setBackupMenuOpen] = useState(false);
@@ -81,11 +82,11 @@ export default function DesktopSidebar({
     </div>
     <div className="border-t border-slate-700 p-4 space-y-1">
       {import.meta.env.DEV && (
-        <a href="/developer" className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm text-amber-300 hover:bg-amber-950/40 hover:text-amber-200">
+        <button type="button" onClick={closeIfMobile(() => onViewChange('developer'))} className={`flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm transition-colors ${activeView === 'developer' ? 'bg-amber-950/50 text-amber-200' : 'text-amber-300 hover:bg-amber-950/40 hover:text-amber-200'}`}>
           {icon(panelDeweloperaIcon, '🛠️')}<span>Panel dewelopera</span><span className="ml-auto">→</span>
-        </a>
+        </button>
       )}
-      <button onClick={closeIfMobile(onOpenFeedback)} aria-haspopup="dialog" className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm text-slate-400 hover:bg-white/5 hover:text-white"><span aria-hidden="true" className="inline-flex h-5 w-5 shrink-0 items-center justify-center text-base leading-none">🐞</span><span>Zgłoś błąd / uwagę</span></button>
+      <button onClick={closeIfMobile(onOpenFeedback)} aria-haspopup="dialog" className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm text-slate-400 hover:bg-white/5 hover:text-white"><span aria-hidden="true" className="inline-flex h-5 w-5 shrink-0 items-center justify-center text-base leading-none">🐞</span><span>Zgłoś błąd / uwagę</span>{userFeedbackReplyCount > 0 && <span title="Nowe odpowiedzi zespołu na Twoje zgłoszenia" className="ml-auto rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-slate-950">💬 {userFeedbackReplyCount}</span>}</button>
       <button onClick={closeIfMobile(onToggleSettings)} aria-haspopup="dialog" className="flex w-full items-center gap-2 px-2 py-2 text-left text-sm text-slate-400 hover:text-white">{icon(ustawieniaIcon, '⚙️')}<span>Ustawienia</span><span className="ml-auto">↗</span></button>
     </div>
   </aside>

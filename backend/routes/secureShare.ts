@@ -7,6 +7,7 @@ import { hasPremium } from '../middleware/premium';
 import { activeDocumentIds } from '../services/planRestrictions';
 import { getPlan } from '../services/planLedger';
 import { ocrOwnerKey } from '../services/ocrPremium';
+import { applyWatermarkToDocument } from '../services/documentWatermark';
 
 export function createSecureShareRouter(prisma: PrismaClient) {
   const router=express.Router();
@@ -17,14 +18,19 @@ export function createSecureShareRouter(prisma: PrismaClient) {
     try {
       if (!await hasPremium(prisma,res)) return res.status(402).json({code:'PREMIUM_REQUIRED',error:'Bezpieczne linki wymagają planu Premium.'});
       const service=config(); if(!service) return res.status(503).json({error:'Usługa linków nie jest skonfigurowana. Potrzebny jest serwer HTTPS na NAS-ie.'});
-      const owner=Number(res.locals.userId||1), id=Number(req.body?.documentId), expires=Number(req.body?.expiresInSeconds), pin=req.body?.pin, singleUse=req.body?.singleUse;
-      if(!Number.isSafeInteger(id)||id<1||!Number.isSafeInteger(expires)||expires<60||expires>604800||(pin!==undefined&&!/^\d{6}$/.test(pin))||(singleUse!==undefined&&typeof singleUse!=='boolean')) return res.status(400).json({error:'Nieprawidłowe ustawienia linku.'});
+      const owner=Number(res.locals.userId||1), id=Number(req.body?.documentId), expires=Number(req.body?.expiresInSeconds), pin=req.body?.pin, singleUse=req.body?.singleUse, watermark=req.body?.watermark;
+      if(!Number.isSafeInteger(id)||id<1||!Number.isSafeInteger(expires)||expires<60||expires>604800||(pin!==undefined&&!/^\d{6}$/.test(pin))||(singleUse!==undefined&&typeof singleUse!=='boolean')||(watermark!==undefined&&typeof watermark!=='boolean')) return res.status(400).json({error:'Nieprawidłowe ustawienia linku.'});
       const doc=await prisma.document.findFirst({where:{id,folder:{ownerId:owner},isDeleted:false},select:{id:true,filePath:true,mimeType:true}});
       if(!doc) return res.status(404).json({error:'Nie znaleziono dokumentu.'});
       const active=await activeDocumentIds(prisma,owner,await getPlan(prisma,ocrOwnerKey(res)));if(active&&!active.has(id))return res.status(403).json({code:'PLAN_LIMIT_REACHED',error:'Dokument jest tylko do odczytu w obecnym planie.'});
       if(!['application/pdf','image/jpeg','image/png'].includes(doc.mimeType)||path.basename(doc.filePath)!==doc.filePath)return res.status(400).json({error:'Obsługiwane są dokumenty PDF, JPG i PNG.'});
       const stat=await fs.stat(path.join(uploadsDir,doc.filePath));if(stat.size>50*1024*1024)return res.status(413).json({error:'Maksymalny rozmiar dokumentu to 50 MB.'});
-      const bytes=await fs.readFile(path.join(uploadsDir,doc.filePath));
+      let bytes: Buffer = await fs.readFile(path.join(uploadsDir,doc.filePath));
+      if (watermark) {
+        const ownerUser = await prisma.user.findUnique({ where: { id: owner }, select: { email: true } });
+        const ownerEmail = ownerUser?.email || String(res.locals.userEmail || 'Właściciel E-Teczki');
+        bytes = await applyWatermarkToDocument(bytes, doc.mimeType, ownerEmail);
+      }
       const remote=await fetch(`${service.base}/admin/shares`,{method:'POST',headers:{Authorization:`Bearer ${service.secret}`,'Content-Type':'application/json'},body:JSON.stringify({content:bytes.toString('base64'),mimeType:doc.mimeType,expiresInSeconds:expires,pin,singleUse}),signal:AbortSignal.timeout(30000)});
       const result=await remote.json() as {id?:string;url?:string;expiresAt?:string};if(!remote.ok||!result.id||!result.url||!result.expiresAt||!/^[a-f0-9]{64}$/.test(result.id))return res.status(502).json({error:'Serwer linków odrzucił dokument.'});
       const link=new URL(result.url);if(link.protocol!=='https:'||link.origin!==service.base||link.pathname!=='/s'||!/^#[A-Za-z0-9_-]{43}$/.test(link.hash))return res.status(502).json({error:'Serwer zwrócił nieprawidłowy adres linku.'});

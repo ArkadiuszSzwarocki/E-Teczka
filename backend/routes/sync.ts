@@ -51,7 +51,7 @@ export function createSyncRouter(prisma: PrismaClient) {
         const receipt = await withSyncReceipt(prisma, `user:${ownerId}`, operationId, operation, async tx => {
           const current = await tx.folder.findFirst({ where: { id: folder.id, ownerId } });
           if (!current) throw new Error('Nie znaleziono kartoteki.');
-          if (current.updatedAt > new Date(folder.updatedAt!)) return { id: current.id, conflict: true };
+          if (!operation.force && current.updatedAt > new Date(folder.updatedAt!)) return { id: current.id, conflict: true };
           const updated = await tx.folder.update({ where: { id: current.id }, data: { name: folder.name, order: folder.order } });
           return { id: updated.id, conflict: false };
         });
@@ -69,7 +69,7 @@ export function createSyncRouter(prisma: PrismaClient) {
         const receipt = await withSyncReceipt(prisma, `user:${ownerId}`, operationId, operation, async tx => {
           const folder = await tx.folder.findFirst({ where: { id, ownerId }, select: { id: true, updatedAt: true } });
           if (!folder) throw new Error('Nie znaleziono kartoteki.');
-          if (folder.updatedAt > new Date(operation.value.updatedAt)) throw new Error('Kartoteka została zmieniona na komputerze.');
+          if (!operation.force && folder.updatedAt > new Date(operation.value.updatedAt)) throw new Error('Kartoteka została zmieniona na komputerze.');
           const [documents, children] = await Promise.all([tx.document.count({ where: { folderId: id } }), tx.folder.count({ where: { parentId: id } })]);
           if (documents || children) throw new Error('Kartoteka nie jest pusta.');
           await tx.folder.delete({ where: { id } });
@@ -96,7 +96,7 @@ export function createSyncRouter(prisma: PrismaClient) {
             const onlyDelete = document.isDeleted === true && document.title === current.title && document.folderId === current.folderId && document.isArchived === current.isArchived && (document.retentionValue === undefined || document.retentionValue === current.retentionValue) && (document.retentionUnit === undefined || document.retentionUnit === current.retentionUnit) && (operation.value.retentionEnabled === undefined || operation.value.retentionEnabled === current.retentionEnabled);
             if (!onlyDelete) throw new PlanLimitError('dokumenty tylko do odczytu', 0);
           }
-          if (current.updatedAt > new Date(document.updatedAt!)) return { id: current.id, conflict: true };
+          if (!operation.force && current.updatedAt > new Date(document.updatedAt!)) return { id: current.id, conflict: true };
           const destination = await tx.folder.findFirst({ where: { id: document.folderId, ownerId }, select: { id: true } });
           if (!destination) throw new Error('Nie znaleziono kartoteki docelowej.');
           if (current.folderId !== document.folderId || (current.isDeleted && !document.isDeleted)) {

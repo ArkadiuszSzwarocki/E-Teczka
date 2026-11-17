@@ -65,25 +65,26 @@ export function useTagAndOcrActions({
     }
   }, [apiUrl, fetcher, selectedDocs, showToast]);
 
-  const exportSelectedPdf = useCallback(async () => {
-    if (!selectedDocs.length) return;
+  const exportDocumentPdf = useCallback(async (doc: { id: number; title?: string }, watermark = false) => {
     if (billingPlan !== 'premium') {
-      setPlanLimitMessage('Eksport zaznaczonych dokumentów do PDF jest dostępny w planie Premium.');
+      setPlanLimitMessage('Eksport dokumentu do PDF jest dostępny w planie Premium.');
       return;
     }
     try {
-      const blob = await exportDocuments(apiUrl, fetcher, selectedDocs);
+      const blob = await exportDocuments(apiUrl, fetcher, [doc.id], watermark);
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = `eteczka-eksport-${new Date().toISOString().slice(0, 10)}.pdf`;
+      const safeName = (doc.title || `dokument-${doc.id}`).replace(/[^a-zA-Z0-9._-]+/g, '-');
+      const baseName = safeName.toLowerCase().endsWith('.pdf') ? safeName.slice(0, -4) : safeName;
+      anchor.download = watermark ? `${baseName}-znak-wodny.pdf` : `${baseName}.pdf`;
       anchor.click();
       URL.revokeObjectURL(url);
-      showToast(`Wyeksportowano ${selectedDocs.length} dokumentów do jednego PDF-a.`, 'success');
+      showToast(watermark ? 'Wyeksportowano dokument PDF ze znakiem wodnym.' : 'Wyeksportowano dokument do PDF.', 'success');
     } catch (error: unknown) {
-      showToast(errorMessage(error, 'Nie udało się wyeksportować dokumentów.'), 'error');
+      showToast(errorMessage(error, 'Nie udało się wyeksportować dokumentu.'), 'error');
     }
-  }, [apiUrl, billingPlan, fetcher, selectedDocs, setPlanLimitMessage, showToast]);
+  }, [apiUrl, billingPlan, fetcher, setPlanLimitMessage, showToast]);
 
   useEffect(() => {
     const query = searchQuery.trim();
@@ -108,6 +109,6 @@ export function useTagAndOcrActions({
     createTag,
     deleteTag,
     recognizeSelected,
-    exportSelectedPdf,
+    exportDocumentPdf,
   };
 }

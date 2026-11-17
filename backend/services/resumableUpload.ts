@@ -129,3 +129,34 @@ export async function completeResumableSession(
     throw error;
   }
 }
+
+/** Removes orphaned resumable upload sessions and scan drafts older than maxAgeMs (default 24h). */
+export function cleanupExpiredResumableSessions(maxAgeMs = 24 * 60 * 60 * 1000, baseDir = uploadsDir): number {
+  const cutoff = Date.now() - maxAgeMs;
+  let removed = 0;
+
+  for (const subDir of ['.resumable', '.scan-drafts']) {
+    const root = path.join(baseDir, subDir);
+    if (!fs.existsSync(root)) continue;
+    for (const entry of fs.readdirSync(root)) {
+      const fullPath = path.join(root, entry);
+      try {
+        let timestamp = fs.statSync(fullPath).mtimeMs;
+        if (subDir === '.resumable') {
+          const mPath = path.join(fullPath, 'meta.json');
+          if (fs.existsSync(mPath)) {
+            const meta = JSON.parse(fs.readFileSync(mPath, 'utf8')) as Partial<ResumableMeta>;
+            if (typeof meta.createdAt === 'number' && Number.isFinite(meta.createdAt)) timestamp = meta.createdAt;
+          }
+        }
+        if (timestamp < cutoff) {
+          fs.rmSync(fullPath, { recursive: true, force: true });
+          removed += 1;
+        }
+      } catch {
+        // Ignore individual unreadable entries so remaining sessions still get cleaned.
+      }
+    }
+  }
+  return removed;
+}

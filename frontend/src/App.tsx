@@ -25,11 +25,14 @@ import WelcomeScreen from './components/WelcomeScreen';
 import BillingPlansModal from './components/BillingPlansModalV2';
 import BackupModal, { type BackupSection } from './components/BackupModal';
 import FeedbackModal from './components/FeedbackModal';
+import DeveloperPanel, { type DevSection } from './components/DeveloperPanel';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
 import BackupSecurityModal from './components/BackupSecurityModal';
 import CloseAppModal from './components/CloseAppModal';
 import { AppFolderIcon } from './components/FolderIconPicker';
 import OcrPanel from './components/OcrPanel';
+import DocumentPropertiesModal from './components/DocumentPropertiesModal';
+import SelfHostServerGuideModal from './components/SelfHostServerGuideModal';
 import TagManagerModal from './components/TagManagerModal';
 import RetentionModal from './components/RetentionModal';
 import MoveDocumentModal from './components/MoveDocumentModal';
@@ -79,6 +82,7 @@ export default function App() {
   const [ocrDocumentId, setOcrDocumentId] = useState<number | null>(null);
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
   const [previewDoc, setPreviewDoc] = useState<DocumentRecord | null>(null);
+  const [propertiesDoc, setPropertiesDoc] = useState<DocumentRecord | null>(null);
   const [previewZoom, setPreviewZoom] = useState(1);
   const [hoverDocId, setHoverDocId] = useState<number | null>(null);
   const [hoverAnchor, setHoverAnchor] = useState<HTMLElement | null>(null);
@@ -106,8 +110,68 @@ export default function App() {
   const [isAccessSettingsOpen, setIsAccessSettingsOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
+  const [devSection, setDevSection] = useState<DevSection | null>(null);
+  const [openBugCount, setOpenBugCount] = useState<number>(() => {
+    const saved = Number(localStorage.getItem('eteczka_dev_open_bugs'));
+    return Number.isFinite(saved) && saved >= 0 ? saved : 0;
+  });
+  const [adminReplyCount, setAdminReplyCount] = useState<number>(0);
+  const [userFeedbackReplyCount, setUserFeedbackReplyCount] = useState<number>(0);
+
+  const updateOpenBugCount = useCallback((count: number) => {
+    setOpenBugCount(count);
+    localStorage.setItem('eteczka_dev_open_bugs', String(count));
+  }, []);
+
+  const markUserFeedbackSeen = useCallback(() => {
+    localStorage.setItem('eteczka_feedback_user_seen_at', new Date().toISOString());
+    setUserFeedbackReplyCount(0);
+  }, []);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    let active = true;
+    const loadBugCount = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/dev/feedback`);
+        if (!res.ok) return;
+        const payload = await res.json().catch(() => ({})) as { items?: Array<{ status?: string; messages?: Array<{ author?: string }> }> };
+        if (active && Array.isArray(payload.items)) {
+          updateOpenBugCount(payload.items.filter(item => item.status !== 'closed').length);
+          setAdminReplyCount(payload.items.filter(item => item.status !== 'closed' && item.messages?.at(-1)?.author === 'user').length);
+        }
+      } catch { /* keep last known count when rate-limited or starting */ }
+    };
+    void loadBugCount();
+    const timer = window.setInterval(() => void loadBugCount(), 300_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [updateOpenBugCount]);
+
+  useEffect(() => {
+    let active = true;
+    const loadUserReplies = async () => {
+      try {
+        const res = await apiFetch(`${API_URL}/api/feedback/history`);
+        if (!res.ok) return;
+        const payload = await res.json().catch(() => ({})) as { items?: Array<{ messages?: Array<{ author?: string; createdAt?: string }> }> };
+        if (!active || !Array.isArray(payload.items)) return;
+        const seenAt = Date.parse(localStorage.getItem('eteczka_feedback_user_seen_at') || '') || 0;
+        const unread = payload.items.filter(item => {
+          const last = item.messages?.at(-1);
+          if (!last || last.author !== 'admin') return false;
+          const msgTime = Date.parse(last.createdAt || '') || 0;
+          return msgTime > seenAt;
+        }).length;
+        setUserFeedbackReplyCount(unread);
+      } catch { /* ignore transient feedback history check failures */ }
+    };
+    void loadUserReplies();
+    const timer = window.setInterval(() => void loadUserReplies(), 300_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
   const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState(false);
   const [isBackupSecurityOpen, setIsBackupSecurityOpen] = useState(false);
+  const [isSelfHostGuideOpen, setIsSelfHostGuideOpen] = useState(false);
   const [feedbackDraft, setFeedbackDraft] = useState<{ screenshot: string | null; appVersion?: string; platform?: string } | null>(null);
   const hoverTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const hoverOpenTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
@@ -293,14 +357,33 @@ export default function App() {
       {isUpdateModalOpen && appUpdate.availableUpdate && !testerConsent.needsConsent && (
         <AppUpdatePromptModal
           update={appUpdate.availableUpdate}
-          onUpdateNow={appUpdate.applyUpdateNow}
+          updatingProgress={appUpdate.updatingProgress}
+          onUpdateNow={() => void appUpdate.applyUpdateNow()}
           onPostpone={delay => { setIsUpdateModalOpen(false); appUpdate.postponeUpdate(delay); }}
         />
       )}
+      {appUpdate.justUpdatedInfo && (
+        <div className="fixed bottom-5 left-5 z-[140] max-w-sm rounded-xl border border-emerald-500/60 bg-emerald-950/95 p-4 text-xs text-emerald-100 shadow-2xl">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="font-bold text-emerald-300">✅ Aplikacja została zaktualizowana</p>
+              <p className="mt-1">Wersja: <span className="font-mono font-semibold">{appUpdate.justUpdatedInfo.version}</span></p>
+              {appUpdate.justUpdatedInfo.infoUrl && (
+                <a href={appUpdate.justUpdatedInfo.infoUrl} target="_blank" rel="noopener noreferrer" className="mt-1.5 inline-block font-semibold text-blue-300 underline">
+                  Historia zmian na konto.arecki.pl ↗
+                </a>
+              )}
+            </div>
+            <button type="button" onClick={appUpdate.dismissJustUpdated} aria-label="Zamknij" className="text-base text-emerald-300 hover:text-white">×</button>
+          </div>
+        </div>
+      )}
       {billing.isBillingHistoryOpen && <BillingHistoryModal transactions={billing.billingHistory} loading={billing.billingHistoryBusy} onClose={() => billing.setIsBillingHistoryOpen(false)} />}
       {backupSection && null}
-      {feedbackDraft && <FeedbackModal apiUrl={API_URL} fetcher={apiFetch} activeView={activeView} initialScreenshot={feedbackDraft.screenshot} initialAppVersion={feedbackDraft.appVersion} initialPlatform={feedbackDraft.platform} onClose={() => setFeedbackDraft(null)} />}
+      {feedbackDraft && <FeedbackModal apiUrl={API_URL} fetcher={apiFetch} activeView={activeView} initialScreenshot={feedbackDraft.screenshot} initialAppVersion={feedbackDraft.appVersion} initialPlatform={feedbackDraft.platform} unreadReplyCount={userFeedbackReplyCount} onHistoryViewed={markUserFeedbackSeen} onClose={() => setFeedbackDraft(null)} />}
       {ocrDocumentId !== null && <OcrPanel apiUrl={API_URL} documentId={ocrDocumentId} title={documents.find(document => document.id === ocrDocumentId)?.title || 'Dokument'} fetcher={fetch} onClose={() => setOcrDocumentId(null)} />}
+      {propertiesDoc && <DocumentPropertiesModal document={propertiesDoc} folders={folders} onClose={() => setPropertiesDoc(null)} />}
+      {isSelfHostGuideOpen && <SelfHostServerGuideModal onClose={() => setIsSelfHostGuideOpen(false)} onOpenBackup={() => { setIsSelfHostGuideOpen(false); setBackupSection('settings'); }} />}
       {hoverDocId !== null && hoverAnchor && (() => { const hovered = documents.find(d => d.id === hoverDocId); return hovered ? <HoverDocumentPreview document={hovered} anchor={hoverAnchor} apiUrl={API_URL} fetcher={fetch} onEnter={() => handleHoverEnter(hovered.id)} onLeave={handleHoverLeave} /> : null; })()}
 
       <TagManagerModal isOpen={isTagManagerOpen} tags={tags} name={actions.newTagName} color={actions.newTagColor} onNameChange={actions.setNewTagName} onColorChange={actions.setNewTagColor} onCreate={() => void actions.createTag()} onDelete={tagId => void actions.deleteTag(tagId)} onClose={() => setIsTagManagerOpen(false)} />
@@ -320,7 +403,7 @@ export default function App() {
       <DestructiveActionModal action={actions.pendingAction} seconds={actions.actionTimer} onCancel={() => { actions.setPendingAction(null); actions.setActionTimer(null); showToast('Anulowano operację', 'success'); }} onConfirm={() => { if (actions.actionTimer === 0) void actions.executeAction(); }} />
       <RetentionModal state={actions.retentionModal} folderOptions={renderSelectOptions()} onStateChange={actions.setRetentionModal} onSubmit={actions.handleRetentionUpdate} onClose={() => actions.setRetentionModal({ ...actions.retentionModal, isOpen: false })} />
 
-      <DesktopSidebar activeView={activeView} documents={documents} mobileOpen={mobileSidebarOpen} onCloseMobile={() => setMobileSidebarOpen(false)} onViewChange={view => { setIsSettingsMenuOpen(false); setBackupSection(null); setIsBackupSecurityOpen(false); setActiveView(view); setSearchQuery(''); if (view === 'dashboard') setSelectedFolderId(null); }} onOpenScanner={() => { setIsSettingsMenuOpen(false); setBackupSection(null); setIsBackupSecurityOpen(false); void scanner.openWiaScanner(); }} onOpenPairing={() => pairing.setIsPairingGuideOpen(true)} onToggleSettings={() => { setBackupSection(null); setIsBackupSecurityOpen(false); setIsSettingsMenuOpen(true); }} onOpenBackup={section => { setIsSettingsMenuOpen(false); setIsBackupSecurityOpen(false); setBackupSection(section); }} onOpenFeedback={() => { void (async () => { const ipc = getElectronIpc(); const shot = ipc ? await ipc.invoke('eteczka-capture-screenshot').catch(() => null) as { dataUrl?: string; appVersion?: string; platform?: string } | null : null; setFeedbackDraft({ screenshot: shot?.dataUrl || null, appVersion: shot?.appVersion, platform: shot?.platform }); })(); }} />
+      <DesktopSidebar activeView={activeView} documents={documents} mobileOpen={mobileSidebarOpen} onCloseMobile={() => setMobileSidebarOpen(false)} onViewChange={view => { setIsSettingsMenuOpen(false); setBackupSection(null); setIsBackupSecurityOpen(false); if (view === 'developer') setDevSection(null); setActiveView(view); setSearchQuery(''); if (view === 'dashboard') setSelectedFolderId(null); }} onOpenScanner={() => { setIsSettingsMenuOpen(false); setBackupSection(null); setIsBackupSecurityOpen(false); void scanner.openWiaScanner(); }} onOpenPairing={() => pairing.setIsPairingGuideOpen(true)} onToggleSettings={() => { setBackupSection(null); setIsBackupSecurityOpen(false); setIsSettingsMenuOpen(true); }} onOpenBackup={section => { setIsSettingsMenuOpen(false); setIsBackupSecurityOpen(false); setBackupSection(section); }} userFeedbackReplyCount={userFeedbackReplyCount} onOpenFeedback={() => { void (async () => { const ipc = getElectronIpc(); const shot = ipc ? await ipc.invoke('eteczka-capture-screenshot').catch(() => null) as { dataUrl?: string; appVersion?: string; platform?: string } | null : null; setFeedbackDraft({ screenshot: shot?.dataUrl || null, appVersion: shot?.appVersion, platform: shot?.platform }); })(); }} />
       {isDeleteAccountOpen && session.currentUser && (
         <DeleteAccountModal
           apiUrl={API_URL}
@@ -364,6 +447,10 @@ export default function App() {
           onToggleMobileSidebar={() => setMobileSidebarOpen(v => !v)}
           updateAvailable={Boolean(appUpdate.availableUpdate && !testerConsent.needsConsent)}
           onOpenUpdatePrompt={() => setIsUpdateModalOpen(true)}
+          openBugCount={openBugCount}
+          adminReplyCount={adminReplyCount}
+          onOpenDeveloperFeedback={() => { setIsSettingsMenuOpen(false); setBackupSection(null); setIsBackupSecurityOpen(false); setDevSection('feedback'); setActiveView('developer'); }}
+          onOpenDeveloper={() => { setIsSettingsMenuOpen(false); setBackupSection(null); setIsBackupSecurityOpen(false); setDevSection(null); setActiveView('developer'); }}
         />
         {billing.billingPlan !== 'premium' && <PromotionBanner apiUrl={API_URL} fetcher={apiFetch} currentPlan={billing.billingPlan} onOpenPlans={() => setIsBillingPlansOpen(true)} />}
         {testerConsent.storageMode === 'local_disk' && testerConsent.diskReconnect.needed && !testerConsent.needsConsent && (
@@ -382,10 +469,8 @@ export default function App() {
             return (
               <div className="fixed bottom-4 left-1/2 z-40 flex w-[calc(100vw-1.5rem)] max-w-3xl -translate-x-1/2 flex-wrap items-center justify-center gap-1.5 rounded-xl border border-slate-600 bg-[#0f172a]/95 px-3 py-2 shadow-2xl backdrop-blur sm:w-auto sm:gap-2 sm:px-4 sm:py-2.5">
                 <span className="mr-1 text-xs font-bold text-slate-300">Zaznaczono: {selectedDocs.length}</span>
-                {activeView !== 'trash' && <button type="button" disabled={hasReadOnlySelected} onClick={() => void actions.recognizeSelected()} className="rounded-lg border border-blue-400/70 px-3 py-1.5 text-xs font-semibold text-blue-200 hover:bg-blue-500/10 disabled:opacity-40">Rozpoznaj tekst (OCR)</button>}
                 <button type="button" disabled={hasReadOnlySelected && (activeView === 'trash' || activeView === 'archive')} onClick={() => setIsBulkMoveOpen(true)} className="rounded-lg border border-indigo-500/70 px-3 py-1.5 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/10 disabled:opacity-40">{activeView === 'trash' || activeView === 'archive' ? 'Przywróć do kartoteki' : 'Przenieś'}</button>
                 {activeView !== 'trash' && activeView !== 'archive' && <button type="button" onClick={() => actions.initiateAction('bulk_archive', 0, String(selectedDocs.length))} className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-500">Archiwizuj</button>}
-                {activeView !== 'trash' && <button type="button" disabled={hasReadOnlySelected} onClick={() => void actions.exportSelectedPdf()} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-40" title={hasReadOnlySelected ? 'Zawiera dokumenty tylko do odczytu' : undefined}>Eksportuj do PDF</button>}
                 {activeView === 'trash'
                   ? <button type="button" onClick={() => actions.initiateAction('bulk_delete', 0, String(selectedDocs.length))} className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-500">Usuń trwale</button>
                   : <button type="button" onClick={() => actions.initiateAction('bulk_trash', 0, String(selectedDocs.length))} className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-500">Do kosza</button>}
@@ -394,11 +479,13 @@ export default function App() {
             );
           })()}
           {isSettingsMenuOpen ? (
-            <SettingsDialog embedded onClose={() => setIsSettingsMenuOpen(false)} onPair={() => pairing.setIsPairingGuideOpen(true)} onSecurity={() => setIsAccessSettingsOpen(true)} onTags={() => setIsTagManagerOpen(true)} onBackup={() => setBackupSection('settings')} onBackupSecurity={() => setIsBackupSecurityOpen(true)} onDeleteAccount={() => setIsDeleteAccountOpen(true)} onLogout={() => void session.logoutAccount()} />
+            <SettingsDialog embedded isPremiumPlan={billing.billingPlan === 'premium'} onClose={() => setIsSettingsMenuOpen(false)} onPair={() => pairing.setIsPairingGuideOpen(true)} onSecurity={() => setIsAccessSettingsOpen(true)} onTags={() => setIsTagManagerOpen(true)} onBackup={() => setBackupSection('settings')} onBackupSecurity={() => setIsBackupSecurityOpen(true)} onSelfHostGuide={() => setIsSelfHostGuideOpen(true)} onDeleteAccount={() => setIsDeleteAccountOpen(true)} onLogout={() => void session.logoutAccount()} />
           ) : backupSection ? (
             <BackupModal embedded key={backupSection} section={backupSection} apiUrl={API_URL} fetcher={apiFetch} onClose={() => setBackupSection(null)} onDone={msg => { setBackupSection(null); if (msg) showToast(msg, 'success', 6000); void fetchData(); }} />
           ) : isBackupSecurityOpen ? (
             <BackupSecurityModal embedded apiUrl={API_URL} fetcher={fetch} onClose={() => setIsBackupSecurityOpen(false)} />
+          ) : activeView === 'developer' ? (
+            <DeveloperPanel embedded initialSection={devSection} openBugCount={openBugCount} adminReplyCount={adminReplyCount} onOpenBugCountChange={updateOpenBugCount} onAdminReplyCountChange={setAdminReplyCount} onClose={() => setActiveView('dashboard')} />
           ) : activeView === 'scanner' ? (
             <PrinterScannerModal
               devices={scanner.wiaDevices} loadingDevices={scanner.isWiaLoadingDevices} deviceId={scanner.wiaDeviceId} folderId={scanner.wiaFolderId}
@@ -488,11 +575,12 @@ export default function App() {
                   onMoveFolderParent={async (id, parentId) => { const res = await moveFolderToParent(API_URL, fetch, id, parentId); if (res.ok) { await fetchData(); showToast('Przeniesiono kartotekę.', 'success'); } else showToast('Nie można przenieść kartoteki.', 'error'); }}
                   onMoveDocument={async (docId, targetFolderId) => { await actions.updateDocument(docId, { folderId: targetFolderId }); }}
                   onUploadToFolder={targetId => { batchUpload.setFolderId(String(targetId)); setActiveView('upload'); }}
-                  onArchiveDoc={doc => actions.initiateAction('archive_doc', doc.id, doc.title)}
                   onTrashDoc={doc => actions.initiateAction('trash_doc', doc.id, doc.title)}
                   onShareLink={doc => setSecureShareId(doc.id)}
                   onShareClassic={doc => { void shareDocumentClassic(API_URL, apiFetch, doc).then(mode => showToast(mode === 'shared' ? 'Udostępniono dokument.' : 'Pobrano dokument na dysk do wysłania.', 'success')).catch(error => { if ((error as { name?: string })?.name !== 'AbortError') showToast(errorMessage(error, 'Nie udało się udostępnić dokumentu.'), 'error'); }); }}
                   onOpenOcr={doc => setOcrDocumentId(doc.id)}
+                  onExportPdf={(doc, watermark) => void actions.exportDocumentPdf(doc, watermark)}
+                  onPropertiesDoc={setPropertiesDoc}
                   onEditRetention={doc => actions.setRetentionModal({ isOpen: true, docId: doc.id, value: doc.retentionValue || 5, unit: doc.retentionUnit || 'years', enabled: doc.retentionEnabled !== false })}
                 />
               ) : activeView === 'archive' && !searchQuery.trim() ? (
@@ -501,11 +589,13 @@ export default function App() {
                   onToggleSelect={actions.toggleDocSelection} onSelectAllVisible={setSelectedDocs} onClearSelected={actions.clearSelectedDocs}
                   onOpenPreview={doc => { setPreviewDoc(doc); setPreviewZoom(1); setHoverDocId(null); }}
                   onHoverEnter={(doc, anchor) => { setHoverAnchor(anchor); handleHoverEnter(doc.id); }} onHoverLeave={handleHoverLeave}
-                  onRestore={doc => actions.beginRestore(doc, 'archive')} onTrash={doc => actions.initiateAction('trash_doc', doc.id, doc.title)}
+                  onRestore={doc => actions.beginRestore(doc, 'archive')}
                   onTrashDocs={(docIds, onConfirmed) => actions.initiateAction('bulk_trash', 0, String(docIds.length), null, 0, 0, { docIds, onAfter: onConfirmed })}
                   onShareLink={doc => setSecureShareId(doc.id)}
                   onShareClassic={doc => { void shareDocumentClassic(API_URL, apiFetch, doc).then(mode => showToast(mode === 'shared' ? 'Udostępniono dokument.' : 'Pobrano dokument na dysk do wysłania.', 'success')).catch(error => { if ((error as { name?: string })?.name !== 'AbortError') showToast(errorMessage(error, 'Nie udało się udostępnić dokumentu.'), 'error'); }); }}
                   onOpenOcr={doc => setOcrDocumentId(doc.id)}
+                  onExportPdf={(doc, watermark) => void actions.exportDocumentPdf(doc, watermark)}
+                  onPropertiesDoc={setPropertiesDoc}
                 />
               ) : activeView === 'trash' && !searchQuery.trim() ? (
                 <TrashDesktop
@@ -521,13 +611,13 @@ export default function App() {
                   selectedDocs={selectedDocs} tags={tags} documentMenuId={documentMenuId} setDocumentMenuId={setDocumentMenuId}
                   renamingDocId={renamingDocId} setRenamingDocId={setRenamingDocId} renamingDocTitle={renamingDocTitle} setRenamingDocTitle={setRenamingDocTitle}
                   onToggleSelect={actions.toggleDocSelection} onSelectAllVisible={() => setSelectedDocs(displayedDocs.map(d => d.id))}
-                  onClearSelected={actions.clearSelectedDocs} onRecognizeSelected={() => void actions.recognizeSelected()}
+                  onClearSelected={actions.clearSelectedDocs}
                   onOpenBulkMove={() => setIsBulkMoveOpen(true)} onInitiateAction={(type, id, name) => actions.initiateAction(type, id, name)}
                   onOpenPreview={doc => { setPreviewDoc(doc); setPreviewZoom(1); setHoverDocId(null); }}
                   onHoverEnter={(doc, anchor) => { setHoverAnchor(anchor); handleHoverEnter(doc.id); }} onHoverLeave={handleHoverLeave}
                   onUpdateDocument={actions.updateDocument} onOpenMoveModal={setMoveModalDocId} onBeginRestore={actions.beginRestore}
                   onEditRetention={doc => actions.setRetentionModal({ isOpen: true, docId: doc.id, value: doc.retentionValue || 5, unit: doc.retentionUnit || 'years', enabled: doc.retentionEnabled !== false })}
-                  onOpenSecureShare={setSecureShareId} onOpenOcr={setOcrDocumentId} showToast={showToast}
+                  onOpenSecureShare={setSecureShareId} onOpenOcr={setOcrDocumentId} onExportPdf={(doc, watermark) => void actions.exportDocumentPdf(doc, watermark)} onPropertiesDoc={setPropertiesDoc} showToast={showToast}
                 />
               )}
             </div>

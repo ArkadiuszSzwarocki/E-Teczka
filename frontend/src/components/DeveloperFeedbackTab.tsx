@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 
 type FeedbackStatus = 'new' | 'in_progress' | 'resolved' | 'closed';
 
+type FeedbackThreadMessage = { id: string; author: 'user' | 'admin'; text: string; createdAt: number };
+
 type FeedbackItem = {
   id: number;
   accountEmail: string | null;
@@ -15,11 +17,14 @@ type FeedbackItem = {
   screenshotDataUrl: string | null;
   status: FeedbackStatus;
   createdAt: number;
+  messages?: FeedbackThreadMessage[];
 };
 
 type Props = {
   apiUrl: string;
   onStatus: (message: string) => void;
+  onOpenCountChange?: (count: number) => void;
+  onAdminReplyCountChange?: (count: number) => void;
 };
 
 const STATUS_LABELS: Record<FeedbackStatus, string> = {
@@ -29,12 +34,38 @@ const STATUS_LABELS: Record<FeedbackStatus, string> = {
   closed: 'Zamknięte',
 };
 
+const countUserReplies = (list: FeedbackItem[]) =>
+  list.filter(item => item.status !== 'closed' && item.messages?.at(-1)?.author === 'user').length;
+
 /** Developer panel tab displaying user bug reports and screenshots stored in MariaDB on QNAP. */
-export default function DeveloperFeedbackTab({ apiUrl, onStatus }: Props) {
+export default function DeveloperFeedbackTab({ apiUrl, onStatus, onOpenCountChange, onAdminReplyCountChange }: Props) {
   const [items, setItems] = useState<FeedbackItem[]>([]);
   const [filter, setFilter] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [replyDrafts, setReplyDrafts] = useState<Record<number, string>>({});
+
+  const sendReply = async (id: number) => {
+    const text = (replyDrafts[id] || '').trim();
+    if (text.length < 2) return;
+    try {
+      const response = await fetch(`${apiUrl}/api/dev/feedback/${id}/reply`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      const payload = await response.json().catch(() => ({})) as { message?: FeedbackThreadMessage; error?: string };
+      if (!response.ok || !payload.message) throw new Error(payload.error || 'Nie udało się wysłać pytania.');
+      setItems(prev => {
+        const next = prev.map(item => (item.id === id ? { ...item, messages: [...(item.messages || []), payload.message!] } : item));
+        if (!filter) onAdminReplyCountChange?.(countUserReplies(next));
+        return next;
+      });
+      setReplyDrafts(prev => ({ ...prev, [id]: '' }));
+    } catch (error) {
+      onStatus(error instanceof Error ? error.message : 'Błąd wysyłania pytania.');
+    }
+  };
 
   const load = async (statusFilter = filter) => {
     setLoading(true);
@@ -43,7 +74,12 @@ export default function DeveloperFeedbackTab({ apiUrl, onStatus }: Props) {
       const response = await fetch(`${apiUrl}/api/dev/feedback${query}`);
       const payload = await response.json().catch(() => ({})) as { items?: FeedbackItem[]; error?: string };
       if (!response.ok) throw new Error(payload.error || 'Nie udało się pobrać zgłoszeń z QNAP-a.');
-      setItems(payload.items || []);
+      const loaded = payload.items || [];
+      setItems(loaded);
+      if (!statusFilter) {
+        onOpenCountChange?.(loaded.filter(item => item.status !== 'closed').length);
+        onAdminReplyCountChange?.(countUserReplies(loaded));
+      }
     } catch (error) {
       onStatus(error instanceof Error ? error.message : 'Błąd pobierania zgłoszeń.');
     } finally {
@@ -62,7 +98,20 @@ export default function DeveloperFeedbackTab({ apiUrl, onStatus }: Props) {
       });
       const payload = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(payload.error || 'Nie udało się zaktualizować statusu.');
-      setItems(prev => prev.map(item => (item.id === id ? { ...item, status } : item)));
+      setItems(prev => {
+        const next = prev.map(item => (item.id === id ? { ...item, status } : item));
+        if (!filter) {
+          onOpenCountChange?.(next.filter(item => item.status !== 'closed').length);
+        } else {
+          void fetch(`${apiUrl}/api/dev/feedback`)
+            .then(r => (r.ok ? r.json() : null))
+            .then((all: { items?: FeedbackItem[] } | null) => {
+              if (all?.items) onOpenCountChange?.(all.items.filter(item => item.status !== 'closed').length);
+            })
+            .catch(() => undefined);
+        }
+        return next;
+      });
     } catch (error) {
       onStatus(error instanceof Error ? error.message : 'Błąd aktualizacji statusu.');
     }
@@ -100,6 +149,9 @@ export default function DeveloperFeedbackTab({ apiUrl, onStatus }: Props) {
                     <span className="rounded bg-slate-800 px-2 py-0.5 uppercase text-slate-200">{item.category}</span>
                     <span>{new Date(item.createdAt).toLocaleString('pl-PL')}</span>
                     {item.activeView && <span>widok: {item.activeView}</span>}
+                    {item.messages?.at(-1)?.author === 'user' && (
+                      <span className="rounded-full border border-amber-400/50 bg-amber-500/20 px-2.5 py-0.5 font-semibold text-amber-300">💬 Odpowiedź użytkownika</span>
+                    )}
                     {item.platform && <span>{item.platform}{item.appVersion ? ` v${item.appVersion}` : ''}</span>}
                   </div>
                   <h3 className="mt-2 text-lg font-semibold text-white">{item.title}</h3>
@@ -119,6 +171,28 @@ export default function DeveloperFeedbackTab({ apiUrl, onStatus }: Props) {
                   <img src={item.screenshotDataUrl} alt={`Zrzut do zgłoszenia #${item.id}`} className="max-h-48 object-contain bg-black/50" />
                 </button>
               )}
+              {item.messages && item.messages.length > 0 && (
+                <div className="mt-4 space-y-2 border-t border-slate-800 pt-3">
+                  {item.messages.map(msg => (
+                    <div key={msg.id} className={`rounded-lg px-3 py-2 text-xs ${msg.author === 'admin' ? 'border border-amber-500/40 bg-amber-950/30 text-amber-100' : 'border border-slate-700 bg-slate-800/70 text-slate-200'}`}>
+                      <p className="font-semibold">{msg.author === 'admin' ? 'Admin' : 'Użytkownik'} · {new Date(msg.createdAt).toLocaleString('pl-PL')}</p>
+                      <p className="mt-1 whitespace-pre-wrap">{msg.text}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="mt-3 flex gap-2">
+                <input
+                  type="text"
+                  value={replyDrafts[item.id] || ''}
+                  onChange={e => setReplyDrafts(prev => ({ ...prev, [item.id]: e.target.value }))}
+                  placeholder="Dopytaj zgłaszającego o szczegóły…"
+                  className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-white"
+                />
+                <button type="button" onClick={() => void sendReply(item.id)} className="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-bold text-slate-950 hover:bg-amber-400">
+                  Wyślij pytanie
+                </button>
+              </div>
             </article>
           ))}
         </div>

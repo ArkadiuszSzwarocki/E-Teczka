@@ -24,7 +24,8 @@ export function createDeveloperCatalogRouter(prisma?: PrismaClient) {
  router.get('/overrides', (_req, res) => res.json(getDevOverrides()));
  router.put('/overrides', (req, res) => res.json(setDevOverrides({
   bypassDeviceLimit: typeof req.body?.bypassDeviceLimit === 'boolean' ? req.body.bypassDeviceLimit : undefined,
-  bypassPlanLimits: typeof req.body?.bypassPlanLimits === 'boolean' ? req.body.bypassPlanLimits : undefined
+  bypassPlanLimits: typeof req.body?.bypassPlanLimits === 'boolean' ? req.body.bypassPlanLimits : undefined,
+  bypassRateLimit: typeof req.body?.bypassRateLimit === 'boolean' ? req.body.bypassRateLimit : undefined,
  })));
  router.post('/clear-sessions', async (_req, res) => {
   if (!prisma) return res.status(503).json({ error: 'Brak połączenia z bazą sesji.' });

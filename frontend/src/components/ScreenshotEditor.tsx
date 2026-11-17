@@ -21,6 +21,7 @@ const TOOLS: Array<{ id: AnnotationTool; label: string }> = [
   { id: 'arrow', label: '↗ Strzałka' },
   { id: 'rect', label: '▭ Kwadrat' },
   { id: 'text', label: 'T Tekst' },
+  { id: 'blur', label: '🌫️ Zamaż dane' },
 ];
 
 /** Interactive screenshot annotation canvas with arrows, rectangles, text labels, colors, and live element picker. */
@@ -34,6 +35,8 @@ export default function ScreenshotEditor({
   onClearScreenshot,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const textDragRef = useRef<{ startClientX: number; startClientY: number; startX: number; startY: number } | null>(null);
   const loadedImgRef = useRef<HTMLImageElement | null>(null);
   const [zoom, setZoom] = useState<number | null>(null);
 
@@ -142,6 +145,7 @@ export default function ScreenshotEditor({
           </div>
 
           <div
+            ref={stageRef}
             onWheel={e => { if (e.ctrlKey) { e.preventDefault(); changeZoom(e.deltaY < 0 ? 0.25 : -0.25); } }}
             className="relative min-h-0 flex-1 overflow-auto rounded-lg border border-slate-700 bg-black/40 p-2"
           >
@@ -155,7 +159,47 @@ export default function ScreenshotEditor({
               className={zoom ? 'block cursor-crosshair' : 'mx-auto max-h-full max-w-full cursor-crosshair object-contain'}
             />
             {annotator.pendingTextPos && (
-              <div className="absolute inset-x-3 bottom-3 flex items-center gap-2 rounded-lg border border-blue-500 bg-slate-950/95 p-2 shadow-xl">
+              <div
+                style={{
+                  left: `${Math.min(72, Math.max(1, annotator.pendingTextPos.x * 100))}%`,
+                  top: `${Math.min(78, Math.max(1, annotator.pendingTextPos.y * 100))}%`,
+                }}
+                className="absolute z-20 flex w-64 flex-col gap-1.5 rounded-xl border border-blue-500 bg-slate-950/95 p-2.5 shadow-2xl"
+              >
+                <div
+                  onPointerDown={e => {
+                    e.stopPropagation();
+                    if (!annotator.pendingTextPos) return;
+                    textDragRef.current = {
+                      startClientX: e.clientX,
+                      startClientY: e.clientY,
+                      startX: annotator.pendingTextPos.x,
+                      startY: annotator.pendingTextPos.y,
+                    };
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                  }}
+                  onPointerMove={e => {
+                    const drag = textDragRef.current;
+                    const stage = stageRef.current;
+                    if (!drag || !stage) return;
+                    const rect = stage.getBoundingClientRect();
+                    const dx = (e.clientX - drag.startClientX) / (rect.width || 1);
+                    const dy = (e.clientY - drag.startClientY) / (rect.height || 1);
+                    annotator.setPendingTextPos({
+                      x: Math.min(0.75, Math.max(0.01, drag.startX + dx)),
+                      y: Math.min(0.82, Math.max(0.01, drag.startY + dy)),
+                    });
+                  }}
+                  onPointerUp={e => {
+                    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                      e.currentTarget.releasePointerCapture(e.pointerId);
+                    }
+                    textDragRef.current = null;
+                  }}
+                  className="flex cursor-grab items-center justify-between text-[11px] font-semibold text-blue-300 select-none active:cursor-grabbing"
+                >
+                  <span>⠿ Przesuń opis w dogodne miejsce</span>
+                </div>
                 <input
                   autoFocus
                   type="text"
@@ -165,11 +209,13 @@ export default function ScreenshotEditor({
                     if (e.key === 'Enter') annotator.confirmTextAnnotation();
                     if (e.key === 'Escape') annotator.cancelTextAnnotation();
                   }}
-                  placeholder="Wpisz opis na zrzucie i naciśnij Enter…"
-                  className="min-w-0 flex-1 rounded border border-slate-600 bg-slate-900 px-2.5 py-1.5 text-xs text-white outline-none focus:border-blue-400"
+                  placeholder="Opisz problem (Enter = zapisz na obrazie)…"
+                  className="w-full rounded border border-slate-600 bg-slate-900 px-2.5 py-1.5 text-xs text-white outline-none focus:border-blue-400"
                 />
-                <button type="button" onClick={annotator.confirmTextAnnotation} className="rounded bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white">Dodaj</button>
-                <button type="button" onClick={annotator.cancelTextAnnotation} className="rounded px-2 py-1.5 text-xs text-slate-400 hover:text-white">Anuluj</button>
+                <div className="flex justify-end gap-1.5">
+                  <button type="button" onClick={annotator.cancelTextAnnotation} className="rounded px-2 py-1 text-xs text-slate-400 hover:text-white">Anuluj</button>
+                  <button type="button" onClick={annotator.confirmTextAnnotation} className="rounded bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-500">Dodaj na zrzut</button>
+                </div>
               </div>
             )}
           </div>

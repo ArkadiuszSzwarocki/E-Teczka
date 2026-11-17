@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Alert, TextInput, Image, ActivityIndicator, ScrollView, Switch, Modal } from "react-native";
 import * as FileSystem from "expo-file-system/legacy";
+import * as ImageManipulator from "expo-image-manipulator";
 import { Ionicons } from "@expo/vector-icons";
 import DocumentScanner, { ResponseType, ScanDocumentResponseStatus } from "react-native-document-scanner-plugin";
 import { useRoute, useNavigation, type RouteProp } from "@react-navigation/native";
@@ -35,6 +36,7 @@ export default function ScannerScreen() {
   const [retentionValue, setRetentionValue] = useState("5");
   const [retentionUnit, setRetentionUnit] = useState<RetentionUnit>("years");
   const [retentionEnabled, setRetentionEnabled] = useState(false);
+  const [bwMode, setBwMode] = useState(true);
   const [unitPickerOpen, setUnitPickerOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingLabel, setProcessingLabel] = useState("");
@@ -81,9 +83,19 @@ export default function ScannerScreen() {
         responseType: ResponseType.ImageFilePath,
       });
       if (result.status !== ScanDocumentResponseStatus.Success || !result.scannedImages?.[0]) return;
-      setProcessingLabel("Zapisywanie strony roboczej…");
-      const localUri = `${FileSystem.documentDirectory}scan_draft_${Date.now()}.jpg`;
-      await FileSystem.copyAsync({ from: result.scannedImages[0], to: localUri });
+      setProcessingLabel("Optymalizowanie skanu (WebP 1200px)…");
+      let localUri = `${FileSystem.documentDirectory}scan_draft_${Date.now()}.webp`;
+      try {
+        const manipulated = await ImageManipulator.manipulateAsync(
+          result.scannedImages[0],
+          [{ resize: { width: 1200 } }],
+          { compress: 0.7, format: ImageManipulator.SaveFormat.WEBP },
+        );
+        await FileSystem.copyAsync({ from: manipulated.uri, to: localUri });
+      } catch {
+        localUri = `${FileSystem.documentDirectory}scan_draft_${Date.now()}.jpg`;
+        await FileSystem.copyAsync({ from: result.scannedImages[0], to: localUri });
+      }
       const nextPages = [...pages, localUri];
       setPages(nextPages);
       const nextTitle = title || `Skan ${new Date().toLocaleDateString("pl-PL")}`;
@@ -129,7 +141,7 @@ export default function ScannerScreen() {
     try {
       setIsProcessing(true);
       if (!uploadId.current) { uploadId.current = 'draft_' + Date.now() + '_' + Math.random().toString(36).slice(2, 14); await persistDraft(pages); }
-      const result = await uploadScanDocument({ uploadId: uploadId.current, pages, folderId: targetFolderId, title: title.trim(), retentionEnabled, retentionValue, retentionUnit, onStage: setProcessingLabel });
+      const result = await uploadScanDocument({ uploadId: uploadId.current, pages, folderId: targetFolderId, title: title.trim(), retentionEnabled, retentionValue, retentionUnit, grayscale: bwMode, onStage: setProcessingLabel });
       await Promise.all(pages.map((uri) => FileSystem.deleteAsync(uri, { idempotent: true })));
       await clearScanDraft();
       Alert.alert("Dokument zapisany", `Scalono ${pages.length} ${pages.length === 1 ? "stronę" : "stron"} do jednego PDF i zapisano w kartotece. ${result.pdfa ? "Zgodność PDF/A‑2b potwierdzona." : result.pdfaWarning || ""}`, [
@@ -160,6 +172,7 @@ export default function ScannerScreen() {
       </ScrollView>
       <Text style={styles.label}>Nazwa dokumentu</Text>
       <TextInput value={title} onChangeText={setTitle} style={styles.input} placeholder="np. Faktura 12/2026" placeholderTextColor="#64748b" />
+      <View style={styles.lifeToggle}><View style={{ flex: 1, paddingRight: 8 }}><Text style={styles.lifeToggleTitle}>{bwMode ? "Tryb dokumentu (Cz.-B. / B&W)" : "Tryb kolorowy"}</Text><Text style={styles.lifeToggleText}>{bwMode ? "Mniejszy plik PDF i wyższy kontrast dla OCR." : "Zachowuje pełne kolory skanu."}</Text></View><Switch value={bwMode} onValueChange={setBwMode} trackColor={{ false: "#475569", true: "#2563eb" }} thumbColor="white" /></View>
       <View style={styles.lifeHeader}><Text style={styles.label}>Data życia dokumentu</Text><TouchableOpacity onPress={() => Alert.alert("Czym jest data życia dokumentu?", "To czas, po którym dokument zostanie automatycznie przeniesiony do Kosza. Gdy jest wyłączona, dokument pozostaje w kartotece, dopóki nie przeniesiesz go ręcznie.")}><Ionicons name="information-circle-outline" size={21} color="#60a5fa" /></TouchableOpacity></View>
       <View style={styles.lifeToggle}><View><Text style={styles.lifeToggleTitle}>{retentionEnabled ? "Włączona" : "Wyłączona"}</Text><Text style={styles.lifeToggleText}>{retentionEnabled ? "Dokument będzie przeniesiony do Kosza po upływie czasu." : "Dokument nie ma automatycznej daty usunięcia."}</Text></View><Switch value={retentionEnabled} onValueChange={setRetentionEnabled} trackColor={{ false: "#475569", true: "#16a34a" }} thumbColor="white" /></View>
       {retentionEnabled && <View style={styles.retentionRow}>
@@ -197,7 +210,21 @@ export default function ScannerScreen() {
       <View style={styles.featureBox}>
         <Text style={styles.featureText}>• automatyczne wykrywanie rogów</Text>
         <Text style={styles.featureText}>• przycięcie tła i korekcja perspektywy</Text>
-        <Text style={styles.featureText}>• kompresja obrazu do 70% jakości</Text>
+        <Text style={styles.featureText}>• kompresja WebP (70% jakości, szer. 1200px)</Text>
+      </View>
+      <View style={styles.modeSwitchRow}>
+        <TouchableOpacity
+          style={[styles.modeChip, bwMode && styles.modeChipActive]}
+          onPress={() => setBwMode(true)}
+        >
+          <Text style={styles.modeChipText}>Czarno-biały (B&W)</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.modeChip, !bwMode && styles.modeChipActive]}
+          onPress={() => setBwMode(false)}
+        >
+          <Text style={styles.modeChipText}>Kolorowy</Text>
+        </TouchableOpacity>
       </View>
       <TouchableOpacity style={styles.startButton} onPress={startDocumentScan} disabled={isProcessing}>{isProcessing ? <View style={styles.processingRow}><ActivityIndicator color="white" /><Text style={styles.buttonText}>{processingLabel || "Przetwarzanie…"}</Text></View> : <Text style={styles.buttonText}>Skanuj telefonem</Text>}</TouchableOpacity>
       <TouchableOpacity style={styles.printerButton} onPress={() => void openPrinterScan()} disabled={isProcessing}><Ionicons name="print-outline" size={20} color="#bfdbfe" /><Text style={styles.printerButtonText}>Skanuj z drukarki</Text></TouchableOpacity>
@@ -210,6 +237,7 @@ const styles = StyleSheet.create({
   startContainer: { flex: 1, backgroundColor: "#0f172a", justifyContent: "center", padding: 24 },
   startTitle: { color: "white", fontSize: 28, fontWeight: "bold", marginBottom: 12 }, startText: { color: "#cbd5e1", fontSize: 16, lineHeight: 23 },
   featureBox: { backgroundColor: "#1e293b", borderColor: "#334155", borderWidth: 1, borderRadius: 12, padding: 16, marginTop: 24, gap: 8 }, featureText: { color: "#bfdbfe", fontSize: 14 },
+  modeSwitchRow: { flexDirection: "row", gap: 10, marginTop: 14 }, modeChip: { flex: 1, paddingVertical: 11, borderRadius: 10, borderWidth: 1, borderColor: "#334155", backgroundColor: "#1e293b", alignItems: "center" }, modeChipActive: { borderColor: "#3b82f6", backgroundColor: "#1d4ed8" }, modeChipText: { color: "#ffffff", fontSize: 13, fontWeight: "700" },
   startButton: { backgroundColor: "#16a34a", padding: 16, borderRadius: 10, alignItems: "center", marginTop: 28 }, warning: { color: "#fbbf24", fontSize: 13, textAlign: "center", marginTop: 16 }, folderPicker: { marginTop: 12, maxHeight: "55%" }, pickerBack: { marginTop: 20, flexDirection: "row", gap: 7, alignItems: "center", alignSelf: "flex-start" }, pickerBackText: { color: "#bfdbfe", fontWeight: "700", fontSize: 13 }, folderChoice: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#1e293b", borderColor: "#334155", borderWidth: 1, borderRadius: 10, padding: 14 }, folderChoiceTitle: { color: "white", fontWeight: "700", fontSize: 16 }, folderChoiceMeta: { color: "#94a3b8", marginTop: 3, fontSize: 12 },
   printerButton: { marginTop: 12, borderWidth: 1, borderColor: "#3b82f6", backgroundColor: "#172554", padding: 15, borderRadius: 10, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 9 }, printerButtonText: { color: "#dbeafe", fontWeight: "bold" }, printerModal: { margin: 18, borderRadius: 16, backgroundColor: "#1e293b", borderWidth: 1, borderColor: "#475569", padding: 18 }, printerTitle: { color: "white", fontSize: 19, fontWeight: "800" }, printerIntro: { color: "#94a3b8", fontSize: 13, lineHeight: 19, marginTop: 7, marginBottom: 16 }, printerChoice: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#0f172a", borderColor: "#334155", borderWidth: 1, borderRadius: 10, padding: 13, marginBottom: 9 }, printerName: { color: "white", fontWeight: "700", fontSize: 14 }, printerManufacturer: { color: "#94a3b8", fontSize: 11, marginTop: 2 }, cancelPrinterButton: { alignItems: "center", padding: 13, marginTop: 5 }, cancelPrinterText: { color: "#cbd5e1", fontWeight: "700" },
   previewContainer: { flexGrow: 1, backgroundColor: "#0f172a", padding: 20, paddingTop: 56, paddingBottom: 42 }, previewTitle: { color: "white", fontSize: 22, fontWeight: "bold", marginBottom: 14 },

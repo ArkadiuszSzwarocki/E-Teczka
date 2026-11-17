@@ -1,6 +1,6 @@
 type Codec = { encrypt: (value: string) => Promise<string>; decrypt: (value: string) => Promise<string>; encryptChunk?: (value: string) => Promise<string>; decryptChunk?: (value: string) => Promise<string> };
 type Manifest = { version: 2; directory: string; chunks: number; size: number; filePath: string };
-const CHUNK_SIZE = 192 * 1024;
+const CHUNK_SIZE = 384 * 1024;
 const manifestPath = (root: string, id: number) => `${root}${id}.manifest.enc`;
 const yieldToUI = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 

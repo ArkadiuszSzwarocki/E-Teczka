@@ -17,6 +17,8 @@ export type ReceiptItemEntry = {
 
 export type AnalyticsSummary = {
   selectedMonth: string;
+  receiptReadingLocked?: boolean;
+  receiptReadingTrialEndsAt?: string | null;
   costsThisMonth: { totalCents: number; paidCents: number; unpaidCents: number; currency: string };
   monthlyExpenses: Array<{ monthKey: string; label: string; totalCents: number }>;
   documentStats: { last30DaysCount: number; totalCount: number };

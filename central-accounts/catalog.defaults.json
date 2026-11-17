@@ -1,7 +1,8 @@
 {
   "version": 1,
   "usageDays": 7,
-  "ocrTrialDays": 14,
+  "ocrTrialDays": 30,
+  "standardOcrTrialDays": 60,
   "backupTrialMonths": 2,
   "plans": {
     "free": {

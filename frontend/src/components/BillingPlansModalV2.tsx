@@ -11,24 +11,27 @@ type Feature = { name: string; description?: string; free: Value; standard: Valu
 type QuoteItem = { base: number; amount: number; promotion: { name: string; percent: number } | null; currency: string };
 type PlanEntry = { name: string; monthly: number; yearly: number; mobileDevices: number; accountDevices: number | null; ocr: boolean; cloudBackup: boolean; limits: { documents: number | null; tags: number | null; cameraScan: number | null; printerScan: number | null; merge: number | null } };
 type CatalogResponse = {
-  catalog: { usageDays: number; ocrTrialDays: number; backupTrialMonths: number; plans: Record<AnyPlan, PlanEntry> };
+  catalog: { usageDays: number; ocrTrialDays: number; standardOcrTrialDays?: number; backupTrialMonths: number; plans: Record<AnyPlan, PlanEntry> };
   quotes: Record<PaidPlan, Record<BillingInterval, QuoteItem>>;
 };
 
 const money = (cents: number) => (cents / 100).toLocaleString('pl-PL', { style: 'currency', currency: 'PLN' });
 const fmtLimit = (v: number | null, suffix = '') => (v === null ? 'Bez limitu' : `${v}${suffix}`);
 const fmtDocs = (v: number | null) => (v === null ? 'Bez limitu' : `Do ${v}`);
+const fmtOcrTrial = (days: number) => (days <= 0 ? false : days % 30 === 0 ? (days / 30 === 1 ? '1 miesiąc próbny' : `${days / 30} miesiące próbne`) : `${days} dni próbne`);
 
 function buildSections(catalog?: CatalogResponse['catalog']): { title: string; items: Feature[] }[] {
   const days = catalog?.usageDays ?? 7;
-  const ocrDays = catalog?.ocrTrialDays ?? 14;
+  const ocrDays = catalog?.ocrTrialDays ?? 30;
+  const standardOcrDays = catalog?.standardOcrTrialDays ?? 60;
   const backupMonths = catalog?.backupTrialMonths ?? 2;
   const f = catalog?.plans.free;
   const s = catalog?.plans.standard;
   const p = catalog?.plans.premium;
   const fam = catalog?.plans.family;
   const biz = catalog?.plans.business;
-  const trialOcr = ocrDays > 0 ? `${ocrDays} dni próbne` : false;
+  const trialFreeOcr = fmtOcrTrial(ocrDays);
+  const trialStandardOcr = fmtOcrTrial(standardOcrDays);
   const trialBackup = backupMonths > 0 ? `${backupMonths} miesiące próbne` : false;
 
   return [
@@ -42,7 +45,8 @@ function buildSections(catalog?: CatalogResponse['catalog']): { title: string; i
         { name: 'Skanowanie aparatem telefonu', description: `Limit w kroczącym okresie ${days} dni.`, free: fmtLimit(f ? f.limits.cameraScan : 50, ` / ${days} dni`), standard: fmtLimit(s ? s.limits.cameraScan : 100, ` / ${days} dni`), premium: fmtLimit(p ? p.limits.cameraScan : null, ` / ${days} dni`), family: fmtLimit(fam ? fam.limits.cameraScan : null, ` / ${days} dni`), business: fmtLimit(biz ? biz.limits.cameraScan : null, ` / ${days} dni`) },
         { name: 'Połączenie stron podczas wgrywania', description: `Limit w kroczącym okresie ${days} dni.`, free: fmtLimit(f ? f.limits.merge : 10, ` / ${days} dni`), standard: fmtLimit(s ? s.limits.merge : 20, ` / ${days} dni`), premium: fmtLimit(p ? p.limits.merge : null, ` / ${days} dni`), family: fmtLimit(fam ? fam.limits.merge : null, ` / ${days} dni`), business: fmtLimit(biz ? biz.limits.merge : null, ` / ${days} dni`) },
         { name: 'Skanowanie z drukarki', description: `Limit w kroczącym okresie ${days} dni.`, free: fmtLimit(f ? f.limits.printerScan : 50, ` / ${days} dni`), standard: fmtLimit(s ? s.limits.printerScan : 100, ` / ${days} dni`), premium: fmtLimit(p ? p.limits.printerScan : null, ` / ${days} dni`), family: fmtLimit(fam ? fam.limits.printerScan : null, ` / ${days} dni`), business: fmtLimit(biz ? biz.limits.printerScan : null, ` / ${days} dni`) },
-        { name: 'OCR i wyszukiwanie w treści dokumentów', description: 'Lokalnie na komputerze. Okres próbny liczony jest od pierwszego użycia OCR.', free: f?.ocr ? 'Bez limitu' : trialOcr, standard: s?.ocr ? 'Bez limitu' : trialOcr, premium: p?.ocr ?? true ? 'Bez limitu' : trialOcr, family: fam?.ocr ?? true ? 'Bez limitu' : trialOcr, business: biz?.ocr ?? true ? 'Bez limitu' : trialOcr },
+        { name: 'OCR i wyszukiwanie w treści dokumentów', description: 'Lokalnie na komputerze. Okres próbny liczony jest od pierwszego użycia OCR.', free: f?.ocr ? 'Bez limitu' : trialFreeOcr, standard: s?.ocr ? 'Bez limitu' : trialStandardOcr, premium: p?.ocr ?? true ? 'Bez limitu' : trialFreeOcr, family: fam?.ocr ?? true ? 'Bez limitu' : trialFreeOcr, business: biz?.ocr ?? true ? 'Bez limitu' : trialFreeOcr },
+        { name: 'Odczyt paragonów i faktur do dashboardu', description: 'Automatyczne podsumowanie wydatków i terminów płatności w panelu analiz.', free: f?.ocr ? 'Bez limitu' : trialFreeOcr, standard: s?.ocr ? 'Bez limitu' : trialStandardOcr, premium: 'Bez limitu', family: 'Bez limitu', business: 'Bez limitu' },
         { name: 'Eksport zaznaczonych dokumentów do jednego PDF', free: false, standard: false, premium: true, family: true, business: true },
         { name: 'Tworzenie i usuwanie tagów', description: 'Limit dotyczy tagów przypisanych do konta.', free: fmtLimit(f ? f.limits.tags : 3, ' tagi'), standard: fmtLimit(s ? s.limits.tags : 6, ' tagów'), premium: fmtLimit(p ? p.limits.tags : null), family: fmtLimit(fam ? fam.limits.tags : null), business: fmtLimit(biz ? biz.limits.tags : null) },
       ],
@@ -55,8 +59,8 @@ function buildSections(catalog?: CatalogResponse['catalog']): { title: string; i
         { name: 'Lokalna kopia i przywracanie', free: true, standard: true, premium: true, family: true, business: true },
         { name: 'Wybrane dokumenty dostępne offline na telefonie', description: 'Wymaga wcześniejszego pobrania na urządzenie.', free: true, standard: true, premium: true, family: true, business: true },
         { name: 'Kopia na NAS lub do chmury', description: 'Okres próbny liczony od pierwszego użycia. Kopia wymaga działającego komputera.', free: f?.cloudBackup ? true : trialBackup, standard: s?.cloudBackup ? true : trialBackup, premium: p?.cloudBackup ?? true, family: fam?.cloudBackup ?? true, business: biz?.cloudBackup ?? true },
-        { name: 'Wygasające linki do dokumentów', description: 'Funkcja w przygotowaniu.', free: false, standard: false, premium: 'W przygotowaniu', family: 'W przygotowaniu', business: 'W przygotowaniu' },
-        { name: 'Znak wodny na dokumentach', description: 'Funkcja w przygotowaniu.', free: false, standard: false, premium: 'W przygotowaniu', family: 'W przygotowaniu', business: 'W przygotowaniu' },
+        { name: 'Wygasające linki do dokumentów', description: 'Bezpieczne linki z terminem wygaśnięcia, opcjonalnym PIN-em i trybem jednorazowym.', free: false, standard: false, premium: true, family: true, business: true },
+        { name: 'Znak wodny na dokumentach', description: 'Opcjonalny znak wodny (e-mail właściciela, logo i E-Teczka) w eksporcie PDF i bezpiecznych linkach.', free: false, standard: false, premium: true, family: true, business: true },
       ],
     },
   ];

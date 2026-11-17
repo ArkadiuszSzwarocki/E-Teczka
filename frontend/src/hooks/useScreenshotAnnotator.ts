@@ -6,10 +6,11 @@ type DragState = { startX: number; startY: number; currentX: number; currentY: n
 type UseScreenshotAnnotatorArgs = {
   onPickElementRect?: (normRect: { x1: number; y1: number; x2: number; y2: number }, label: string) => void;
   onCaptureLive?: () => Promise<string | null>;
+  onTextConfirmed?: (text: string) => void;
 };
 
 /** Manages screenshot annotation tools (arrows, rectangles, text, colors) and live UI element picking. */
-export function useScreenshotAnnotator({ onCaptureLive }: UseScreenshotAnnotatorArgs = {}) {
+export function useScreenshotAnnotator({ onCaptureLive, onTextConfirmed }: UseScreenshotAnnotatorArgs = {}) {
   const [tool, setTool] = useState<AnnotationTool>('arrow');
   const [color, setColor] = useState<string>('#ef4444');
   const [annotations, setAnnotations] = useState<ScreenshotAnnotation[]>([]);
@@ -46,16 +47,26 @@ export function useScreenshotAnnotator({ onCaptureLive }: UseScreenshotAnnotator
     const dx = Math.abs(drag.currentX - drag.startX);
     const dy = Math.abs(drag.currentY - drag.startY);
     if (dx > 0.01 || dy > 0.01) {
-      const next: ScreenshotAnnotation = {
-        id: `${Date.now()}_${Math.random()}`,
-        type: tool === 'rect' ? 'rect' : 'arrow',
-        color,
-        x1: drag.startX,
-        y1: drag.startY,
-        x2: drag.currentX,
-        y2: drag.currentY,
-      };
+      const next: ScreenshotAnnotation =
+        tool === 'blur'
+          ? { id: `${Date.now()}_${Math.random()}`, type: 'blur', x1: drag.startX, y1: drag.startY, x2: drag.currentX, y2: drag.currentY }
+          : {
+              id: `${Date.now()}_${Math.random()}`,
+              type: tool === 'rect' ? 'rect' : 'arrow',
+              color,
+              x1: drag.startX,
+              y1: drag.startY,
+              x2: drag.currentX,
+              y2: drag.currentY,
+            };
       setAnnotations(prev => [...prev, next]);
+      if (tool === 'rect') {
+        const rightEdge = Math.max(drag.startX, drag.currentX);
+        const topEdge = Math.min(drag.startY, drag.currentY);
+        const sideX = rightEdge < 0.7 ? rightEdge + 0.02 : Math.max(0.02, Math.min(drag.startX, drag.currentX) - 0.28);
+        setPendingTextPos({ x: Math.min(0.72, sideX), y: Math.min(0.82, Math.max(0.02, topEdge)) });
+        setPendingTextValue('');
+      }
     }
     setDrag(null);
   };
@@ -67,6 +78,7 @@ export function useScreenshotAnnotator({ onCaptureLive }: UseScreenshotAnnotator
         ...prev,
         { id: `${Date.now()}_${Math.random()}`, type: 'text', color, x: pendingTextPos.x, y: pendingTextPos.y, text: trimmed },
       ]);
+      onTextConfirmed?.(trimmed);
     }
     setPendingTextPos(null);
     setPendingTextValue('');
@@ -119,18 +131,25 @@ export function useScreenshotAnnotator({ onCaptureLive }: UseScreenshotAnnotator
       if (rect && onCaptureLive) {
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         await onCaptureLive();
+        const x1 = Math.max(0, rect.left / vw);
+        const y1 = Math.max(0, rect.top / vh);
+        const x2 = Math.min(1, rect.right / vw);
+        const y2 = Math.min(1, rect.bottom / vh);
         setAnnotations(prev => [
           ...prev,
           {
             id: `${Date.now()}_pick`,
             type: 'rect',
             color,
-            x1: Math.max(0, rect.left / vw),
-            y1: Math.max(0, rect.top / vh),
-            x2: Math.min(1, rect.right / vw),
-            y2: Math.min(1, rect.bottom / vh),
+            x1,
+            y1,
+            x2,
+            y2,
           },
         ]);
+        const sideX = x2 < 0.7 ? x2 + 0.02 : Math.max(0.02, x1 - 0.28);
+        setPendingTextPos({ x: Math.min(0.72, sideX), y: Math.min(0.82, Math.max(0.02, y1)) });
+        setPendingTextValue('');
       }
       setPickingLive(false);
     };
@@ -149,15 +168,17 @@ export function useScreenshotAnnotator({ onCaptureLive }: UseScreenshotAnnotator
   const previewAnnotations: ScreenshotAnnotation[] = drag
     ? [
         ...annotations,
-        {
-          id: '__preview__',
-          type: tool === 'rect' ? 'rect' : 'arrow',
-          color,
-          x1: drag.startX,
-          y1: drag.startY,
-          x2: drag.currentX,
-          y2: drag.currentY,
-        },
+        tool === 'blur'
+          ? { id: '__preview__', type: 'blur', x1: drag.startX, y1: drag.startY, x2: drag.currentX, y2: drag.currentY }
+          : {
+              id: '__preview__',
+              type: tool === 'rect' ? 'rect' : 'arrow',
+              color,
+              x1: drag.startX,
+              y1: drag.startY,
+              x2: drag.currentX,
+              y2: drag.currentY,
+            },
       ]
     : annotations;
 
@@ -167,6 +188,7 @@ export function useScreenshotAnnotator({ onCaptureLive }: UseScreenshotAnnotator
     annotations,
     previewAnnotations,
     pendingTextPos,
+    setPendingTextPos,
     pendingTextValue,
     setPendingTextValue,
     cancelTextAnnotation: () => { setPendingTextPos(null); setPendingTextValue(''); },

@@ -16,12 +16,15 @@ export function activePlan(plan: string | null | undefined, status: string | nul
   if (!['active', 'trialing'].includes(status || '') || (cancelAtPeriodEnd && currentPeriodEnd && currentPeriodEnd <= now)) return 'free';
   return plan === 'premium' || plan === 'standard' || plan === 'family' || plan === 'business' ? plan : 'free';
 }
-export function trialEnd(feature: TrialFeature, startedAt: Date): Date {
-  if (feature === 'ocr') return new Date(startedAt.getTime() + getCatalog().ocrTrialDays * 24 * 60 * 60 * 1000);
+export function trialEnd(feature: TrialFeature, startedAt: Date, plan: Plan = 'free'): Date {
+  if (feature === 'ocr') {
+    const days = plan === 'standard' ? (getCatalog().standardOcrTrialDays ?? 60) : getCatalog().ocrTrialDays;
+    return new Date(startedAt.getTime() + days * 24 * 60 * 60 * 1000);
+  }
   // Add two calendar months, clamping dates such as 31 January to the last day of March.
   const end = new Date(startedAt); const day = end.getUTCDate(); end.setUTCDate(1); end.setUTCMonth(end.getUTCMonth() + getCatalog().backupTrialMonths);
   const lastDay = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() + 1, 0)).getUTCDate(); end.setUTCDate(Math.min(day, lastDay)); return end;
 }
 export function trialAvailable(plan: Plan, feature: TrialFeature, startedAt: Date, now = new Date()): boolean {
-  return getCatalog().plans[plan][feature === 'ocr' ? 'ocr' : 'cloudBackup'] || (startedAt <= now && now < trialEnd(feature, startedAt));
+  return getCatalog().plans[plan][feature === 'ocr' ? 'ocr' : 'cloudBackup'] || (startedAt <= now && now < trialEnd(feature, startedAt, plan));
 }

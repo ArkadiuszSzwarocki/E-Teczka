@@ -18,6 +18,8 @@ import ConnectionSettingsCard from "../components/ConnectionSettingsCard";
 import RetentionAlertsCard, { type RetentionAlert } from "../components/RetentionAlertsCard";
 import MoreMenu, { type MoreSection } from "../components/MoreMenu";
 import CentralAccountCard from "../components/CentralAccountCard";
+import ConflictResolutionModal from "../components/ConflictResolutionModal";
+import OfflineStorageCard from "../components/OfflineStorageCard";
 
 type SyncScreenProps = BottomTabScreenProps<MainTabParamList, "Ustawienia"> & {
   computerOnline: boolean;
@@ -51,7 +53,7 @@ export default function SyncScreen({ navigation, computerOnline, onPaired, onLoc
   const [autoLockMinutes, setAutoLockMinutesState] = useState(1);
   const [offlineFolders, setOfflineFolders] = useState<FolderSummary[]>([]); const [offlineFolderIds, setOfflineFolderIdsState] = useState<number[]>([]); const [offlineBytes, setOfflineBytes] = useState(0);
   const [folderLoadError, setFolderLoadError] = useState('');
-  const [syncInfo, setSyncInfo] = useState({ pending: 0, conflicts: 0 }); const [syncing, setSyncing] = useState(false);
+  const [syncInfo, setSyncInfo] = useState({ pending: 0, conflicts: 0 }); const [syncing, setSyncing] = useState(false); const [conflictsModalOpen, setConflictsModalOpen] = useState(false);
 
   useEffect(() => navigation.addListener('tabPress', () => setSection('menu')), [navigation]);
   useEffect(() => {
@@ -194,8 +196,22 @@ export default function SyncScreen({ navigation, computerOnline, onPaired, onLoc
       {section === 'account' && process.env.EXPO_PUBLIC_CENTRAL_ACCOUNT_URL && <CentralAccountCard origin={process.env.EXPO_PUBLIC_CENTRAL_ACCOUNT_URL} googleWebClientId={process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || ''} />}
       {section === "connection" && <ConnectionSettingsCard status={status} statusColor={statusColor} serverUrl={serverUrl} pairingCode={pairingCode} isPairing={isPairing} onServerUrlChange={setServerUrl} onPairingCodeChange={setPairingCode} onPair={() => void pairComputer()} onRefresh={() => void testConnection()} onQrPairing={(url, code) => { setServerUrl(url); setPairingCode(code); }} />}
       {section === "alerts" && <RetentionAlertsCard alerts={lifeAlerts} loading={alertsLoading} onRefresh={() => void loadLifeAlerts()} />}
-      {section === "sync" && <View style={styles.card}><Text style={styles.vaultTitle}>Synchronizacja offline</Text><Text style={styles.subText}>{syncInfo.pending ? `Oczekujące zmiany: ${syncInfo.pending}` : "Brak oczekujących zmian"}{syncInfo.conflicts ? ` · Konflikty: ${syncInfo.conflicts}` : ""}</Text><TouchableOpacity disabled={syncing} style={[styles.btn, syncing && styles.disabledBtn]} onPress={async () => { try { setSyncing(true); const result = await syncNow(); setSyncInfo({ pending: result.pending, conflicts: result.conflicts }); Alert.alert("Synchronizacja zakończona", "Zsynchronizowano zmiany i listę dokumentów. Aby pobrać pliki, wybierz kartoteki i kliknij „Pobierz wybrane na telefon”."); } catch (error: unknown) { Alert.alert("Synchronizacja nie została zakończona", errorMessage(error, "Sprawdź połączenie z komputerem. Zmiany pozostają w kolejce.")); } finally { setSyncing(false); } }}><Text style={styles.btnText}>{syncing ? "Synchronizuję…" : "Synchronizuj teraz"}</Text></TouchableOpacity></View>}
-      {section === "sync" && <View style={styles.card}><Text style={styles.vaultTitle}>Dane aplikacyjne offline</Text><Text style={styles.subText}>Zajętość lokalnej kopii: {(offlineBytes / 1024 / 1024).toFixed(1)} MB</Text><TouchableOpacity style={styles.btn} onPress={() => { void loadOfflineFolders(); void refreshOfflineBytes(); }}><Text style={styles.btnText}>Odśwież listę kartotek</Text></TouchableOpacity>{Boolean(folderLoadError) && <Text style={styles.hint}>{folderLoadError}</Text>}{offlineFolders.length > 0 && <><Text style={styles.optionLabel}>Kartoteki pobierane na telefon</Text>{offlineFolders.filter(folder => folder.parentId !== null).map(folder => <TouchableOpacity key={folder.id} style={styles.folderChoice} onPress={() => void toggleOfflineFolder(folder.id)}><Ionicons name={offlineFolderIds.includes(folder.id) ? "checkbox" : "square-outline"} size={22} color={offlineFolderIds.includes(folder.id) ? "#22c55e" : "#94a3b8"} /><Text style={styles.btnText}>{folder.name}</Text></TouchableOpacity>)}<Text style={styles.hint}>Zaznacz podkartoteki, a następnie pobierz ich dokumenty na telefon. Kopie są szyfrowane.</Text></>}<TouchableOpacity disabled={vaultSyncing} style={[styles.saveBtn, vaultSyncing && styles.disabledBtn]} onPress={() => void refreshVault()}>{vaultSyncing ? <ActivityIndicator color="white" /> : <Text style={styles.btnText}>Pobierz wybrane na telefon ({offlineFolderIds.length})</Text>}</TouchableOpacity><TouchableOpacity disabled={vaultSyncing || syncing} style={[styles.lockNowButton, (vaultSyncing || syncing) && styles.disabledBtn]} onPress={removeOfflineCopies}><Ionicons name="trash-outline" size={17} color="white" /><Text style={styles.btnText}>Usuń kopie offline z telefonu</Text></TouchableOpacity>{Boolean(vaultProgress) && <Text style={styles.hint}>{vaultProgress}</Text>}</View>}{section === "settings" && <View style={styles.vaultCard}>
+      {section === "sync" && <View style={styles.card}><Text style={styles.vaultTitle}>Synchronizacja offline</Text><Text style={styles.subText}>{syncInfo.pending ? `Oczekujące zmiany: ${syncInfo.pending}` : "Brak oczekujących zmian"}{syncInfo.conflicts ? ` · Konflikty: ${syncInfo.conflicts}` : ""}</Text>{syncInfo.conflicts > 0 && <TouchableOpacity style={[styles.btn, { backgroundColor: '#d97706', marginBottom: 10 }]} onPress={() => setConflictsModalOpen(true)}><Text style={styles.btnText}>Rozwiąż konflikty ({syncInfo.conflicts})</Text></TouchableOpacity>}<TouchableOpacity disabled={syncing} style={[styles.btn, syncing && styles.disabledBtn]} onPress={async () => { try { setSyncing(true); const result = await syncNow(); setSyncInfo({ pending: result.pending, conflicts: result.conflicts }); Alert.alert("Synchronizacja zakończona", "Zsynchronizowano zmiany i listę dokumentów. Aby pobrać pliki, wybierz kartoteki i kliknij „Pobierz wybrane na telefon”."); } catch (error: unknown) { Alert.alert("Synchronizacja nie została zakończona", errorMessage(error, "Sprawdź połączenie z komputerem. Zmiany pozostają w kolejce.")); } finally { setSyncing(false); } }}><Text style={styles.btnText}>{syncing ? "Synchronizuję…" : "Synchronizuj teraz"}</Text></TouchableOpacity></View>}
+      {section === "sync" && (
+        <OfflineStorageCard
+          offlineBytes={offlineBytes}
+          offlineFolders={offlineFolders}
+          offlineFolderIds={offlineFolderIds}
+          folderLoadError={folderLoadError}
+          vaultSyncing={vaultSyncing}
+          syncing={syncing}
+          vaultProgress={vaultProgress}
+          onRefreshList={() => { void loadOfflineFolders(); void refreshOfflineBytes(); }}
+          onToggleFolder={id => void toggleOfflineFolder(id)}
+          onDownloadSelected={() => void refreshVault()}
+          onRemoveOfflineCopies={removeOfflineCopies}
+        />
+      )}{section === "settings" && <View style={styles.vaultCard}>
         <Ionicons name="lock-closed" size={22} color="#60a5fa" />
         <View style={{ flex: 1 }}><Text style={styles.vaultTitle}>Blokada aplikacji i sejf offline</Text><Text style={styles.subText}>{vaultReady ? `Aplikacja będzie otwierana przez: ${vaultMode === "pin" ? "PIN" : vaultMode === "password" ? "hasło" : vaultMode === "pattern" ? "wzór" : "biometrię telefonu z metodą awaryjną"}.` : "Wybierz metodę otwierania całej aplikacji."}</Text></View>
         {(!vaultReady || changingAccess) && <>
@@ -209,6 +225,7 @@ export default function SyncScreen({ navigation, computerOnline, onPaired, onLoc
         {vaultReady && <><Text style={styles.optionLabel}>Automatyczna blokada po opuszczeniu aplikacji</Text><View style={styles.modeRow}>{[1, 5, 15].map((minutes) => <TouchableOpacity key={minutes} onPress={() => void chooseAutoLock(minutes)} style={[styles.mode, autoLockMinutes === minutes && styles.modeActive]}><Text style={styles.btnText}>{minutes} min</Text></TouchableOpacity>)}</View><TouchableOpacity style={styles.lockNowButton} onPress={() => onLock?.()}><Ionicons name="lock-closed" size={17} color="white" /><Text style={styles.btnText}>Zablokuj aplikację teraz</Text></TouchableOpacity></>}
         {Boolean(vaultProgress) && <Text style={styles.hint}>{vaultProgress}</Text>}
       </View>}
+      <ConflictResolutionModal visible={conflictsModalOpen} onClose={() => setConflictsModalOpen(false)} onResolved={info => setSyncInfo(info)} />
     </ScrollView>
   );
 }

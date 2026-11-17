@@ -1,6 +1,7 @@
 import MobileAccountGate from './src/components/MobileAccountGate';
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, AppState, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import * as FileSystem from "expo-file-system/legacy";
 import { NavigationContainer, createNavigationContainerRef } from "@react-navigation/native";
 import { createBottomTabNavigator, type BottomTabBarButtonProps } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
@@ -18,6 +19,7 @@ import VaultLockScreen from "./src/screens/VaultLockScreen";
 import { hasVault, vaultMode } from "./src/services/offlineVault";
 import { getApiUrl, getAuthHeaders, getLocalConnection } from "./src/services/localConnection";
 import { getAutoLockMinutes } from "./src/services/appLock";
+import { pruneOfflineCache } from "./src/services/offlineCleanup";
 import type { FolderStackParamList, MainTabParamList, MobileDocument, RootStackParamList } from "./src/types/navigation";
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -212,7 +214,7 @@ function AppContent({ initiallyUnlocked = false }: { initiallyUnlocked?: boolean
     return () => { mounted = false; };
   }, [initiallyUnlocked]);
   useEffect(() => checkVault(), [checkVault]);
-  useEffect(() => { const subscription = AppState.addEventListener("change", (state) => { if (state !== "active") { backgroundAt.current = Date.now(); return; } const returnedAt = backgroundAt.current; backgroundAt.current = null; if (returnedAt) getAutoLockMinutes().then((minutes) => { if (Date.now() - returnedAt >= minutes * 60_000) setVaultUnlocked(false); }).catch(()=>setVaultUnlocked(false)); }); return () => subscription.remove(); }, []);
+  useEffect(() => { const subscription = AppState.addEventListener("change", (state) => { if (state !== "active") { backgroundAt.current = Date.now(); if (state === "background") { void pruneOfflineCache(FileSystem, FileSystem.cacheDirectory).catch(() => undefined); } return; } const returnedAt = backgroundAt.current; backgroundAt.current = null; if (returnedAt) getAutoLockMinutes().then((minutes) => { if (Date.now() - returnedAt >= minutes * 60_000) setVaultUnlocked(false); }).catch(()=>setVaultUnlocked(false)); }); return () => subscription.remove(); }, []);
   // Notification listeners are registered only by a native build that includes
   // expo-notifications. An older development client must still be able to boot.
   useEffect(() => {

@@ -10,10 +10,21 @@ import { CentralHandoffError, createCentralHandoffs } from '../services/centralH
 import { verifyBackupPrimary } from '../services/backupPrimary';
 import { copyDesktopPlanState, getPlan } from '../services/planLedger';
 import { verifyCentralPurchase } from '../services/centralEntitlements';
+import { getDevOverrides } from '../services/devOverrides';
 
 // Local-desktop access must be enforced by the caller before mounting this router.
 export function createCentralAccountRouter(prisma: PrismaClient, verify = verifyCentralSession, handoffs = createCentralHandoffs(), verifyDesktop = verifyBackupPrimary, prepareDevice?: (userId:number,origin:string,accountId:string,token:string)=>Promise<void>) {
-  const enrollDevice=prepareDevice|| (async(userId:number,base:string,accountId:string,token:string)=>{await registerCentralDevice(userId,base,accountId,token);await bootstrapCentralPlan(prisma,userId);});
+  const enrollDevice = prepareDevice || (async (userId: number, base: string, accountId: string, token: string) => {
+    try {
+      await registerCentralDevice(userId, base, accountId, token);
+      await bootstrapCentralPlan(prisma, userId);
+    } catch (err) {
+      if (err instanceof Error && err.message === 'CENTRAL_DEVICE_LIMIT' && getDevOverrides().bypassDeviceLimit) {
+        return;
+      }
+      throw err;
+    }
+  });
   const router = express.Router(); const links = createCentralAccountLinks(prisma);
   let desktopFailures = 0; let desktopBlockedUntil = 0;
   const origin = () => centralAccountOrigin(process.env.ETECZKA_CENTRAL_ACCOUNT_URL);

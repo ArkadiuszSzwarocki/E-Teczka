@@ -4,7 +4,7 @@ import path from 'node:path';
 
 const processStartedAt = new Date().toISOString();
 
-function readCurrentBuildInfo(): { version: string; builtAt: string } {
+function readCurrentBuildInfo(): { version: string; builtAt: string; changes: string[]; infoUrl: string } {
   const pkgPath = path.resolve(__dirname, '../package.json');
   const distIndexPath = path.resolve(__dirname, '../../frontend/dist/index.html');
   let pkgVersion = '1.0.0';
@@ -26,6 +26,12 @@ function readCurrentBuildInfo(): { version: string; builtAt: string } {
   return {
     version: `${pkgVersion}-${buildStamp}`,
     builtAt,
+    changes: [
+      'Poprawki stabilności synchronizacji i wgrywania dokumentów.',
+      'Usprawnienia interfejsu, skali aplikacji oraz zgłaszania uwag.',
+      'Aktualizacje bezpieczeństwa logowania i sesji.',
+    ],
+    infoUrl: 'https://konto.arecki.pl',
   };
 }
 

@@ -10,13 +10,13 @@ import { countFolderTreeStats } from '../utils/folderTree';
 
 /** Archive workspace desktop view supporting virtual folders, icon/list modes, and drag-and-drop. */
 export default function ArchiveDesktop({
-  apiUrl, fetcher, plan, documents, selectedDocs, onToggleSelect, onSelectAllVisible, onClearSelected, onOpenPreview, onHoverEnter, onHoverLeave, onRestore, onTrash, onTrashDocs, onShareLink, onShareClassic, onOpenOcr,
+  apiUrl, fetcher, plan, documents, selectedDocs, onToggleSelect, onSelectAllVisible, onClearSelected, onOpenPreview, onHoverEnter, onHoverLeave, onRestore, onTrashDocs, onShareLink, onShareClassic, onOpenOcr, onExportPdf, onPropertiesDoc,
 }: {
   apiUrl: string; fetcher: typeof fetch; plan: 'free' | 'standard' | 'premium'; documents: DocumentRecord[]; selectedDocs: number[];
   onToggleSelect: (id: number) => void; onSelectAllVisible: (ids: number[]) => void; onClearSelected: () => void; onOpenPreview: (doc: DocumentRecord) => void;
   onHoverEnter: (doc: DocumentRecord, anchor: HTMLElement) => void; onHoverLeave: () => void;
-  onRestore: (doc: DocumentRecord) => void; onTrash: (doc: DocumentRecord) => void; onTrashDocs: (docIds: number[], onConfirmed: () => void) => void;
-  onShareLink: (doc: DocumentRecord) => void; onShareClassic: (doc: DocumentRecord) => void; onOpenOcr: (doc: DocumentRecord) => void;
+  onRestore: (doc: DocumentRecord) => void; onTrashDocs: (docIds: number[], onConfirmed: () => void) => void;
+  onShareLink: (doc: DocumentRecord) => void; onShareClassic: (doc: DocumentRecord) => void; onOpenOcr: (doc: DocumentRecord) => void; onExportPdf: (doc: DocumentRecord, watermark?: boolean) => void; onPropertiesDoc: (doc: DocumentRecord) => void;
 }) {
   const arch = useArchiveWorkspace(apiUrl, fetcher, documents);
   const hideThreeDots = selectedDocs.length > 1;
@@ -27,7 +27,9 @@ export default function ArchiveDesktop({
       {!doc.readOnly && <button type="button" onClick={() => { onShareLink(doc); arch.setDocMenuId(null); }} className="w-full px-3 py-2 text-emerald-300 hover:bg-slate-700">Bezpieczny link</button>}
       {!doc.readOnly && <button type="button" onClick={() => { onShareClassic(doc); arch.setDocMenuId(null); }} className="w-full px-3 py-2 text-slate-200 hover:bg-slate-700">Udostępnij klasycznie</button>}
       {!doc.readOnly && <button type="button" onClick={() => { onOpenOcr(doc); arch.setDocMenuId(null); }} className="w-full px-3 py-2 text-blue-300 hover:bg-slate-700">Rozpoznany tekst (OCR)</button>}
-      <button type="button" onClick={() => { onTrash(doc); arch.setDocMenuId(null); }} className="w-full px-3 py-2 text-red-300 hover:bg-slate-700">Do kosza</button>
+      {!doc.readOnly && <button type="button" onClick={() => { onExportPdf(doc); arch.setDocMenuId(null); }} className="w-full px-3 py-2 text-emerald-300 hover:bg-slate-700">Eksportuj do PDF</button>}
+      {!doc.readOnly && <button type="button" onClick={() => { onExportPdf(doc, true); arch.setDocMenuId(null); }} className="w-full px-3 py-2 text-cyan-300 hover:bg-slate-700">Znak wodny (PDF)</button>}
+      <button type="button" onClick={() => { onPropertiesDoc(doc); arch.setDocMenuId(null); }} className="w-full px-3 py-2 text-slate-200 hover:bg-slate-700">ℹ️ Właściwości</button>
     </div>
   );
 

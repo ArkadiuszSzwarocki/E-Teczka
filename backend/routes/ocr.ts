@@ -2,6 +2,7 @@ import express from 'express';
 import type { PrismaClient } from '@prisma/client';
 import { ocrOwnerKey, hasOcrPremium } from '../services/ocrPremium';
 import { protectOcrText, readOcrText } from '../services/ocrText';
+import { indexDocumentOcrText, searchEncryptedOcrDocuments } from '../services/ocrSearchIndex';
 import type { createOcrQueue } from '../services/ocrQueue';
 import { activeDocumentIds } from '../services/planRestrictions';
 import { getPlan } from '../services/planLedger';
@@ -16,9 +17,7 @@ export function createOcrRouter(prisma: PrismaClient, queue: ReturnType<typeof c
     const query = typeof req.query.q === 'string' ? req.query.q.trim().toLocaleLowerCase('pl') : '';
     if (!query || query.length > 200) return res.status(400).json({ error: 'Podaj tekst wyszukiwania (maksymalnie 200 znaków).' });
     try {
-      const documents = await prisma.document.findMany({ where: { folder: { ownerId: Number(res.locals.userId || 1) }, ocrText: { not: null } }, select: { id: true, ocrText: true } });
-      const ids: number[] = [];
-      for (const document of documents) if (readOcrText(document.ocrText).toLocaleLowerCase('pl').includes(query)) ids.push(document.id);
+      const ids = await searchEncryptedOcrDocuments(prisma, Number(res.locals.userId || 1), query);
       res.setHeader('Cache-Control', 'no-store'); res.json({ ids });
     } catch { res.status(500).json({ error: 'Nie udało się przeszukać rozpoznanego tekstu.' }); }
   });

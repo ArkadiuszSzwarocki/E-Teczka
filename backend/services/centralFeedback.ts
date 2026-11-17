@@ -65,8 +65,14 @@ export async function submitCentralFeedback(payload: SubmitFeedbackPayload): Pro
   return { id: body.id, status: body.status || 'new', createdAt: Number(body.createdAt || Date.now()) };
 }
 
+let cachedFeedback: { items: CentralFeedbackItem[]; at: number } | null = null;
+const FEEDBACK_CACHE_TTL_MS = 30_000;
+
 /** Lists feedback reports stored in MariaDB on QNAP (developer-only). */
 export async function listCentralFeedback(status?: string): Promise<CentralFeedbackItem[]> {
+  if (!status && cachedFeedback && Date.now() - cachedFeedback.at < FEEDBACK_CACHE_TTL_MS) {
+    return cachedFeedback.items;
+  }
   const config = adminSettings();
   if (!config) throw new Error('Brak konfiguracji administratora QNAP.');
   const query = status ? `?status=${encodeURIComponent(status)}` : '';
@@ -75,9 +81,14 @@ export async function listCentralFeedback(status?: string): Promise<CentralFeedb
     redirect: 'error',
     signal: AbortSignal.timeout(10000),
   });
+  if (response.status === 429 && cachedFeedback) {
+    return status ? cachedFeedback.items.filter(item => item.status === status) : cachedFeedback.items;
+  }
   const body = await response.json().catch(() => ({})) as { items?: CentralFeedbackItem[]; error?: string };
   if (!response.ok) throw new Error(body.error || 'Nie udało się pobrać zgłoszeń z QNAP-a.');
-  return Array.isArray(body.items) ? body.items : [];
+  const items = Array.isArray(body.items) ? body.items : [];
+  if (!status) cachedFeedback = { items, at: Date.now() };
+  return items;
 }
 
 /** Updates a feedback report status in MariaDB on QNAP (developer-only). */
@@ -93,5 +104,11 @@ export async function updateCentralFeedbackStatus(id: number, status: FeedbackSt
   });
   const body = await response.json().catch(() => ({})) as { id?: number; status?: FeedbackStatus; error?: string };
   if (!response.ok) throw new Error(body.error || 'Nie udało się zmienić statusu zgłoszenia.');
+  if (cachedFeedback) {
+    cachedFeedback = {
+      at: Date.now(),
+      items: cachedFeedback.items.map(item => (item.id === id ? { ...item, status: body.status || status } : item)),
+    };
+  }
   return { id: Number(body.id || id), status: body.status || status };
 }

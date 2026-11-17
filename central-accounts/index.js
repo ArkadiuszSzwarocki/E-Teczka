@@ -85,7 +85,7 @@ ensureEntitlementsSchema(pool).then(()=>ensureCatalogSchema(pool)).then(()=>ensu
   shareRouter,
   rateLimit: createMariaRateLimiter({ pool }),
   accountRateLimit,
-  handoffRateLimit: createMariaRateLimiter({ pool, namespace: 'handoff', limit: 150, windowMs: 300000 }),
+  handoffRateLimit: createMariaRateLimiter({ pool, namespace: 'handoff', limit: 1000, windowMs: 300000 }),
   cloudflareGate,
   turnstileGate,
   googleWebClientId,

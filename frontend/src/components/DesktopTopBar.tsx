@@ -53,6 +53,10 @@ type Props = {
   onToggleMobileSidebar?: () => void;
   updateAvailable?: boolean;
   onOpenUpdatePrompt?: () => void;
+  openBugCount?: number;
+  adminReplyCount?: number;
+  onOpenDeveloperFeedback?: () => void;
+  onOpenDeveloper?: () => void;
 };
 
 /** Search, connection status, notifications and current-user menu. */
@@ -70,6 +74,10 @@ export default function DesktopTopBar({
   onToggleMobileSidebar,
   updateAvailable = false,
   onOpenUpdatePrompt,
+  openBugCount = 0,
+  adminReplyCount = 0,
+  onOpenDeveloperFeedback,
+  onOpenDeveloper,
 }: Props) {
   const [reloadingDev, setReloadingDev] = useState(false);
   const [theme, setTheme] = useState<ThemePreference>(getThemePreference);
@@ -88,8 +96,27 @@ export default function DesktopTopBar({
     <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
       <SessionCountdown/>
       <div className="hidden xl:block">
-        <DevPlanSwitch key={`${billingIsDev}:${billingPlan}`} apiUrl={apiUrl} fetcher={apiFetcher} onChanged={onDevPlanChanged} />
+        <DevPlanSwitch key={`${billingIsDev}:${billingPlan}`} apiUrl={apiUrl} fetcher={apiFetcher} onChanged={onDevPlanChanged} onOpenDeveloper={onOpenDeveloper} />
       </div>
+      {import.meta.env.DEV && onOpenDeveloperFeedback && (
+        <button
+          type="button"
+          onClick={onOpenDeveloperFeedback}
+          title={`Zgłoszenia błędów (otwarte: ${openBugCount}, odpowiedzi użytkowników: ${adminReplyCount})`}
+          aria-label={`Zgłoszenia błędów: ${openBugCount}, odpowiedzi użytkowników: ${adminReplyCount}`}
+          className="relative flex items-center justify-center rounded-md border border-slate-600 bg-[#111827] px-2.5 py-1.5 text-base hover:bg-slate-700"
+        >
+          <span aria-hidden="true">🐛</span>
+          <span className={`ml-1.5 min-w-5 rounded-full px-1.5 py-0.5 text-center text-[10px] font-bold ${openBugCount > 0 ? 'bg-red-500 text-white' : 'bg-slate-700 text-slate-300'}`}>
+            {openBugCount}
+          </span>
+          {adminReplyCount > 0 && (
+            <span className="ml-1 rounded-full bg-amber-400 px-1.5 py-0.5 text-center text-[10px] font-bold text-slate-950">
+              💬 {adminReplyCount}
+            </span>
+          )}
+        </button>
+      )}
       {updateAvailable && onOpenUpdatePrompt && (
         <div className="flex items-center gap-2 rounded-lg border border-emerald-500/50 bg-emerald-950/40 px-2.5 py-1">
           <span className="whitespace-nowrap text-xs font-semibold text-emerald-200">Nowa aktualizacja</span>

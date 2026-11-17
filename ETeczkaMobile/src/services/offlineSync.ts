@@ -6,11 +6,13 @@ import { fetchWithTimeout } from "./networkRequest";
 import { loadCachedDocuments, loadCachedFolders, saveCachedDocuments, saveCachedFolders } from "./offlineCatalog";
 import type { FolderSummary } from "../types/navigation";
 import { isRetentionDocument, type RetentionDocument } from "./retentionNotifications";
+import { cancelResumableUpload } from "./resumableUpload";
 
 type Entity = "folders" | "documents";
 export type PendingChange = { entity: Entity; operation: "created" | "updated" | "deleted"; value: Record<string, unknown>; queuedAt: string };
 export type ConflictItem = PendingChange & { reason: string; detectedAt: string };
-type SyncState = { lastPulledAt: number; queue: PendingChange[]; conflicts: number; conflictItems?: ConflictItem[] };
+export type PendingUploadTask = { uploadId: string; documentId?: number; fileName: string; folderId: number; queuedAt: string };
+type SyncState = { lastPulledAt: number; queue: PendingChange[]; conflicts: number; conflictItems?: ConflictItem[]; pendingUploads?: PendingUploadTask[] };
 const ROOT = () => profileDirectory(`${FileSystem.documentDirectory || ""}eteczka-sync`);
 const STATE = () => `${ROOT()}/state.json`;
 const ensure = () => FileSystem.makeDirectoryAsync(ROOT(), { intermediates: true });
@@ -35,7 +37,69 @@ function exclusive<T>(action: () => Promise<T>): Promise<T> {
   return result;
 }
 async function pendingChangeCountImpl() { return (await readState()).queue.length; }
-async function queueOfflineChangeImpl(change: Omit<PendingChange, "queuedAt">) { return exclusive(async () => { const state = await readState(); const id = Number(change.value.id); state.queue = state.queue.filter(item => !(item.entity === change.entity && Number(item.value.id) === id && item.operation !== "created")); state.queue.push({ ...change, queuedAt: new Date().toISOString() }); await writeState(state); }); }
+async function queueOfflineChangeImpl(change: Omit<PendingChange, "queuedAt">) {
+  return exclusive(async () => {
+    const state = await readState();
+    const id = Number(change.value.id);
+    state.queue = state.queue.filter(item => !(item.entity === change.entity && Number(item.value.id) === id && item.operation !== "created"));
+    if (change.entity === 'documents' && (change.operation === 'deleted' || change.value.isDeleted === true)) {
+      const fileName = typeof change.value.title === 'string' ? change.value.title : undefined;
+      const folderId = Number(change.value.folderId) || undefined;
+      const keptUploads: PendingUploadTask[] = [];
+      for (const task of state.pendingUploads || []) {
+        const matchesId = Number.isInteger(id) && id > 0 && task.documentId === id;
+        const matchesFile = Boolean(fileName && task.fileName === fileName && (!folderId || task.folderId === folderId));
+        if (matchesId || matchesFile) cancelResumableUpload(task.uploadId);
+        else keptUploads.push(task);
+      }
+      state.pendingUploads = keptUploads;
+    }
+    state.queue.push({ ...change, queuedAt: new Date().toISOString() });
+    await writeState(state);
+  });
+}
+
+async function registerPendingUploadImpl(task: Omit<PendingUploadTask, 'queuedAt'>) {
+  return exclusive(async () => {
+    const state = await readState();
+    const next = (state.pendingUploads || []).filter(item => item.uploadId !== task.uploadId);
+    next.push({ ...task, queuedAt: new Date().toISOString() });
+    state.pendingUploads = next;
+    await writeState(state);
+  });
+}
+
+async function completePendingUploadImpl(uploadId: string) {
+  return exclusive(async () => {
+    const state = await readState();
+    state.pendingUploads = (state.pendingUploads || []).filter(item => item.uploadId !== uploadId);
+    await writeState(state);
+  });
+}
+
+async function cancelPendingUploadsForDocumentImpl(target: { documentId?: number; fileName?: string; folderId?: number }) {
+  return exclusive(async () => {
+    const state = await readState();
+    const kept: PendingUploadTask[] = [];
+    let removed = 0;
+    for (const task of state.pendingUploads || []) {
+      const matchesId = typeof target.documentId === 'number' && target.documentId > 0 && task.documentId === target.documentId;
+      const matchesFile = Boolean(target.fileName && task.fileName === target.fileName && (!target.folderId || task.folderId === target.folderId));
+      if (matchesId || matchesFile) {
+        cancelResumableUpload(task.uploadId);
+        removed += 1;
+      } else {
+        kept.push(task);
+      }
+    }
+    state.pendingUploads = kept;
+    if (typeof target.documentId === 'number' && target.documentId > 0) {
+      state.queue = state.queue.filter(item => !(item.entity === 'documents' && Number(item.value.id) === target.documentId && item.operation !== 'deleted'));
+    }
+    await writeState(state);
+    return removed;
+  });
+}
 async function cancelPendingFolderCreationImpl(clientId: string) { return exclusive(async () => {
   const state = await readState();
   const index = state.queue.findIndex(item => item.entity === 'folders' && item.operation === 'created' && item.value.clientId === clientId);
@@ -60,6 +124,86 @@ async function clearConflictItemsImpl() {
     state.conflictItems = [];
     state.conflicts = 0;
     await writeState(state);
+  });
+}
+
+async function fetchServerSnapshotForConflictImpl(conflict: ConflictItem): Promise<Record<string, unknown> | null> {
+  const id = Number(conflict.value.id);
+  if (!Number.isInteger(id) || id < 1) return null;
+  const headers = await getAuthHeaders();
+  if (conflict.entity === 'folders') {
+    const response = await fetchWithTimeout(await getApiUrl('/api/folders'), { headers }, 15_000, 'Pobieranie wersji z serwera');
+    if (!response.ok) return null;
+    const folders = await response.json() as Array<Record<string, unknown>>;
+    return folders.find(f => Number(f.id) === id) ?? null;
+  }
+  const response = await fetchWithTimeout(await getApiUrl(`/api/documents/${id}`), { headers }, 15_000, 'Pobieranie wersji z serwera');
+  if (!response.ok) return null;
+  return await response.json() as Record<string, unknown>;
+}
+
+async function resolveConflictKeepServerImpl(queuedAt: string) {
+  return exclusive(async () => {
+    const state = await readState();
+    const conflict = (state.conflictItems || []).find(item => item.queuedAt === queuedAt);
+    if (!conflict) return { pending: state.queue.length, conflicts: state.conflicts };
+    const id = Number(conflict.value.id);
+    if (Number.isInteger(id) && id > 0) {
+      try {
+        const snapshot = await fetchServerSnapshotForConflictImpl(conflict);
+        if (conflict.entity === 'folders') {
+          const cached = await loadCachedFolders();
+          const next = snapshot
+            ? cached.some(f => f.id === id) ? cached.map(f => (f.id === id ? (snapshot as unknown as FolderSummary) : f)) : [...cached, snapshot as unknown as FolderSummary]
+            : cached.filter(f => f.id !== id);
+          await saveCachedFolders(next);
+        } else if (conflict.entity === 'documents') {
+          const folderId = Number(snapshot?.folderId ?? conflict.value.folderId);
+          if (folderId > 0) {
+            const cached = await loadCachedDocuments(folderId);
+            const next = snapshot && !snapshot.isDeleted
+              ? cached.some(d => d.id === id) ? cached.map(d => (d.id === id ? (snapshot as unknown as RetentionDocument) : d)) : [...cached, snapshot as unknown as RetentionDocument]
+              : cached.filter(d => d.id !== id);
+            await saveCachedDocuments(folderId, next);
+          }
+        }
+      } catch {
+        // Keep queue unblocked even if snapshot refresh fails while offline.
+      }
+    }
+    state.conflictItems = (state.conflictItems || []).filter(item => item.queuedAt !== queuedAt);
+    state.conflicts = state.conflictItems.length;
+    await writeState(state);
+    DeviceEventEmitter.emit('eteczka-sync-completed');
+    return { pending: state.queue.length, conflicts: state.conflicts };
+  });
+}
+
+async function resolveConflictOverwriteFromPhoneImpl(queuedAt: string) {
+  return exclusive(async () => {
+    const state = await readState();
+    const conflict = (state.conflictItems || []).find(item => item.queuedAt === queuedAt);
+    if (!conflict) return { pending: state.queue.length, conflicts: state.conflicts };
+    const id = Number(conflict.value.id);
+    if (!Number.isInteger(id) || id < 1) throw new Error('Konflikt nie ma poprawnego identyfikatora.');
+    const headers = { 'Content-Type': 'application/json', ...await getAuthHeaders() };
+    const operationId = `resolve-${conflict.entity}-${conflict.operation}-${id}-${Date.now()}`;
+    const value = { ...conflict.value, updatedAt: new Date().toISOString() };
+    const response = await fetchWithTimeout(
+      await getApiUrl('/api/sync/operation'),
+      { method: 'POST', headers, body: JSON.stringify({ operationId, operation: { entity: conflict.entity, type: conflict.operation, value, force: true } }) },
+      30_000,
+      'Nadpisywanie wersji na serwerze',
+    );
+    const receipt = await response.json().catch(() => ({})) as { success?: boolean; error?: string };
+    if (!response.ok || receipt.success !== true) {
+      throw new Error(receipt.error || 'Nie udało się nadpisać wersji na serwerze.');
+    }
+    state.conflictItems = (state.conflictItems || []).filter(item => item.queuedAt !== queuedAt);
+    state.conflicts = state.conflictItems.length;
+    await writeState(state);
+    DeviceEventEmitter.emit('eteczka-sync-completed');
+    return { pending: state.queue.length, conflicts: state.conflicts };
   });
 }
 
@@ -171,5 +315,11 @@ export const getSyncInfo = profileOperation(getSyncInfoImpl);
 export const getConflictItems = profileOperation(getConflictItemsImpl);
 export const dismissConflictItem = profileOperation(dismissConflictItemImpl);
 export const clearConflictItems = profileOperation(clearConflictItemsImpl);
+export const fetchServerSnapshotForConflict = profileOperation(fetchServerSnapshotForConflictImpl);
+export const resolveConflictKeepServer = profileOperation(resolveConflictKeepServerImpl);
+export const resolveConflictOverwriteFromPhone = profileOperation(resolveConflictOverwriteFromPhoneImpl);
+export const registerPendingUpload = profileOperation(registerPendingUploadImpl);
+export const completePendingUpload = profileOperation(completePendingUploadImpl);
+export const cancelPendingUploadsForDocument = profileOperation(cancelPendingUploadsForDocumentImpl);
 export const syncNow = profileOperation(syncNowImpl);
 export const syncOfflineCatalog = profileOperation(syncOfflineCatalogImpl);
