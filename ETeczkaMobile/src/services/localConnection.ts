@@ -1,3 +1,4 @@
+import { profileKey, profileOperation } from './mobileProfile';
 import * as SecureStore from "expo-secure-store";
 import { clearPendingComputerCertificate, commitComputerCertificate, hasComputerCertificate, hasPendingComputerCertificate } from "./localTls";
 
@@ -53,8 +54,8 @@ export function normalizeServerUrl(value: string) {
   return parsed.toString().replace(/\/$/, "");
 }
 
-export async function getLocalConnection(): Promise<LocalConnection | null> {
-  const value = await SecureStore.getItemAsync(CONNECTION_KEY);
+async function getLocalConnectionImpl(): Promise<LocalConnection | null> {
+  const value = await SecureStore.getItemAsync(profileKey(CONNECTION_KEY));
   if (!value) return null;
 
   try {
@@ -62,16 +63,16 @@ export async function getLocalConnection(): Promise<LocalConnection | null> {
     if (!isLocalConnection(connection)) return null;
     return { serverUrl: normalizeServerUrl(connection.serverUrl), accessToken: connection.accessToken };
   } catch {
-    await SecureStore.deleteItemAsync(CONNECTION_KEY);
+    await SecureStore.deleteItemAsync(profileKey(CONNECTION_KEY));
     return null;
   }
 }
 
-export async function saveLocalConnection(serverUrl: string): Promise<LocalConnection> {
+async function saveLocalConnectionImpl(serverUrl: string): Promise<LocalConnection> {
   throw new Error("Komputer trzeba najpierw sparować kodem z aplikacji desktopowej.");
 }
 
-export async function pairLocalComputer(serverUrl: string, pairingCode: string, deviceName: string) {
+async function pairLocalComputerImpl(serverUrl: string, pairingCode: string, deviceName: string) {
   const normalizedUrl = normalizeServerUrl(serverUrl);
   if (!normalizedUrl.startsWith('https://')) throw new Error('Zeskanuj aktualny kod QR z okna parowania na komputerze.');
   if (!await hasPendingComputerCertificate(normalizedUrl)) throw new Error('Najpierw zeskanuj kod QR i zweryfikuj certyfikat komputera.');
@@ -100,11 +101,11 @@ export async function pairLocalComputer(serverUrl: string, pairingCode: string, 
 
   const connection: LocalConnection = { serverUrl: normalizedUrl, accessToken };
   await commitComputerCertificate();
-  await SecureStore.setItemAsync(CONNECTION_KEY, JSON.stringify(connection));
+  await SecureStore.setItemAsync(profileKey(CONNECTION_KEY), JSON.stringify(connection));
   return connection;
 }
 
-export async function getAuthHeaders() {
+async function getAuthHeadersImpl() {
   const connection = await getLocalConnection();
   if (!connection) throw new Error("Najpierw sparuj telefon z komputerem E‑Teczka.");
   if (!connection.serverUrl.startsWith('https://')) throw new Error('Stare połączenie HTTP jest niezabezpieczone. Sparuj telefon ponownie przez HTTPS.');
@@ -112,10 +113,16 @@ export async function getAuthHeaders() {
   return { Authorization: `Bearer ${connection.accessToken}` };
 }
 
-export async function getApiUrl(path: string) {
+async function getApiUrlImpl(path: string) {
   const connection = await getLocalConnection();
   if (!connection) throw new Error("Najpierw dodaj komputer E‑Teczka w zakładce Ustawienia.");
   if (!connection.serverUrl.startsWith('https://')) throw new Error('Stare połączenie HTTP jest niezabezpieczone. Sparuj telefon ponownie przez HTTPS.');
   if (!await hasComputerCertificate(connection.serverUrl)) throw new Error('Sparuj komputer ponownie, aby sprawdzić jego certyfikat.');
   return `${connection.serverUrl}${path.startsWith("/") ? path : `/${path}`}`;
 }
+
+export const getLocalConnection = profileOperation(getLocalConnectionImpl);
+export const saveLocalConnection = profileOperation(saveLocalConnectionImpl);
+export const pairLocalComputer = profileOperation(pairLocalComputerImpl);
+export const getAuthHeaders = profileOperation(getAuthHeadersImpl);
+export const getApiUrl = profileOperation(getApiUrlImpl);

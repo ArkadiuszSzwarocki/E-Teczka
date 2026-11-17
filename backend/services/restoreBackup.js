@@ -14,6 +14,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.restoreBackup = restoreBackup;
 const planLedger_1 = require("./planLedger");
+const centralPlanLedger_1 = require("./centralPlanLedger");
 const tagOwnership_1 = require("./tagOwnership");
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
@@ -56,6 +57,10 @@ function parseManifest(zip) {
 }
 function restoreBackup(prisma_1, encryptedData_1, ownerId_1, userId_1) {
     return __awaiter(this, arguments, void 0, function* (prisma, encryptedData, ownerId, userId, targetDir = paths_1.uploadsDir, recoveryKey, planOwnerKey = userId ? `user:${userId}` : 'desktop-local') {
+        const central = (0, centralPlanLedger_1.centralOwner)(planOwnerKey);
+        if (central)
+            yield (0, centralPlanLedger_1.requireSynchronizedCentralPlan)(prisma, planOwnerKey);
+        const centralPlan = central ? yield (0, planLedger_1.getPlan)(prisma, planOwnerKey) : null;
         const zip = new adm_zip_1.default((0, backupCrypto_1.decryptBackup)(encryptedData, recoveryKey));
         const manifest = parseManifest(zip);
         const rawManifest = JSON.parse(zip.getEntry('manifest.json').getData().toString('utf8'));
@@ -87,6 +92,18 @@ function restoreBackup(prisma_1, encryptedData_1, ownerId_1, userId_1) {
         try {
             yield prisma.$transaction((tx) => __awaiter(this, void 0, void 0, function* () {
                 var _a, _b;
+                if (central && centralPlan) {
+                    const count = yield tx.document.count({ where: { folder: { ownerId } } });
+                    const growth = manifest.documents.length - count;
+                    if (growth > 0)
+                        yield (0, planLedger_1.checkDocumentCapacity)(tx, ownerId, centralPlan, growth);
+                    const tables = yield tx.$queryRawUnsafe("SELECT name FROM sqlite_master WHERE type='table' AND name='PlanTagOwner'");
+                    const existing = tables.length ? yield tx.$queryRawUnsafe('SELECT t.name FROM Tag t JOIN PlanTagOwner o ON o.tagId=t.id WHERE o.ownerId=?', ownerId) : [];
+                    const names = new Set(existing.map(t => t.name));
+                    const added = new Set(manifest.documents.flatMap(d => (d.tags || []).map(t => String(t.name || 'tag').slice(0, 80))).filter(name => !names.has(name)));
+                    if (added.size)
+                        yield (0, planLedger_1.checkTagCapacity)(tx, ownerId, centralPlan, existing.length, added.size);
+                }
                 if (planState)
                     yield (0, planLedger_1.mergePlanState)(tx, planOwnerKey, planState);
                 // The archive is a snapshot, not an import. Replace only this owner's

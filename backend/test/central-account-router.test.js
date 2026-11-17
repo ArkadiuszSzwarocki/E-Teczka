@@ -4,10 +4,11 @@ const crypto = require('node:crypto');
 const express = require('express');
 const { DatabaseSync } = require('node:sqlite');
 process.env.AUTH_SECRET = 'central-account-router-test-secret';
-const { createCentralAccountRouter } = require('../routes/centralAccount');
+const { createCentralAccountRouter: productionRouter } = require('../routes/centralAccount');
+const createCentralAccountRouter=(...args)=>productionRouter(args[0],args[1],args[2],args[3],async()=>{});
 const { createCentralHandoffs } = require('../services/centralHandoff');
 const { verifyCentralSession } = require('../services/centralAccountLink');
-const { createAccountService } = require('../../central-accounts/accountService');
+const { createAccountService } = require('./helpers/centralAccounts');
 const { createHttpApp } = require('../../central-accounts/httpApp');
 
 test('central identity links only after both sessions and preserves the local account', async () => {
@@ -66,16 +67,16 @@ test('desktop browser handoff links and later signs into existing local account'
   const post = (endpoint, body, local) => fetch(base + endpoint, { method: 'POST', headers: { 'content-type': 'application/json', ...(local ? { authorization: `Bearer ${local}` } : {}) }, body: JSON.stringify(body) });
   try {
     const start = await (await post('/handoff/start', {})).json();
-    const requestId = new URL(start.url).hash.slice(1); assert.equal(accounts.inspectHandoff(requestId).displayCode, start.displayCode);
-    accounts.approveHandoff(requestId, browser.token);
+    const requestId = new URL(start.url).hash.slice(1); assert.equal((await accounts.inspectHandoff(requestId)).displayCode, start.displayCode);
+    await accounts.approveHandoff(requestId, browser.token);
     const poll = await (await post('/handoff/poll', { handle: start.handle })).json(); assert.equal(poll.status, 'approved'); assert.equal('centralToken' in poll, false);
     assert.equal((await post('/handoff/finish', { handle: start.handle })).status, 409);
     assert.equal((await post('/handoff/link', { handle: start.handle })).status, 401);
     assert.equal((await post('/handoff/link', { handle: start.handle }, 'local-one')).status, 204);
-    const again = await (await post('/handoff/start', {})).json(); accounts.approveHandoff(new URL(again.url).hash.slice(1), browser.token);
+    const again = await (await post('/handoff/start', {})).json(); await accounts.approveHandoff(new URL(again.url).hash.slice(1), browser.token);
     assert.equal((await (await post('/handoff/poll', { handle: again.handle })).json()).status, 'approved');
     const finish = await post('/handoff/finish', { handle: again.handle, deviceId: 'desktop-123' }); assert.equal(finish.status, 200); assert.equal((await finish.json()).user.id, 1);
-    const desktop = await (await post('/handoff/start', {})).json(); accounts.approveHandoff(new URL(desktop.url).hash.slice(1), browser.token);
+    const desktop = await (await post('/handoff/start', {})).json(); await accounts.approveHandoff(new URL(desktop.url).hash.slice(1), browser.token);
     assert.equal((await (await post('/handoff/poll', { handle: desktop.handle })).json()).status, 'approved');
     assert.equal((await post('/handoff/link-desktop', { handle: desktop.handle, secret: 'wrong' })).status, 401);
     await require('../services/planLedger').ensurePlanLedger(prisma);
@@ -88,7 +89,7 @@ test('desktop browser handoff links and later signs into existing local account'
     assert.equal(db.prepare('SELECT amount FROM PlanUsage WHERE ownerKey = ? AND operationId = ?').get('user:1', 'scan-1').amount, 2);
     await accounts.register('new@example.com', 'another-password'); await accounts.verifyEmail(emailCode, 'another-password');
     const newBrowser = await accounts.login('new@example.com', 'another-password');
-    const newRequest = await (await post('/handoff/start', {})).json(); accounts.approveHandoff(new URL(newRequest.url).hash.slice(1), newBrowser.token);
+    const newRequest = await (await post('/handoff/start', {})).json(); await accounts.approveHandoff(new URL(newRequest.url).hash.slice(1), newBrowser.token);
     assert.equal((await (await post('/handoff/poll', { handle: newRequest.handle })).json()).status, 'approved');
     assert.equal((await post('/handoff/create-local', { handle: newRequest.handle })).status, 400);
     const created = await post('/handoff/create-local', { handle: newRequest.handle, deviceId: 'new-desktop', localPassword: 'offline-password' });
@@ -138,7 +139,7 @@ test('email credentials sign in without a browser code and preserve explicit loc
     const response = await post('/credentials', { email: 'direct@example.com', password: 'test-password' });
     assert.equal(response.status, 200); const data = await response.json(); assert.equal(data.user.email, 'direct@example.com'); assert.ok(data.handle); assert.equal(data.token, undefined);
     const finish = await post('/handoff/finish', { handle: data.handle }); assert.equal(finish.status, 409); assert.equal((await finish.json()).code, 'LOCAL_LINK_REQUIRED');
-    assert.equal(db.prepare('SELECT count(*) AS n FROM sessions').get().n, 1);
+    assert.equal(accounts.testPool.tables.sessions.length, 1);
   } finally { await new Promise(resolve => server.close(resolve)); await new Promise(resolve => upstream.close(resolve)); db.close(); if (previous === undefined) delete process.env.ETECZKA_CENTRAL_ACCOUNT_URL; else process.env.ETECZKA_CENTRAL_ACCOUNT_URL = previous; }
 });
 
@@ -158,7 +159,7 @@ test('password recovery sends mail only for a verified account and never disclos
     const known = await post('recovery@example.com'), unknown = await post('missing@example.com');
     assert.equal(known.status, 202); assert.equal(unknown.status, 202); assert.deepEqual(await known.json(), await unknown.json()); assert.equal(resetCount, 1);
     assert.equal((await post('not-an-email')).status, 400);
-    await accounts.resetPassword(resetToken, 'new-password'); assert.equal(accounts.getSession(oldSession.token), null);
+    await accounts.resetPassword(resetToken, 'new-password'); assert.equal(await accounts.getSession(oldSession.token), null);
     await assert.rejects(accounts.resetPassword(resetToken, 'another-password'), /INVALID_TOKEN/);
     assert.equal((await accounts.login('recovery@example.com', 'new-password')).user.email, 'recovery@example.com');
   } finally { await new Promise(resolve => server.close(resolve)); await new Promise(resolve => upstream.close(resolve)); db.close(); if (previous === undefined) delete process.env.ETECZKA_CENTRAL_ACCOUNT_URL; else process.env.ETECZKA_CENTRAL_ACCOUNT_URL = previous; }

@@ -1,11 +1,11 @@
 export type BillingPlan = 'free' | 'standard' | 'premium';
 
 export type BillingTransaction = {
-  id: number;
+  id: number | string;
   type: string;
   status: string;
-  amount: number;
-  currency: string;
+  amount: number | null;
+  currency: string | null;
   description?: string | null;
   occurredAt: string;
 };

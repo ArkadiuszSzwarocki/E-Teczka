@@ -12,7 +12,7 @@ const mfa = createBackupMfaStore(path.join(securityDir, 'backup-mfa.enc'));
 const grants = new Map<string, { owner: string; expires: number; remaining: Set<string> }>();
 const attempts = new Map<string, { count: number; expires: number }>();
 const mfaOwner = (res: express.Response) => `documents:${Number(res.locals.userId || 1)}`;
-const actions: Record<string, string[]> = { send: ['destination', 'cloud'], cloudRestore: ['cloud/latest', 'restore'], restore: ['restore'], export: ['export'], recoveryKey: ['recovery-key'], connect: ['oauth'] };
+const actions: Record<string, string[]> = { send: ['destination', 'cloud'], cloudList: ['cloud/latest'], cloudRestore: ['cloud/latest', 'restore'], restore: ['restore'], export: ['export'], recoveryKey: ['recovery-key'], connect: ['oauth'] };
 
 export function createBackupMfaRouter(prisma: PrismaClient) {
   const router = express.Router();

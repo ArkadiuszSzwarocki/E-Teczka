@@ -80,7 +80,7 @@ export function createScannerInboxRouter(prisma: PrismaClient, ocrQueue?: Return
     const id = req.params.id; const folderId = Number(req.body?.folderId); const ownerId = Number(res.locals.userId || 1);
     if (!validId(id)) return res.status(400).json({ error: 'Nieprawidłowy skan.' });
     const folder = await prisma.folder.findFirst({ where: { id: folderId, ownerId } });
-    if (!folder || !await isDocumentFolder(prisma, folderId)) return res.status(400).json({ error: 'Wybierz własną podkartotekę.' });
+    if (!folder || !await isDocumentFolder(prisma, folderId)) return res.status(400).json({ error: 'Wybierz własną kartotekę.' });
     const dir = directory(res); const metaPath = path.join(dir, `${id}.json`); const scanPath = path.join(dir, `${id}.pdf`);
     if (!fs.existsSync(metaPath) || !fs.existsSync(scanPath)) return res.status(404).json({ error: 'Skan nie jest dostępny.' });
     if (moving.has(`${ownerId}:${id}`) || moving.has(`folder:${folderId}`)) return res.status(409).json({ error: 'Trwa już przenoszenie do tej kartoteki. Spróbuj ponownie.' });

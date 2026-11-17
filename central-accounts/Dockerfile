@@ -2,8 +2,10 @@ FROM node:24-alpine
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
-COPY account.html accountAction.html account.css accountAction.js accountUi.js cloudflareGate.js proxyGate.js googleIdentity.js httpApp.js index.js ./
+COPY account.html accountAction.html account.css accountAction.js accountUi.js cloudflareGate.js proxyGate.js turnstileGate.js googleIdentity.js httpApp.js index.js shareService.js ./
 COPY mariadb/ ./mariadb/
+COPY catalog.defaults.json ./
+RUN mkdir -p /app/share-data && chown node:node /app/share-data
 USER node
 ENV NODE_ENV=production
 EXPOSE 3001

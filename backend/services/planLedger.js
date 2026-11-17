@@ -15,13 +15,18 @@ exports.getPlan = getPlan;
 exports.featureTrial = featureTrial;
 exports.consumeUsage = consumeUsage;
 exports.checkDocumentCapacity = checkDocumentCapacity;
+exports.checkTagCapacity = checkTagCapacity;
 exports.exportPlanState = exportPlanState;
 exports.parseBackupPlanState = parseBackupPlanState;
 exports.mergePlanState = mergePlanState;
 exports.copyDesktopPlanState = copyDesktopPlanState;
 exports.claimPrinterPages = claimPrinterPages;
 const planCatalog_1 = require("./planCatalog");
+const centralEntitlements_1 = require("./centralEntitlements");
+const centralEntitlements_2 = require("./centralEntitlements");
+const centralPlanLedger_1 = require("./centralPlanLedger");
 const devPlans_1 = require("./devPlans");
+const devOverrides_1 = require("./devOverrides");
 const planPolicy_1 = require("./planPolicy");
 class PlanLimitError extends Error {
     constructor(feature, limit, resetsAt) {
@@ -43,11 +48,22 @@ function ensurePlanLedger(db) {
         yield db.$executeRawUnsafe('CREATE TABLE IF NOT EXISTS PlanScanReceipt (ownerKey TEXT NOT NULL, draftId TEXT NOT NULL, documentId INTEGER NOT NULL, fingerprint TEXT NOT NULL, PRIMARY KEY(ownerKey, draftId))');
     });
 }
+const isPublicTestMode = () => process.env.ETECZKA_PUBLIC_TEST_MODE === '1' && process.env.NODE_ENV !== 'production';
 function getPlan(db_1, ownerKey_1) {
     return __awaiter(this, arguments, void 0, function* (db, ownerKey, now = new Date()) {
         const override = (0, devPlans_1.devPlan)(ownerKey);
         if (override)
             return override;
+        if (isPublicTestMode() || (0, devOverrides_1.getDevOverrides)().bypassPlanLimits)
+            return 'premium';
+        const id = /^user:(\d+)$/.exec(ownerKey);
+        if (id) {
+            const central = yield (0, centralEntitlements_1.centralEntitlement)(Number(id[1]));
+            if (central)
+                return central.plan;
+            if (yield (0, centralEntitlements_1.hasCentralLink)(db, Number(id[1])))
+                return 'free';
+        }
         const subscription = yield db.subscription.findUnique({ where: { ownerKey } });
         return (0, planPolicy_1.activePlan)(subscription === null || subscription === void 0 ? void 0 : subscription.plan, subscription === null || subscription === void 0 ? void 0 : subscription.status, subscription === null || subscription === void 0 ? void 0 : subscription.cancelAtPeriodEnd, subscription === null || subscription === void 0 ? void 0 : subscription.currentPeriodEnd, now);
     });
@@ -55,6 +71,13 @@ function getPlan(db_1, ownerKey_1) {
 /** Check or explicitly start a trial. Read-only checks never start the clock. */
 function featureTrial(db_1, ownerKey_1, feature_1, start_1) {
     return __awaiter(this, arguments, void 0, function* (db, ownerKey, feature, start, now = new Date()) {
+        if (isPublicTestMode() && !(0, devPlans_1.devPlan)(ownerKey))
+            return { allowed: true, startedAt: null, endsAt: null };
+        const central = (0, centralPlanLedger_1.requireCentralPlanOwner)(ownerKey);
+        if (central) {
+            const result = yield (0, centralEntitlements_2.centralPlanRequest)(central, '/ledger/trial', { feature, start });
+            return { allowed: result.allowed, startedAt: result.startedAt === null ? null : new Date(result.startedAt), endsAt: result.endsAt === null ? null : new Date(result.endsAt) };
+        }
         const plan = yield getPlan(db, ownerKey, now);
         if ((0, planCatalog_1.getCatalog)().plans[plan][feature === 'ocr' ? 'ocr' : 'cloudBackup'])
             return { allowed: true, startedAt: null, endsAt: null };
@@ -72,6 +95,18 @@ function featureTrial(db_1, ownerKey_1, feature_1, start_1) {
 /** Must be called in the same write transaction as the operation being metered. */
 function consumeUsage(db_1, ownerKey_1, plan_1, feature_1, operationId_1, amount_1) {
     return __awaiter(this, arguments, void 0, function* (db, ownerKey, plan, feature, operationId, amount, now = new Date()) {
+        const central = (0, centralPlanLedger_1.requireCentralPlanOwner)(ownerKey);
+        if (central) {
+            const previous = yield db.$queryRaw `SELECT amount FROM PlanUsage WHERE ownerKey=${ownerKey} AND feature=${feature} AND operationId=${operationId}`;
+            if (previous.length) {
+                if (Number(previous[0].amount) !== amount)
+                    throw new Error('Identyfikator operacji został użyty z inną liczbą.');
+                return;
+            }
+            yield (0, centralPlanLedger_1.reserveCentralPlan)(db, central, feature, operationId, amount);
+            yield db.$executeRaw `INSERT INTO PlanUsage(ownerKey,feature,operationId,amount,usedAt) VALUES (${ownerKey},${feature},${operationId},${amount},${now.getTime()})`;
+            return;
+        }
         ownerKey = (0, devPlans_1.accountingKey)(ownerKey);
         if (!operationId || !Number.isSafeInteger(amount) || amount < 1)
             throw new Error('Nieprawidłowe dane licznika.');
@@ -94,6 +129,11 @@ function consumeUsage(db_1, ownerKey_1, plan_1, feature_1, operationId_1, amount
 /** Counts all stored documents, including archive and trash, so users can free capacity by emptying trash. */
 function checkDocumentCapacity(db, ownerId, plan, amount) {
     return __awaiter(this, void 0, void 0, function* () {
+        const central = (0, centralPlanLedger_1.requireCentralPlanOwner)(`user:${ownerId}`);
+        if (central) {
+            yield (0, centralPlanLedger_1.reserveCentralPlan)(db, central, 'documents', (0, centralPlanLedger_1.centralResourceOperation)(), amount);
+            return;
+        }
         const limit = planPolicy_1.PLAN_LIMITS[plan].documents;
         if (limit === null)
             return;
@@ -101,6 +141,13 @@ function checkDocumentCapacity(db, ownerId, plan, amount) {
         if (count + amount > limit)
             throw new PlanLimitError('dokumenty', limit);
     });
+}
+function checkTagCapacity(db_1, ownerId_1, plan_1, localCount_1) {
+    return __awaiter(this, arguments, void 0, function* (db, ownerId, plan, localCount, amount = 1) { const central = (0, centralPlanLedger_1.requireCentralPlanOwner)(`user:${ownerId}`); if (central) {
+        yield (0, centralPlanLedger_1.reserveCentralPlan)(db, central, 'tags', (0, centralPlanLedger_1.centralResourceOperation)(), amount);
+        return;
+    } const limit = planPolicy_1.PLAN_LIMITS[plan].tags; if (limit !== null && localCount + amount > limit)
+        throw new PlanLimitError('tagi', limit); });
 }
 function exportPlanState(db, ownerKey) {
     return __awaiter(this, void 0, void 0, function* () {
@@ -123,6 +170,10 @@ function parseBackupPlanState(value) {
 /** Merge rather than reset trials and counters when restoring older snapshots. */
 function mergePlanState(db, ownerKey, state) {
     return __awaiter(this, void 0, void 0, function* () {
+        if ((0, centralPlanLedger_1.centralOwner)(ownerKey)) {
+            (0, centralPlanLedger_1.markCentralInventoryDirty)();
+            return;
+        }
         if (!state)
             return;
         for (const item of state.trials)

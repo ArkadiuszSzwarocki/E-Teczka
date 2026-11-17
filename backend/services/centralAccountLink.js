@@ -72,6 +72,12 @@ function createCentralAccountLinks(prisma) {
                 const changed = yield prisma.$executeRaw `DELETE FROM CentralAccountLink WHERE centralOrigin = ${origin} AND centralId = ${centralId} AND localUserId = ${localUserId}`;
                 return changed === 1;
             });
+        },
+        revokeLocalSessions(localUserId) {
+            return __awaiter(this, void 0, void 0, function* () {
+                const deleted = yield prisma.authSession.deleteMany({ where: { userId: localUserId } });
+                return deleted.count;
+            });
         }
     };
 }

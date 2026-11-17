@@ -1,0 +1,119 @@
+{
+  "viewMode": "icons",
+  "folders": [
+    {
+      "id": "af_1794846317536_768v",
+      "name": "dom",
+      "parentId": null,
+      "icon": "📁",
+      "order": 1
+    },
+    {
+      "id": "af_1794846323630_d3x6",
+      "name": "f",
+      "parentId": "af_1794846317536_768v",
+      "icon": "📁",
+      "order": 1
+    },
+    {
+      "id": "af_1794846327759_bsbn",
+      "name": "g",
+      "parentId": "af_1794846317536_768v",
+      "icon": "📁",
+      "order": 0
+    },
+    {
+      "id": "af_1794846334879_qtfl",
+      "name": "g",
+      "parentId": "af_1794846317536_768v",
+      "icon": "📁",
+      "order": 2
+    },
+    {
+      "id": "af_1794846337557_yb8s",
+      "name": "d",
+      "parentId": "af_1794846317536_768v",
+      "icon": "📁",
+      "order": 3
+    },
+    {
+      "id": "af_1794846340542_f82m",
+      "name": "s",
+      "parentId": "af_1794846317536_768v",
+      "icon": "📁",
+      "order": 4
+    },
+    {
+      "id": "af_1794846349113_51vs",
+      "name": "praca",
+      "parentId": null,
+      "icon": "📁",
+      "order": 2
+    },
+    {
+      "id": "af_1794846357661_56qp",
+      "name": "dzieci",
+      "parentId": null,
+      "icon": "📁",
+      "order": 3
+    },
+    {
+      "id": "af_1794846380974_6unm",
+      "name": "hjkh",
+      "parentId": null,
+      "icon": "📁",
+      "order": 0
+    },
+    {
+      "id": "af_1794846404413_ymk4",
+      "name": "3",
+      "parentId": "af_1794846380974_6unm",
+      "icon": "📁",
+      "order": 0
+    },
+    {
+      "id": "af_1794846407453_puuj",
+      "name": "4",
+      "parentId": "af_1794846404413_ymk4",
+      "icon": "📁",
+      "order": 0
+    },
+    {
+      "id": "af_1794846410344_82vt",
+      "name": "f",
+      "parentId": "af_1794846407453_puuj",
+      "icon": "📁",
+      "order": 0
+    },
+    {
+      "id": "af_1794846418740_859b",
+      "name": "tr",
+      "parentId": "af_1794846410344_82vt",
+      "icon": "📁",
+      "order": 0
+    },
+    {
+      "id": "af_1794846423590_wfdw",
+      "name": "f",
+      "parentId": "af_1794846418740_859b",
+      "icon": "📁",
+      "order": 0
+    },
+    {
+      "id": "af_1794846427043_6rye",
+      "name": "g",
+      "parentId": "af_1794846423590_wfdw",
+      "icon": "📁",
+      "order": 0
+    },
+    {
+      "id": "af_1794846431715_fawa",
+      "name": "a",
+      "parentId": "af_1794846427043_6rye",
+      "icon": "📁",
+      "order": 0
+    }
+  ],
+  "docFolderMap": {},
+  "docOrder": {}
+}

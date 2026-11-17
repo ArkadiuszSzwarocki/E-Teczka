@@ -1,0 +1,42 @@
+services:
+  eteczka-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test-nas
+    image: eteczka-test:local
+    container_name: eteczka-test
+    restart: unless-stopped
+    env_file:
+      - .env.nas
+    environment:
+      NODE_ENV: test
+      ETECZKA_PUBLIC_TEST_MODE: "1"
+      DATABASE_URL: "file:/app/backend/prisma/data/eteczka.db"
+    volumes:
+      - eteczka_test_db:/app/backend/prisma/data
+      - eteczka_test_uploads:/app/backend/uploads
+      - eteczka_test_security:/app/backend/security
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: eteczka-test-tunnel
+    restart: unless-stopped
+    network_mode: "service:eteczka-test"
+    depends_on:
+      - eteczka-test
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TEST_TUNNEL_TOKEN}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  eteczka_test_db:
+  eteczka_test_uploads:
+  eteczka_test_security:

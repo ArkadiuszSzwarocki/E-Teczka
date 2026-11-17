@@ -146,7 +146,7 @@ function createScannerInboxRouter(prisma, ocrQueue) {
             return res.status(400).json({ error: 'Nieprawidłowy skan.' });
         const folder = yield prisma.folder.findFirst({ where: { id: folderId, ownerId } });
         if (!folder || !(yield (0, folders_1.isDocumentFolder)(prisma, folderId)))
-            return res.status(400).json({ error: 'Wybierz własną podkartotekę.' });
+            return res.status(400).json({ error: 'Wybierz własną kartotekę.' });
         const dir = directory(res);
         const metaPath = path_1.default.join(dir, `${id}.json`);
         const scanPath = path_1.default.join(dir, `${id}.pdf`);

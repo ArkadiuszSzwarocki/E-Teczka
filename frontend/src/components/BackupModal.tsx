@@ -1,128 +1,137 @@
-import { useEffect, useRef, useState } from 'react';
-import WebDavFolderPicker from './WebDavFolderPicker';
 import BackupRecoveryKey from './BackupRecoveryKey';
-import BackupAuthenticatorSetup from './BackupAuthenticatorSetup';
-import BackupActionDialog, { type BackupActionCredentials } from './BackupActionDialog';
+import BackupActionDialog from './BackupActionDialog';
 import InfoTip from './InfoTip';
 import BackupTransferAnimation from './BackupTransferAnimation';
 import BackupAuthenticatorDialog from './BackupAuthenticatorDialog';
-type Destination = 'computer' | 'cloud';
-type Provider = 'webdav' | 'google-drive' | 'onedrive' | 'dropbox';
-type Schedule = 'manual' | 'daily' | 'weekly';
-export type BackupSection = 'settings' | 'send' | 'restore';
-type Props = { fetcher: typeof fetch; apiUrl: string; section: BackupSection; onClose: () => void; onDone: () => void };
+import BackupSettingsView from './BackupSettingsView';
+import { BACKUP_PROVIDER_LABELS, useBackupManager, type BackupSection } from '../hooks/useBackupManager';
 
-export default function BackupModal({ apiUrl, section, onClose, onDone, fetcher: fetch }: Props) {
-  const [destination, setDestination] = useState<Destination>('computer'); const [provider, setProvider] = useState<Provider>('webdav'); const [endpoint, setEndpoint] = useState(''); const [username, setUsername] = useState(''); const [password, setPassword] = useState(''); const [remoteFolder, setRemoteFolder] = useState(''); const [schedule, setSchedule] = useState<Schedule>('manual'); const [busy, setBusy] = useState(false); const [message, setMessage] = useState('');
-  const [sending, setSending] = useState(false);
-  const [nasType, setNasType] = useState<'qnap' | 'synology' | 'other'>('qnap');
-  const [scheduleTime, setScheduleTime] = useState('02:15');
-  const [actionDialog, setActionDialog] = useState<'send' | 'restore' | null>(null);
-  const [mfaEnabled, setMfaEnabled] = useState<boolean | null>(null);
-  const [mfaPromptOpen, setMfaPromptOpen] = useState(false);
-  const pendingMfa = useRef<{ resolve: (code: string) => void; reject: (error: Error) => void } | null>(null);
-  const [settingsLoading, setSettingsLoading] = useState(true);
-  const [backupUsername, setBackupUsername] = useState('');
-  const [backupPassword, setBackupPassword] = useState('');
-  const [backupCredentialSaved, setBackupCredentialSaved] = useState(false);
-  const [recoveryFile, setRecoveryFile] = useState<File | null>(null);
-  const [recoveryPassword, setRecoveryPassword] = useState('');
-  const [lastBackup, setLastBackup] = useState<{ at: string | null; status: string | null; error: string | null } | null>(null);
-  const nasEndpoint = () => { const value = endpoint.trim(); if (!value || /^[a-z][a-z0-9+.-]*:\/\//i.test(value)) return value; try { const url = new URL(`https://${value}`); if (!url.port && nasType !== 'other') url.port = nasType === 'qnap' ? '5001' : '5006'; return url.toString().replace(/\/$/, ''); } catch { return value; } };
-  const authHeaders = (): Record<string, string> => { const token = localStorage.getItem('eteczka_auth_token'); return token ? { Authorization: `Bearer ${token}` } : {}; };
-  useEffect(() => () => { pendingMfa.current?.reject(new Error('Anulowano potwierdzanie operacji.')); pendingMfa.current = null; }, []);
-  const askForMfa = () => new Promise<string>((resolve, reject) => {
-    if (pendingMfa.current) { reject(new Error('Inna operacja oczekuje na potwierdzenie.')); return; }
-    pendingMfa.current = { resolve, reject }; setMfaPromptOpen(true);
-  });
-  useEffect(() => {
-    let active = true;
-    fetch(`${apiUrl}/api/backup/authenticator/status`, { headers: authHeaders() }).then(async response => { if (!response.ok) throw new Error('Nie można sprawdzić zabezpieczeń kopii.'); return response.json(); }).then(result => { if (active) setMfaEnabled(Boolean(result.enabled)); }).catch(error => { if (active) setMessage(error.message); });
-    return () => { active = false; };
-  }, [apiUrl]);
-  const authorize = async (action: string, suppliedCode?: string): Promise<Record<string, string>> => {
-    if (mfaEnabled === null) throw new Error('Nie można sprawdzić zabezpieczeń kopii.');
-    if (!mfaEnabled) return authHeaders();
-    const code = suppliedCode === undefined ? await askForMfa() : suppliedCode;
-    if (!code.trim()) throw new Error('Wpisz kod z Microsoft Authenticator.');
-    const response = await fetch(`${apiUrl}/api/backup/authenticator/authorize`, { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ action, code: code.trim() }) });
-    const payload = await response.json(); if (!response.ok) throw new Error(payload.error || 'Nieprawidłowy kod Authenticatora.');
-    return { ...authHeaders(), 'x-backup-authorization': payload.token };
-  };
-  useEffect(() => {
-    let active = true;
-    const token = localStorage.getItem('eteczka_auth_token');
-    fetch(`${apiUrl}/api/backup/destination`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-      .then(async response => { if (!response.ok) { if (response.status === 402) return null; throw new Error('Nie udało się wczytać ustawień kopii.'); } return response.json(); })
-      .then(data => { if (!active || !data?.configured) return; setDestination('cloud'); setProvider(data.provider); setEndpoint(data.endpoint || ''); setBackupUsername(data.backupUsername || ''); setRemoteFolder(data.remoteFolder || ''); const [frequency, time] = String(data.schedule || 'manual').split('@'); setSchedule(frequency === 'daily' || frequency === 'weekly' ? frequency : 'manual'); setScheduleTime(time || '02:15'); setBackupCredentialSaved(Boolean(data.backupCredentialSaved)); setLastBackup({ at: data.lastBackupAt || null, status: data.lastBackupStatus || null, error: data.lastBackupError || null }); if (data.endpoint) { try { const port = new URL(data.endpoint).port; setNasType(port === '5001' ? 'qnap' : port === '5006' ? 'synology' : 'other'); } catch { setNasType('other'); } } })
-      .catch(error => { if (active) setMessage(error instanceof Error ? error.message : 'Nie udało się wczytać ustawień kopii.'); })
-      .finally(() => { if (active) setSettingsLoading(false); });
-    return () => { active = false; };
-  }, [apiUrl]);
-  const restore = async (file: File, authorizedHeaders?: Record<string, string>) => { setBusy(true); setMessage('Przywracanie kopii…'); try { const protectedHeaders = authorizedHeaders || await authorize('restore'); const body = new FormData(); body.append('restoreMode', 'replace'); body.append('backup', file); if (recoveryFile) { if (recoveryFile.size > 4096) throw new Error('Plik klucza odzyskiwania jest nieprawidłowy.'); body.append('recoveryKey', await recoveryFile.text()); body.append('recoveryPassphrase', recoveryPassword); } const response = await fetch(`${apiUrl}/api/backup/restore`, { method: 'POST', headers: protectedHeaders, body }); const payload = await response.json().catch(() => ({})); if (!response.ok) throw new Error(payload.error || 'Nie udało się przywrócić kopii.'); setMessage(`Przywrócono ${payload.restoredDocuments || 0} dokumentów.`); onDone(); } catch (error) { setMessage(error instanceof Error ? error.message : 'Błąd przywracania kopii.'); } finally { setBusy(false); } };
-  const restoreLatestCloud = async (credentials: BackupActionCredentials) => { setBusy(true); setMessage('Pobieranie najnowszej kopii…'); try { const protectedHeaders = await authorize('cloudRestore', credentials.code); const response = await fetch(`${apiUrl}/api/backup/cloud/latest`, { method: 'POST', headers: { ...protectedHeaders, 'Content-Type': 'application/json' }, body: JSON.stringify({ username: credentials.username, password: credentials.password }) }); const payload = response.ok ? null : await response.json().catch(() => ({})); if (!response.ok) throw new Error(payload?.error || 'Nie udało się pobrać kopii z chmury.'); const disposition = response.headers.get('Content-Disposition') || ''; const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || 'eteczka-cloud-backup.zip.enc'; await restore(new File([await response.blob()], filename, { type: 'application/octet-stream' }), protectedHeaders); } catch (error) { setBusy(false); setMessage(error instanceof Error ? error.message : 'Błąd pobierania kopii z chmury.'); } };
-  const exportBackup = async () => { setBusy(true); setMessage('Tworzenie kopii…'); try { const response = await fetch(`${apiUrl}/api/backup/export`, { headers: await authorize('export') }); if (!response.ok) throw new Error('Nie udało się utworzyć kopii.'); const url = URL.createObjectURL(await response.blob()); const link = document.createElement('a'); link.href = url; link.download = `eteczka-backup-${new Date().toISOString().slice(0, 10)}.zip`; link.click(); URL.revokeObjectURL(url); setMessage('Kopia została pobrana.'); } catch (error) { setMessage(error instanceof Error ? error.message : 'Błąd tworzenia kopii.'); } finally { setBusy(false); } };
-  const connectOAuth = async (selected: Exclude<Provider, 'webdav'>) => { setProvider(selected); setBusy(true); try { const response = await fetch(`${apiUrl}/api/backup/oauth/${selected}/start`, { headers: await authorize('connect'), redirect: 'manual' }); const location = response.headers.get('Location'); if (!location) throw new Error((await response.json().catch(() => ({}))).error || 'Brak konfiguracji OAuth.'); window.open(location, '_blank', 'noopener,noreferrer'); setMessage('Dokończ autoryzację w nowym oknie.'); } catch (error) { setMessage(error instanceof Error ? error.message : 'Nie udało się połączyć chmury.'); } finally { setBusy(false); } };
-  const saveSettings = async () => { setBusy(true); setMessage('Zapisywanie ustawień…'); try { const headers = await authorize('send'); const response = await fetch(`${apiUrl}/api/backup/destination`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ provider, endpoint: provider === 'webdav' ? nasEndpoint() : endpoint, remoteFolder, schedule: schedule === 'manual' ? 'manual' : `${schedule}@${scheduleTime}`, username, backupUsername, backupPassword }) }); const payload = await response.json().catch(() => ({})); if (!response.ok) throw new Error(payload.error || 'Nie udało się zapisać ustawień.'); if (backupPassword) { setBackupCredentialSaved(true); setBackupPassword(''); } setMessage('Ustawienia kopii zostały zapisane.'); } catch (error) { setMessage(error instanceof Error ? error.message : 'Błąd zapisu ustawień.'); } finally { setBusy(false); } };
-  const upload = async (credentials: BackupActionCredentials) => { setBusy(true); setMessage('Wysyłanie kopii…'); try { const protectedHeaders = await authorize('send', credentials.code); setSending(true); const response = await fetch(`${apiUrl}/api/backup/cloud`, { method: 'POST', headers: { ...protectedHeaders, 'Content-Type': 'application/json' }, body: JSON.stringify({ username: credentials.username, password: credentials.password }) }); const payload = await response.json().catch(() => ({})); if (!response.ok) throw new Error(payload.error || 'Nie udało się wysłać kopii.'); setMessage(provider === 'webdav' ? 'Kopia została wysłana na serwer NAS.' : 'Kopia została wysłana do chmury.'); } catch (error) { setMessage(error instanceof Error ? error.message : 'Błąd wysyłki kopii.'); } finally { setSending(false); setBusy(false); } };
+export type { BackupSection };
+type Props = { embedded?: boolean; fetcher: typeof fetch; apiUrl: string; section: BackupSection; onClose: () => void; onDone: (message?: string) => void };
+
+/** Modal for configuring, sending, and restoring encrypted cloud or local ZIP backups. */
+export default function BackupModal({ embedded = false, apiUrl, section, onClose, onDone, fetcher }: Props) {
+  const mgr = useBackupManager({ apiUrl, fetcher, onDone });
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/80 p-3 sm:p-5">
-      <section role="dialog" aria-modal="true" aria-labelledby="backup-title" className="flex max-h-full w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-600 bg-[#0f172a] shadow-2xl">
+    <div className={embedded ? 'w-full' : 'fixed inset-0 z-[120] flex items-center justify-center bg-black/80 p-3 sm:p-5'}>
+      <section role={embedded ? undefined : 'dialog'} aria-modal={embedded ? undefined : 'true'} aria-labelledby="backup-title" className={embedded ? 'flex w-full flex-col overflow-hidden rounded-2xl border border-slate-700/80 bg-[#0f172a] shadow-xl' : 'flex max-h-full w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-600 bg-[#0f172a] shadow-2xl'}>
         <div className="flex shrink-0 items-center justify-between border-b border-slate-700 px-5 py-4 sm:px-6">
           <h2 id="backup-title" className="text-xl font-bold text-white">☁️ {section === 'settings' ? 'Ustawienia kopii zapasowej' : section === 'send' ? 'Wysyłanie kopii zapasowej' : 'Przywracanie kopii zapasowej'}</h2>
-          <button type="button" aria-label="Zamknij" disabled={sending} onClick={onClose} className="text-2xl text-slate-400">×</button>
+          <button type="button" aria-label="Zamknij" disabled={mgr.sending} onClick={onClose} className="rounded-lg px-2 py-1 text-2xl text-slate-400 hover:bg-slate-800 hover:text-white">×</button>
         </div>
         <div className="overflow-y-auto p-5 sm:p-6">
-          <div className={section === 'settings' ? "grid grid-cols-1 gap-6 md:grid-cols-2" : "mx-auto max-w-xl"}>
-            {section === 'settings' && <div className="min-w-0">
-              <h3 className="font-semibold text-white">Miejsce kopii</h3>
-              <InfoTip label="miejsce kopii">Wybierz, gdzie przechowywać kopię dokumentów. NAS i chmura wymagają wcześniej skonfigurowanego dostępu. Ręczny eksport ZIP pobiera kopię na komputer.</InfoTip>
-              <div className="mt-3 grid grid-cols-3 gap-2">{(['google-drive', 'onedrive', 'dropbox'] as const).map(item => <button key={item} disabled={busy} onClick={() => { setDestination('cloud'); void connectOAuth(item); }} className="rounded-lg border border-slate-600 p-2 text-xs text-slate-200">{item === 'google-drive' ? 'Google Drive' : item === 'onedrive' ? 'OneDrive' : 'Dropbox'}</button>)}</div>
-              <select aria-label="Miejsce kopii" value={destination} onChange={event => setDestination(event.target.value as Destination)} className="mt-3 w-full rounded-lg border border-slate-600 bg-[#111827] p-3 text-white"><option value="computer">Komputer / ręczny eksport</option><option value="cloud">Chmura lub serwer NAS</option></select>
-              {destination === 'cloud' && <>
-                <select aria-label="Dostawca chmury" value={provider} onChange={event => setProvider(event.target.value as Provider)} className="mt-3 w-full rounded-lg border border-slate-600 bg-[#111827] p-3 text-white"><option value="webdav">NAS (QNAP, Synology) / WebDAV</option><option value="google-drive">Google Drive</option><option value="onedrive">OneDrive</option><option value="dropbox">Dropbox</option></select>
-                {provider === 'webdav' && <>
-                  <select aria-label="Rodzaj serwera NAS" value={nasType} onChange={event => { setNasType(event.target.value as typeof nasType); setRemoteFolder(''); }} className="mt-3 w-full rounded-lg border border-slate-600 bg-[#111827] p-3 text-white"><option value="qnap">QNAP — domyślny port WebDAV HTTPS 5001</option><option value="synology">Synology — domyślny port WebDAV HTTPS 5006</option><option value="other">Inny NAS / własny port</option></select>
-                  <input aria-label="Adres NAS" value={endpoint} onChange={event => setEndpoint(event.target.value)} placeholder="Adres IP lub nazwa, np. 192.168.0.12" className="mt-3 w-full rounded-lg border border-slate-600 bg-[#111827] p-3 text-white" />
-                  <input aria-label="Użytkownik NAS" value={username} onChange={event => setUsername(event.target.value)} placeholder="Użytkownik NAS" className="mt-3 w-full rounded-lg border border-slate-600 bg-[#111827] p-3 text-white" />
-                  <input aria-label="Hasło NAS" type="password" value={password} onChange={event => setPassword(event.target.value)} placeholder="Twoje hasło NAS — wymagane przy połączeniu" className="mt-3 w-full rounded-lg border border-slate-600 bg-[#111827] p-3 text-white" />
-                  <p className="mt-2 text-xs text-slate-400">Twoje hasło nie jest zapisywane. Po zamknięciu okna podaj je ponownie.</p>
-                </>}
-                <input aria-label="Folder docelowy" value={remoteFolder} onChange={event => setRemoteFolder(event.target.value)} placeholder="Folder docelowy / ID folderu" className="mt-3 w-full rounded-lg border border-slate-600 bg-[#111827] p-3 text-white" />
-                <select aria-label="Harmonogram kopii" value={schedule} onChange={event => setSchedule(event.target.value as Schedule)} className="mt-3 w-full rounded-lg border border-slate-600 bg-[#111827] p-3 text-white"><option value="manual">Tylko ręcznie</option><option value="daily">Codziennie</option><option value="weekly">W poniedziałek</option></select>
-                {schedule !== 'manual' && provider === 'webdav' && <div className="mt-3 rounded-lg border border-amber-700/60 p-3 text-sm text-slate-200"><p>Osobne konto NAS do automatycznej kopii</p><p className="mt-1 text-xs text-slate-400">Na NAS-ie nadaj mu dostęp wyłącznie do folderu kopii. Jego hasło będzie zapisane zaszyfrowane, aby automat mógł się zalogować.</p><input aria-label="Konto NAS do kopii" value={backupUsername} onChange={event => setBackupUsername(event.target.value)} placeholder="Użytkownik do kopii" className="mt-2 w-full rounded-lg border border-slate-600 bg-[#111827] p-2 text-white" /><input aria-label="Hasło konta kopii" type="password" value={backupPassword} onChange={event => setBackupPassword(event.target.value)} placeholder={backupCredentialSaved ? 'Hasło konta kopii zapisane — wpisz, aby zmienić' : 'Hasło konta kopii'} className="mt-2 w-full rounded-lg border border-slate-600 bg-[#111827] p-2 text-white" /></div>}
-                {schedule !== 'manual' && provider === 'webdav' && <InfoTip label="konto automatycznej kopii">Utwórz na NAS-ie osobne konto i nadaj mu dostęp tylko do folderu kopii. Automat używa jego zaszyfrowanego hasła, ponieważ nie może poprosić o kod lub hasło podczas pracy w tle.</InfoTip>}
-                {schedule !== 'manual' && <label className="mt-3 block text-sm text-slate-300">Godzina kopii<input type="time" value={scheduleTime} onChange={event => setScheduleTime(event.target.value)} className="mt-1 block w-full rounded-lg border border-slate-600 bg-[#111827] p-3 text-white" /></label>}
-                {schedule !== 'manual' && <p className="mt-2 text-xs text-amber-200">Jeśli serwer wtedy nie działał, spróbuje wykonać ją po następnym uruchomieniu. Zamknięcie okna ukrywa aplikację przy zegarze; „Zakończ E-Teczkę” wyłącza ją całkowicie. Komputer i NAS muszą być dostępne.</p>}
-                {schedule !== 'manual' && <InfoTip label="harmonogram">Kopia zostanie wykonana o wybranej godzinie, gdy E-Teczka i komputer działają. Po pominięciu terminu serwer spróbuje ją wykonać po ponownym uruchomieniu. NAS musi być dostępny.</InfoTip>}
-              </>}
-            </div>}
-            <div className="min-w-0">
-              <h3 className="font-semibold text-white">{section === 'settings' ? 'Folder i zabezpieczenia' : section === 'send' ? 'Utwórz kopię' : 'Przywróć dane'}</h3>
-              {section !== 'settings' && destination === 'computer' && !settingsLoading && <p className="mt-3 rounded-lg bg-slate-800 p-3 text-sm text-slate-300">Nie skonfigurowano chmury ani NAS-a. Wybierz „Ustawienia kopii”, aby dodać miejsce zapisu. Możesz też użyć lokalnego pliku ZIP.</p>}
-              {lastBackup?.at && <p className="mt-2 text-xs text-slate-300">Ostatnia zaplanowana próba: {new Date(lastBackup.at).toLocaleString('pl-PL')} — {lastBackup.status === 'success' ? 'powodzenie' : 'błąd'}{lastBackup.error ? ` (${lastBackup.error})` : ''}</p>}
-              {destination === 'cloud' && <>
-                {section === 'settings' && provider === 'webdav' && <WebDavFolderPicker fetcher={fetch} key={`${nasType}:${endpoint}:${username}`} apiUrl={apiUrl} endpoint={nasEndpoint()} username={username} password={password} selected={remoteFolder} onSelect={setRemoteFolder} onEndpointChange={setEndpoint} authHeaders={authHeaders} disabled={busy} />}
-                {section === 'settings' && <button disabled={busy || settingsLoading || mfaEnabled === null} onClick={() => void saveSettings()} className="mt-3 w-full rounded-lg bg-blue-600 py-3 font-bold text-white disabled:opacity-50">Zapisz ustawienia kopii</button>}
-                {section === 'send' && <button disabled={busy || settingsLoading || mfaEnabled === null} onClick={() => setActionDialog('send')} className="mt-3 w-full rounded-lg bg-emerald-600 py-3 font-bold text-white disabled:opacity-50">Wyślij kopię do chmury lub NAS-a</button>}
-                {section === 'restore' && <button disabled={busy || mfaEnabled === null} onClick={() => { if (window.confirm('Przywrócenie zastąpi bieżące kartoteki i dokumenty stanem z kopii. Zmiany wykonane po utworzeniu kopii znikną z aplikacji. Kontynuować?')) setActionDialog('restore'); }} className="mt-3 w-full rounded-lg border border-blue-400 py-3 font-bold text-blue-200 disabled:opacity-50">Pobierz i przywróć najnowszą kopię</button>}
-                <InfoTip label="wysłanie i przywrócenie kopii">Wysłanie tworzy zaszyfrowaną kopię dokumentów i zapisuje ją w wybranym miejscu. Przywrócenie pobiera ostatnią kopię i odtwarza z niej dokumenty. Przy ręcznej operacji podajesz dane NAS-a i kod Authenticatora, jeśli go włączono.</InfoTip>
-              </>}
-              {section === 'send' && <button disabled={busy} onClick={() => void exportBackup()} className="mt-3 w-full rounded-lg bg-blue-600 py-3 font-bold text-white">Utwórz i pobierz kopię ZIP</button>}
-              {section === 'restore' && <label className="mt-3 block cursor-pointer rounded-lg border border-dashed border-slate-500 p-4 text-center text-sm text-slate-300"><span>Wybierz kopię do przywrócenia</span><input disabled={busy} type="file" accept=".zip,.enc,application/zip" className="hidden" onChange={event => { const file = event.target.files?.[0]; if (file && window.confirm('Przywrócenie zastąpi bieżące kartoteki i dokumenty stanem z kopii. Zmiany wykonane po utworzeniu kopii znikną z aplikacji. Kontynuować?')) void restore(file); event.target.value = '';  }} /></label>}
-              {section !== 'settings' && <InfoTip label="lokalna kopia ZIP">Ten przycisk pobiera kopię ZIP na komputer. Wybranie pliku przywraca z niego dokumenty. Ręczny ZIP nie jest szyfrowany, więc przechowuj go w bezpiecznym miejscu.</InfoTip>}
-              {section === 'settings' && <BackupAuthenticatorSetup apiUrl={apiUrl} headers={authHeaders} enabled={mfaEnabled} onChange={setMfaEnabled} />}
-              {section !== 'send' && <BackupRecoveryKey apiUrl={apiUrl} mode={section} authorize={authorize} disabled={busy} onRecovery={(file, password) => { setRecoveryFile(file); setRecoveryPassword(password); }} />}
-              {section !== 'settings' && destination === 'cloud' && <p className="mt-3 break-all text-xs text-slate-400">Zapisane miejsce: {provider === 'webdav' ? `${endpoint}/${remoteFolder}` : provider}</p>}
-              {message && <p role="status" className="mt-4 rounded-lg bg-slate-800 p-3 text-sm text-slate-300">{message}</p>}
+          {section === 'settings' ? (
+            <BackupSettingsView
+              apiUrl={apiUrl}
+              fetcher={fetcher}
+              destination={mgr.destination}
+              provider={mgr.provider}
+              selectedChoice={mgr.selectedChoice}
+              selectDestinationChoice={mgr.selectDestinationChoice}
+              nasType={mgr.nasType}
+              setNasType={mgr.setNasType}
+              endpoint={mgr.endpoint}
+              setEndpoint={mgr.setEndpoint}
+              username={mgr.username}
+              setUsername={mgr.setUsername}
+              password={mgr.password}
+              setPassword={mgr.setPassword}
+              remoteFolder={mgr.remoteFolder}
+              setRemoteFolder={mgr.setRemoteFolder}
+              schedule={mgr.schedule}
+              setSchedule={mgr.setSchedule}
+              useSeparateBackupAccount={mgr.useSeparateBackupAccount}
+              setUseSeparateBackupAccount={mgr.setUseSeparateBackupAccount}
+              backupUsername={mgr.backupUsername}
+              setBackupUsername={mgr.setBackupUsername}
+              backupPassword={mgr.backupPassword}
+              setBackupPassword={mgr.setBackupPassword}
+              backupCredentialSaved={mgr.backupCredentialSaved}
+              nasEndpoint={mgr.nasEndpoint}
+              authHeaders={mgr.authHeaders}
+              busy={mgr.busy}
+              settingsLoading={mgr.settingsLoading}
+              mfaEnabled={mgr.mfaEnabled}
+              onExportBackup={() => void mgr.exportBackup()}
+              onConnectOAuth={selected => void mgr.connectOAuth(selected)}
+              onSaveSettings={() => void mgr.saveSettings()}
+            />
+          ) : (
+            <div className="space-y-5">
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+                <div className="space-y-3 rounded-xl border border-slate-700/80 bg-[#111827]/70 p-5">
+                  <h3 className="text-base font-bold text-white">{section === 'send' ? '☁️ Kopia w chmurze lub na NAS' : '☁️ Przywróć z chmury lub NAS'}</h3>
+                  {mgr.destination === 'computer' && !mgr.settingsLoading ? (
+                    <p className="rounded-lg bg-slate-800/80 p-3 text-sm text-slate-300">Nie skonfigurowano chmury ani NAS-a. Wybierz „Ustawienia kopii”, aby dodać miejsce zapisu.</p>
+                  ) : (
+                    <>
+                      <p className="break-all text-xs text-slate-400">Skonfigurowane miejsce: <strong className="text-slate-200">{mgr.provider === 'webdav' ? `${mgr.endpoint}/${mgr.remoteFolder}` : BACKUP_PROVIDER_LABELS[mgr.provider]}</strong></p>
+                      {mgr.lastBackup?.at && <p className="text-xs text-slate-300">Ostatnia próba: {new Date(mgr.lastBackup.at).toLocaleString('pl-PL')} — {mgr.lastBackup.status === 'success' ? 'powodzenie' : 'błąd'}{mgr.lastBackup.error ? ` (${mgr.lastBackup.error})` : ''}</p>}
+                      {section === 'send' && <button disabled={mgr.busy || mgr.settingsLoading || mgr.mfaEnabled === null} onClick={() => mgr.setActionDialog('send')} className="w-full rounded-lg bg-emerald-600 py-3 font-bold text-white hover:bg-emerald-500 disabled:opacity-50">Wyślij kopię do chmury lub NAS-a</button>}
+                      {section === 'restore' && (
+                        <div className="space-y-2">
+                          <button disabled={mgr.busy || mgr.mfaEnabled === null} onClick={() => mgr.setConfirmRestore({ kind: 'cloud' })} className="w-full rounded-lg border border-blue-400 py-3 font-bold text-blue-200 hover:bg-blue-500/10 disabled:opacity-50">Pobierz i przywróć najnowszą kopię</button>
+                          <button type="button" disabled={mgr.busy || mgr.mfaEnabled === null} onClick={() => mgr.setActionDialog('list')} className="w-full rounded-lg border border-slate-600 bg-slate-800/70 py-2.5 text-xs font-semibold text-slate-200 hover:bg-slate-700 disabled:opacity-50">Wybierz wersję z historii kopii</button>
+                          {mgr.cloudBackups && (
+                            <div className="max-h-44 space-y-1.5 overflow-y-auto rounded-lg border border-slate-700 bg-[#0f172a] p-2">
+                              {mgr.cloudBackups.length === 0 ? (
+                                <p className="p-2 text-xs text-slate-400">Brak zapisanych kopii w tym folderze.</p>
+                              ) : mgr.cloudBackups.map(item => (
+                                <div key={item.name} className="flex items-center justify-between gap-2 rounded border border-slate-800 bg-slate-900/80 px-2.5 py-2 text-xs">
+                                  <div className="min-w-0">
+                                    <p className="truncate font-semibold text-slate-200">{item.name}</p>
+                                    {item.modifiedAt && <p className="text-[10px] text-slate-400">{new Date(item.modifiedAt).toLocaleString('pl-PL')}</p>}
+                                  </div>
+                                  <button type="button" onClick={() => mgr.setConfirmRestore({ kind: 'cloud', filename: item.name })} className="shrink-0 rounded bg-blue-600 px-2.5 py-1 font-bold text-white hover:bg-blue-500">Przywróć</button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      <InfoTip label="wysłanie i przywrócenie kopii">Wysłanie tworzy zaszyfrowaną kopię dokumentów i zapisuje ją w wybranym miejscu. Przywrócenie pobiera ostatnią kopię i odtwarza z niej dokumenty.</InfoTip>
+                    </>
+                  )}
+                </div>
+
+                <div className="space-y-3 rounded-xl border border-slate-700/80 bg-[#111827]/70 p-5">
+                  <h3 className="text-base font-bold text-white">{section === 'send' ? '💻 Lokalna kopia ZIP' : '💻 Przywróć z pliku ZIP'}</h3>
+                  {section === 'send' && <button disabled={mgr.busy} onClick={() => void mgr.exportBackup()} className="w-full rounded-lg bg-blue-600 py-3 font-bold text-white hover:bg-blue-500 disabled:opacity-50">Utwórz i pobierz kopię ZIP</button>}
+                  {section === 'restore' && <label className="block cursor-pointer rounded-lg border border-dashed border-slate-500 bg-slate-900/60 p-5 text-center text-sm text-slate-300 hover:border-blue-400"><span>Wybierz plik kopii (.zip / .enc)</span><input disabled={mgr.busy} type="file" accept=".zip,.enc,application/zip" className="hidden" onChange={event => { const file = event.target.files?.[0]; if (file) mgr.setConfirmRestore({ kind: 'file', file }); event.target.value = ''; }} /></label>}
+                  <InfoTip label="lokalna kopia ZIP">Pobiera kopię ZIP na komputer albo przywraca dokumenty ze wskazanego pliku. Ręczny ZIP nie jest szyfrowany, więc przechowuj go w bezpiecznym miejscu.</InfoTip>
+                </div>
+              </div>
+              {section === 'restore' && (
+                <div className="rounded-xl border border-slate-700/80 bg-[#111827]/70 p-4 sm:p-5">
+                  <BackupRecoveryKey apiUrl={apiUrl} mode={section} authorize={mgr.authorize} disabled={mgr.busy} onRecovery={(file, password) => { mgr.setRecoveryFile(file); mgr.setRecoveryPassword(password); }} />
+                </div>
+              )}
             </div>
-          </div>
+          )}
+          {mgr.completedMessage ? (
+            <div role="status" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-500/60 bg-emerald-950/40 p-4 text-sm font-medium text-emerald-100">
+              <span>✅ {mgr.completedMessage} Okno zamknie się za chwilę.</span>
+              <button type="button" onClick={() => onDone(mgr.completedMessage!)} className="shrink-0 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-500">Zamknij teraz</button>
+            </div>
+          ) : mgr.message && <p role="status" className="mt-4 rounded-lg border border-slate-700 bg-slate-800 p-3 text-sm text-slate-200">{mgr.message}</p>}
         </div>
       </section>
-      {actionDialog && <BackupActionDialog key={actionDialog} action={actionDialog} needsNas={provider === 'webdav'} needsMfa={mfaEnabled === true} username={username} onCancel={() => setActionDialog(null)} onSubmit={credentials => { const action = actionDialog; setActionDialog(null); if (action === 'send') void upload(credentials); else void restoreLatestCloud(credentials); }} />}
-      {sending && <BackupTransferAnimation destination={provider === 'webdav' ? 'nas' : 'cloud'} />}
-      {mfaPromptOpen && <BackupAuthenticatorDialog onCancel={() => { const pending = pendingMfa.current; pendingMfa.current = null; setMfaPromptOpen(false); pending?.reject(new Error('Anulowano potwierdzanie operacji.')); }} onSubmit={code => { const pending = pendingMfa.current; pendingMfa.current = null; setMfaPromptOpen(false); pending?.resolve(code); }} />}
+      {mgr.confirmRestore && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/80 p-4">
+          <section role="dialog" aria-modal="true" className="w-full max-w-md rounded-xl border border-slate-600 bg-[#172338] p-6 shadow-2xl">
+            <h2 className="text-lg font-bold text-white">Potwierdź przywracanie kopii</h2>
+            <p className="mt-3 text-sm text-slate-300">Przywrócenie zastąpi bieżące kartoteki i dokumenty stanem z kopii{mgr.confirmRestore.kind === 'cloud' && mgr.confirmRestore.filename ? ` (${mgr.confirmRestore.filename})` : ''}. Zmiany wykonane po utworzeniu kopii znikną z aplikacji. Kontynuować?</p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => mgr.setConfirmRestore(null)} className="rounded px-4 py-2 text-slate-300">Anuluj</button>
+              <button type="button" onClick={() => { const next = mgr.confirmRestore!; mgr.setConfirmRestore(null); if (next.kind === 'cloud') { const hasNas = mgr.provider !== 'webdav' || Boolean(mgr.cachedNasCredentials); if (hasNas && mgr.mfaEnabled !== true) { void mgr.restoreLatestCloud({ username: mgr.cachedNasCredentials?.username || '', password: mgr.cachedNasCredentials?.password || '', code: '' }, next.filename); } else { mgr.setSelectedCloudFilename(next.filename); mgr.setActionDialog('restore'); } } else void mgr.restore(next.file); }} className="rounded bg-blue-600 px-4 py-2 font-semibold text-white">Kontynuuj</button>
+            </div>
+          </section>
+        </div>
+      )}
+      {mgr.actionDialog && <BackupActionDialog key={mgr.actionDialog} action={mgr.actionDialog === 'send' ? 'send' : 'restore'} needsNas={mgr.provider === 'webdav' && !(mgr.actionDialog === 'restore' && mgr.cachedNasCredentials)} needsMfa={mgr.mfaEnabled === true} username={mgr.username} onCancel={() => mgr.setActionDialog(null)} onSubmit={credentials => { const action = mgr.actionDialog; mgr.setActionDialog(null); const resolved = { username: credentials.username || mgr.cachedNasCredentials?.username || '', password: credentials.password || mgr.cachedNasCredentials?.password || '', code: credentials.code }; if (action === 'send') void mgr.upload(resolved); else if (action === 'list') void mgr.listCloudBackups(resolved); else void mgr.restoreLatestCloud(resolved, mgr.selectedCloudFilename); }} />}
+      {mgr.transferMode && <BackupTransferAnimation destination={mgr.provider === 'webdav' ? 'nas' : 'cloud'} mode={mgr.transferMode} />}
+      {mgr.mfaPromptOpen && <BackupAuthenticatorDialog onCancel={mgr.cancelMfaPrompt} onSubmit={mgr.submitMfaPrompt} />}
     </div>
   );
 }

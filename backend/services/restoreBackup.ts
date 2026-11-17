@@ -1,4 +1,5 @@
-import { ensurePlanLedger, mergePlanState, parseBackupPlanState } from './planLedger';
+import { ensurePlanLedger, mergePlanState, parseBackupPlanState, getPlan, checkDocumentCapacity, checkTagCapacity } from './planLedger';
+import {centralOwner,requireSynchronizedCentralPlan} from './centralPlanLedger';
 import { prepareTags } from './tagOwnership';
 import fs from 'fs';
 import path from 'path';
@@ -36,6 +37,8 @@ function parseManifest(zip: AdmZip): Manifest {
 }
 
 export async function restoreBackup(prisma: PrismaClient, encryptedData: Buffer, ownerId: number, userId: number | null, targetDir = uploadsDir, recoveryKey?: Buffer, planOwnerKey = userId ? `user:${userId}` : 'desktop-local') {
+  const central=centralOwner(planOwnerKey);if(central)await requireSynchronizedCentralPlan(prisma,planOwnerKey);
+  const centralPlan=central?await getPlan(prisma,planOwnerKey):null;
   const zip = new AdmZip(decryptBackup(encryptedData, recoveryKey));
   const manifest = parseManifest(zip);
   const rawManifest = JSON.parse(zip.getEntry('manifest.json')!.getData().toString('utf8')) as { planState?: unknown };
@@ -55,6 +58,7 @@ export async function restoreBackup(prisma: PrismaClient, encryptedData: Buffer,
   const folderMap = new Map<number, number>();
   try {
     await prisma.$transaction(async tx => {
+      if(central&&centralPlan){const count=await tx.document.count({where:{folder:{ownerId}}});const growth=manifest.documents.length-count;if(growth>0)await checkDocumentCapacity(tx,ownerId,centralPlan,growth);const tables=await tx.$queryRawUnsafe<Array<{name:string}>>("SELECT name FROM sqlite_master WHERE type='table' AND name='PlanTagOwner'");const existing=tables.length?await tx.$queryRawUnsafe<Array<{name:string}>>('SELECT t.name FROM Tag t JOIN PlanTagOwner o ON o.tagId=t.id WHERE o.ownerId=?',ownerId):[];const names=new Set(existing.map(t=>t.name));const added=new Set(manifest.documents.flatMap(d=>(d.tags||[]).map(t=>String(t.name||'tag').slice(0,80))).filter(name=>!names.has(name)));if(added.size)await checkTagCapacity(tx,ownerId,centralPlan,existing.length,added.size);}
       if (planState) await mergePlanState(tx, planOwnerKey, planState);
       // The archive is a snapshot, not an import. Replace only this owner's
       // data inside one transaction. Other accounts must never be touched.

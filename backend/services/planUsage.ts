@@ -3,8 +3,11 @@ import { accountingKey, devPlan } from './devPlans';
 import { ensurePlanLedger, featureTrial, getPlan } from './planLedger';
 import { PLAN_LIMITS, USAGE_WINDOW_MS, type MeteredFeature } from './planPolicy';
 import { prepareTags, tagIds } from './tagOwnership';
+import { centralOwner, recoverCentralPlanJournal, centralOfflineStatus } from './centralPlanLedger';
+import { centralPlanRequest } from './centralEntitlements';
 
 export async function getPlanUsage(db: PrismaClient, ownerKey: string, ownerId: number, now = new Date()) {
+  const central=centralOwner(ownerKey);if(central){await prepareTags(db);await recoverCentralPlanJournal(db);const state=await centralPlanRequest(central,'/ledger/status');const [ocr,cloudBackup]=await Promise.all([featureTrial(db,ownerKey,'ocr',false),featureTrial(db,ownerKey,'cloudBackup',false)]);return {...state,developmentOverride:false,source:'central',offlinePool:centralOfflineStatus(central),ocr,cloudBackup};}
   const plan = await getPlan(db, ownerKey, now);
   await ensurePlanLedger(db);
   await prepareTags(db);

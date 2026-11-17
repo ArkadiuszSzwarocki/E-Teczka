@@ -51,7 +51,7 @@ function AppTabs({ initialTab = "Ustawienia", onLock }: { initialTab?: keyof Mai
   const [computerOnline, setComputerOnline] = useState(false);
 
   useEffect(() => {
-    getLocalConnection().then((connection) => setIsPaired(Boolean(connection)));
+    getLocalConnection().then((connection) => setIsPaired(Boolean(connection))).catch(()=>setIsPaired(false));
   }, []);
 
   useEffect(() => {
@@ -212,7 +212,7 @@ function AppContent({ initiallyUnlocked = false }: { initiallyUnlocked?: boolean
     return () => { mounted = false; };
   }, [initiallyUnlocked]);
   useEffect(() => checkVault(), [checkVault]);
-  useEffect(() => { const subscription = AppState.addEventListener("change", (state) => { if (state !== "active") { backgroundAt.current = Date.now(); return; } const returnedAt = backgroundAt.current; backgroundAt.current = null; if (returnedAt) getAutoLockMinutes().then((minutes) => { if (Date.now() - returnedAt >= minutes * 60_000) setVaultUnlocked(false); }); }); return () => subscription.remove(); }, []);
+  useEffect(() => { const subscription = AppState.addEventListener("change", (state) => { if (state !== "active") { backgroundAt.current = Date.now(); return; } const returnedAt = backgroundAt.current; backgroundAt.current = null; if (returnedAt) getAutoLockMinutes().then((minutes) => { if (Date.now() - returnedAt >= minutes * 60_000) setVaultUnlocked(false); }).catch(()=>setVaultUnlocked(false)); }); return () => subscription.remove(); }, []);
   // Notification listeners are registered only by a native build that includes
   // expo-notifications. An older development client must still be able to boot.
   useEffect(() => {

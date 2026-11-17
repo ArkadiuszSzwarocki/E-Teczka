@@ -2,7 +2,8 @@ import express from 'express';
 import type { PrismaClient } from '@prisma/client';
 import { prepareTags, tagIds } from '../services/tagOwnership';
 import { errorMessage, hasErrorCode } from '../utils/errors';
-import { getPlan, PlanLimitError } from '../services/planLedger';
+import { getPlan, PlanLimitError, checkTagCapacity } from '../services/planLedger';
+import { markCentralInventoryDirty } from '../services/centralPlanLedger';
 import { ocrOwnerKey } from '../services/ocrPremium';
 import { PLAN_LIMITS } from '../services/planPolicy';
 import { activeTagIds } from '../services/planRestrictions';
@@ -21,7 +22,7 @@ export function createTagRouter(prisma: PrismaClient) {
       const tag = await prisma.$transaction(async tx => {
         const ids = await tagIds(tx, ownerId); const existing = await tx.tag.findUnique({ where: { name } });
         if (existing && ids.includes(existing.id)) throw new Error('Taki tag już istnieje.');
-        const limit = PLAN_LIMITS[plan].tags; if (limit !== null && ids.length >= limit) throw new PlanLimitError('tagi', limit);
+        await checkTagCapacity(tx,ownerId,plan,ids.length);
         const result = existing || await tx.tag.create({ data: { name, color } });
         await tx.$executeRaw`INSERT INTO PlanTagOwner(ownerId, tagId) VALUES (${ownerId}, ${result.id})`;
         return result;
@@ -32,6 +33,7 @@ export function createTagRouter(prisma: PrismaClient) {
   router.delete('/:id', async (req, res) => {
     try { const id = Number(req.params.id); const ownerId = Number(res.locals.userId || 1); if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ error: 'Nieprawidłowy tag.' }); await prepareTags(prisma);
       const removed = await prisma.$transaction(async tx => {
+        markCentralInventoryDirty();
         const deleted = await tx.$executeRaw`DELETE FROM PlanTagOwner WHERE ownerId = ${ownerId} AND tagId = ${id}`;
         if (!deleted) return false;
         const ownedDocs = await tx.document.findMany({ where: { folder: { ownerId } }, select: { id: true } });

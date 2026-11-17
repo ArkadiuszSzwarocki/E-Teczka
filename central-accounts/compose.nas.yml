@@ -19,6 +19,8 @@ services:
     networks:
       - proxy_shared
     read_only: true
+    volumes:
+      - share_data:/app/share-data
     tmpfs:
       - /tmp:size=16m,mode=1777
     security_opt:
@@ -33,3 +35,5 @@ services:
 networks:
   proxy_shared:
     external: true
+volumes:
+  share_data:

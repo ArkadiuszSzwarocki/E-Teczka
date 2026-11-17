@@ -1,3 +1,4 @@
+import { profileOperation } from './mobileProfile';
 import { Platform } from "react-native";
 import type * as ExpoNotifications from "expo-notifications";
 import type { MobileDocument } from "../types/navigation";
@@ -68,7 +69,7 @@ export function retentionReminders(expiry: Date, now = new Date()): RetentionRem
   return reminders.sort((left, right) => left.at.getTime() - right.at.getTime());
 }
 
-export async function scheduleRetentionNotifications(documents: RetentionDocument[]) {
+async function scheduleRetentionNotificationsImpl(documents: RetentionDocument[]) {
   try {
     const Notifications = getNotifications();
     if (!configured) {
@@ -116,3 +117,5 @@ export async function scheduleRetentionNotifications(documents: RetentionDocumen
     // The app remains available until a build with the notification module is installed.
   }
 }
+
+export const scheduleRetentionNotifications = profileOperation(scheduleRetentionNotificationsImpl);

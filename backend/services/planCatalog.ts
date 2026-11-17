@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-export const planIds = ['free', 'standard', 'premium'] as const;
+export const planIds = ['free', 'standard', 'premium', 'family', 'business'] as const;
 export type CatalogPlan = typeof planIds[number];
 export const limitKeys = ['documents', 'tags', 'cameraScan', 'printerScan', 'merge'] as const;
 export type PlanSettings = { name: string; ocr: boolean; cloudBackup: boolean; premiumTools: boolean; monthly: number; yearly: number; mobileDevices: number; accountDevices: number | null; limits: Record<typeof limitKeys[number], number | null> };
@@ -9,13 +9,23 @@ export type Catalog = { version: 1; usageDays: number; ocrTrialDays: number; bac
 export const defaultCatalog: Catalog = { version: 1, usageDays: 7, ocrTrialDays: 14, backupTrialMonths: 2, plans: {
  free: { name: 'Darmowy', ocr: false, cloudBackup: false, premiumTools: false, monthly: 0, yearly: 0, mobileDevices: 1, accountDevices: 1, limits: { documents: 200, tags: 3, cameraScan: 50, printerScan: 50, merge: 10 } },
  standard: { name: 'Standard', ocr: false, cloudBackup: false, premiumTools: false, monthly: 499, yearly: 4990, mobileDevices: 1, accountDevices: 2, limits: { documents: 400, tags: 6, cameraScan: 100, printerScan: 100, merge: 20 } },
- premium: { name: 'Premium', ocr: true, cloudBackup: true, premiumTools: true, monthly: 999, yearly: 9990, mobileDevices: 1, accountDevices: null, limits: { documents: null, tags: null, cameraScan: null, printerScan: null, merge: null } }
+ premium: { name: 'Premium', ocr: true, cloudBackup: true, premiumTools: true, monthly: 999, yearly: 9990, mobileDevices: 1, accountDevices: null, limits: { documents: null, tags: null, cameraScan: null, printerScan: null, merge: null } },
+ family: { name: 'Rodzinny', ocr: true, cloudBackup: true, premiumTools: true, monthly: 1499, yearly: 14990, mobileDevices: 4, accountDevices: null, limits: { documents: null, tags: null, cameraScan: null, printerScan: null, merge: null } },
+ business: { name: 'Firmowy', ocr: true, cloudBackup: true, premiumTools: true, monthly: 2999, yearly: 29990, mobileDevices: 10, accountDevices: null, limits: { documents: null, tags: null, cameraScan: null, printerScan: null, merge: null } }
 }, promotions: [] };
 const catalogDirectory = () => path.join(process.cwd(), 'security');
 const catalogFile = () => path.join(catalogDirectory(), 'developer-plan-catalog.json');
 export function catalogEnabled() { return process.env.ETECZKA_DEV_PLANS === '1' && process.env.NODE_ENV !== 'production'; }
 export function validateCatalog(value: unknown): Catalog {
- const data = value as Catalog;
+ const raw = value as Partial<Catalog>;
+ const data = (raw && raw.plans ? {
+  ...raw,
+  plans: {
+   ...raw.plans,
+   family: raw.plans.family || structuredClone(defaultCatalog.plans.family),
+   business: raw.plans.business || structuredClone(defaultCatalog.plans.business),
+  },
+ } : raw) as Catalog;
  const integer = (n: unknown, min: number, max: number) => Number.isSafeInteger(n) && Number(n) >= min && Number(n) <= max;
  if (!data || data.version !== 1 || !integer(data.usageDays, 1, 365) || !integer(data.ocrTrialDays, 0, 3650) || !integer(data.backupTrialMonths, 0, 120) || !data.plans || !Array.isArray(data.promotions) || data.promotions.length > 100) throw new Error('Nieprawidłowe okresy lub format konfiguracji.');
  for (const id of planIds) {
@@ -32,9 +42,24 @@ export function validateCatalog(value: unknown): Catalog {
  return JSON.parse(JSON.stringify(data));
 }
 let cached: Catalog | undefined;
+let centralCatalog: Catalog | undefined;
+const centralCacheFile = () => path.join(catalogDirectory(), 'central-plan-catalog.cache.json');
+export function applyCentralCatalog(value:unknown){
+  const incoming=validateCatalog(value);
+  const revision=Number((value as {revision?:number})?.revision||0),prior=Number((centralCatalog as Catalog&{revision?:number})?.revision||0);
+  if(!centralCatalog||revision>=prior){
+    centralCatalog=incoming;
+    try{fs.mkdirSync(catalogDirectory(),{recursive:true});fs.writeFileSync(centralCacheFile()+'.tmp',JSON.stringify(incoming),{mode:0o600});fs.renameSync(centralCacheFile()+'.tmp',centralCacheFile());}catch{}
+  }
+  return structuredClone(centralCatalog);
+}
 export function getCatalog(): Catalog {
- if (!catalogEnabled()) return structuredClone(defaultCatalog);
- if (!cached) { try { cached = validateCatalog(JSON.parse(fs.readFileSync(catalogFile(), 'utf8'))); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') console.error('Nie udało się odczytać katalogu planów; użyto ustawień domyślnych.'); cached = structuredClone(defaultCatalog); } }
+ if(centralCatalog)return structuredClone(centralCatalog);
+ if (!catalogEnabled()) {
+  try { centralCatalog = validateCatalog(JSON.parse(fs.readFileSync(centralCacheFile(), 'utf8'))); return structuredClone(centralCatalog); }
+  catch { return structuredClone(defaultCatalog); }
+ }
+ try { cached = validateCatalog(JSON.parse(fs.readFileSync(catalogFile(), 'utf8'))); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') console.error('Nie udało się odczytać katalogu planów; użyto ustawień domyślnych.'); cached = structuredClone(defaultCatalog); }
  return structuredClone(cached);
 }
 export function saveCatalog(value: unknown) { const validated = validateCatalog(value); fs.mkdirSync(catalogDirectory(), { recursive: true }); fs.writeFileSync(catalogFile() + '.tmp', JSON.stringify(validated, null, 2), { mode: 0o600 }); fs.renameSync(catalogFile() + '.tmp', catalogFile()); cached = validated; return getCatalog(); }

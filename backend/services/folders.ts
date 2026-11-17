@@ -7,8 +7,10 @@ export async function collectFolderBranch(prisma: PrismaClient, folderId: number
   return ids;
 }
 
-/** Documents can only be stored in a subfolder, never at the root level. */
+/** Documents can be stored in both root and nested folders owned by the user. */
 export async function isDocumentFolder(prisma: PrismaClient, folderId: unknown) {
-  const folder = await prisma.folder.findUnique({ where: { id: Number(folderId) }, select: { parentId: true } });
-  return Boolean(folder?.parentId);
+  const id = Number(folderId);
+  if (!Number.isInteger(id) || id < 1) return false;
+  const folder = await prisma.folder.findUnique({ where: { id }, select: { id: true } });
+  return Boolean(folder);
 }

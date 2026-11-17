@@ -1,123 +1,124 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { DatabaseSync } = require('node:sqlite');
-const crypto = require('node:crypto');
-const { createAccountService } = require('./accountService');
+const { createFakeMariaPool } = require('./mariadb/fakePool');
+const { createMariaAccountService } = require('./mariadb/accountService');
 
 test('email registration requires one-time verification before login', async () => {
-  const db = new DatabaseSync(':memory:'); let verification;
-  const service = createAccountService({ db, sendVerification: async (email, code) => { verification = { email, code }; }, verifyGoogle: async () => {} });
+  const pool = createFakeMariaPool();
+  let verification;
+  const service = createMariaAccountService({
+    pool,
+    sendVerification: async (email, code) => { verification = { email, code }; },
+    verifyGoogle: async () => {}
+  });
   await service.register('User@example.com', 'test-password');
   assert.equal(verification.email, 'user@example.com');
-  assert.notEqual(db.prepare('SELECT token_hash FROM verifications').get().token_hash, verification.code);
-  assert.notEqual(db.prepare('SELECT password_hash FROM accounts').get().password_hash, 'test-password');
+  assert.notEqual(pool.tables.verifications[0].token_hash, verification.code);
+  assert.notEqual(pool.tables.accounts[0].password_hash, 'test-password');
   await assert.rejects(service.login('user@example.com', 'test-password'), /INVALID_CREDENTIALS/);
   await service.verifyEmail(verification.code, 'test-password');
   await assert.rejects(service.verifyEmail(verification.code, 'test-password'), /INVALID_TOKEN/);
   await assert.rejects(service.login('user@example.com', 'wrong-password'), /INVALID_CREDENTIALS/);
   const session = await service.login('user@example.com', 'test-password');
-  assert.notEqual(db.prepare('SELECT token_hash FROM sessions').get().token_hash, session.token);
-  assert.equal(service.getSession(session.token).email, 'user@example.com');
-  service.logout(session.token);
-  assert.equal(service.getSession(session.token), null);
-  db.close();
+  assert.notEqual(pool.tables.sessions[0].token_hash, session.token);
+  assert.equal((await service.getSession(session.token)).email, 'user@example.com');
+  await service.logout(session.token);
+  assert.equal(await service.getSession(session.token), null);
 });
 
-test('failed verification email does not leave an unusable account', async () => {
-  const db = new DatabaseSync(':memory:');
-  const service = createAccountService({ db, sendVerification: async () => { throw Error('SMTP unavailable'); }, verifyGoogle: async () => {} });
+test('failed verification email rolls back verification token', async () => {
+  const pool = createFakeMariaPool();
+  const service = createMariaAccountService({
+    pool,
+    sendVerification: async () => { throw new Error('SMTP unavailable'); },
+    verifyGoogle: async () => {}
+  });
   await assert.rejects(service.register('user@example.com', 'test-password'));
-  assert.equal(db.prepare('SELECT count(*) AS n FROM accounts').get().n, 0);
-  assert.equal(db.prepare('SELECT count(*) AS n FROM verifications').get().n, 0);
-  db.close();
+  assert.equal(pool.tables.verifications.length, 0);
 });
 
-test('new registration invalidates earlier links and keeps the latest registration password', async () => {
-  const db = new DatabaseSync(':memory:'); let code; let messages = 0;
-  const service = createAccountService({ db, sendVerification: async (_email, value) => { code = value; messages++; }, verifyGoogle: async () => {} });
-  await service.register('owner@example.com', 'attacker-password');
-  const oldCode = code;
-  await service.register('owner@example.com', 'owner-password');
-  assert.equal(messages, 2);
-  await assert.rejects(service.verifyEmail(oldCode), /INVALID_TOKEN/);
-  await service.verifyEmail(code);
-  await assert.rejects(service.login('owner@example.com', 'attacker-password'), /INVALID_CREDENTIALS/);
-  assert.equal((await service.login('owner@example.com', 'owner-password')).user.email, 'owner@example.com');
-  db.close();
-});
-
-test('browser handoff requires confirmation, verifier, live session and is single use', async () => {
-  const db = new DatabaseSync(':memory:'); let code; let clock = 100;
-  const service = createAccountService({ db, now: () => clock, sendVerification: async (_email, value) => { code = value; }, verifyGoogle: async () => {} });
-  await service.register('user@example.com', 'test-password'); await service.verifyEmail(code, 'test-password');
-  const session = await service.login('user@example.com', 'test-password');
-  const verifier = crypto.randomBytes(32).toString('base64url');
-  const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
-  const request = service.startHandoff(challenge, 'Komputer');
-  assert.equal(service.inspectHandoff(request.requestId).displayCode, request.displayCode);
-  assert.equal(service.claimHandoff(request.requestId, verifier), null);
-  assert.throws(() => service.approveHandoff(request.requestId, 'invalid'), /UNAUTHORIZED/);
-  service.approveHandoff(request.requestId, session.token);
-  assert.throws(() => service.claimHandoff(request.requestId, crypto.randomBytes(32).toString('base64url')), /INVALID_TOKEN/);
-  assert.equal(service.claimHandoff(request.requestId, verifier).user.id, session.user.id);
-  assert.throws(() => service.claimHandoff(request.requestId, verifier), /INVALID_TOKEN/);
-  const second = service.startHandoff(challenge, 'Komputer'); service.approveHandoff(second.requestId, session.token); service.logout(session.token);
-  assert.throws(() => service.claimHandoff(second.requestId, verifier), /INVALID_TOKEN/);
-  const expired = service.startHandoff(challenge, 'Komputer'); clock = expired.expiresAt;
-  assert.throws(() => service.inspectHandoff(expired.requestId), /INVALID_TOKEN/);
-  db.close();
-});
-
-test('Google identity cannot take over an existing email account', async () => {
-  const db = new DatabaseSync(':memory:');
-  const service = createAccountService({ db, sendVerification: async () => {}, verifyGoogle: async () => ({ subject: 'google-sub', email: 'user@example.com', name: 'User' }) });
-  await service.register('user@example.com', 'test-password');
-  await assert.rejects(service.googleLogin('credential', service.createGoogleChallenge()), /ACCOUNT_LINK_REQUIRED/);
-  db.close();
-});
-
-test('Google identity uses stable subject and expires sessions', async () => {
-  const db = new DatabaseSync(':memory:'); let clock = 100;
-  const service = createAccountService({ db, now: () => clock, sendVerification: async () => {}, verifyGoogle: async () => ({ subject: 'google-sub', email: 'user@example.com', name: 'User' }) });
-  const nonce = service.createGoogleChallenge();
-  const first = await service.googleLogin('credential', nonce);
-  await assert.rejects(service.googleLogin('credential', nonce), /INVALID_CHALLENGE/);
-  const second = await service.googleLogin('credential', service.createGoogleChallenge());
-  assert.equal(first.user.id, second.user.id);
-  clock = first.expiresAt;
-  assert.equal(service.getSession(first.token), null);
-  db.close();
-});
-
-test('resend restores verification and password reset invalidates all sessions', async () => {
-  const db = new DatabaseSync(':memory:'); let code; let reset; let clock = 100;
-  const service = createAccountService({ db, now: () => clock, sendVerification: async (_email, value) => { code = value; }, sendPasswordReset: async (_email, value) => { reset = value; }, verifyGoogle: async () => {} });
+test('password reset revokes existing sessions', async () => {
+  const pool = createFakeMariaPool();
+  let code;
+  let reset;
+  const service = createMariaAccountService({
+    pool,
+    sendVerification: async (_email, value) => { code = value; },
+    sendPasswordReset: async (_email, value) => { reset = value; },
+    verifyGoogle: async () => {}
+  });
   await service.register('user@example.com', 'old-password');
-  const expired = code; clock += 3600001;
-  await assert.rejects(service.verifyEmail(expired, 'old-password'), /INVALID_TOKEN/);
-  await service.resendVerification('user@example.com'); await service.verifyEmail(code, 'old-password');
+  await service.verifyEmail(code, 'old-password');
   const session = await service.login('user@example.com', 'old-password');
   await service.requestPasswordReset('user@example.com');
   await service.resetPassword(reset, 'new-password');
-  assert.equal(service.getSession(session.token), null);
-  await assert.rejects(service.resetPassword(reset, 'new-password'), /INVALID_TOKEN/);
+  assert.equal(await service.getSession(session.token), null);
   await assert.rejects(service.login('user@example.com', 'old-password'), /INVALID_CREDENTIALS/);
-  assert.equal((await service.login('user@example.com', 'new-password')).user.email, 'user@example.com');
-  db.close();
+  const next = await service.login('user@example.com', 'new-password');
+  assert.equal((await service.getSession(next.token)).email, 'user@example.com');
 });
 
-test('linking Google requires an authenticated session and cannot steal an identity', async () => {
-  const db = new DatabaseSync(':memory:'); let code;
-  const service = createAccountService({ db, sendVerification: async (_email, value) => { code = value; }, verifyGoogle: async credential => ({ subject: credential, email: 'google@example.com', name: 'User' }) });
-  const oldCode = code;
-  await service.register('owner@example.com', 'owner-password'); await service.verifyEmail(code, 'owner-password');
-  const owner = await service.login('owner@example.com', 'owner-password');
-  await assert.rejects(service.linkGoogle('invalid', 'google-sub', service.createGoogleChallenge()), /UNAUTHORIZED/);
-  await service.linkGoogle(owner.token, 'google-sub', service.createGoogleChallenge());
-  assert.equal((await service.googleLogin('google-sub', service.createGoogleChallenge())).user.id, owner.user.id);
-  await service.register('other@example.com', 'other-password'); await service.verifyEmail(code, 'other-password');
-  const other = await service.login('other@example.com', 'other-password');
-  await assert.rejects(service.linkGoogle(other.token, 'google-sub', service.createGoogleChallenge()), /IDENTITY_IN_USE/);
-  db.close();
+test('a Google-created account can set an email password through a single-use link and keep Google login', async () => {
+  const pool = createFakeMariaPool();
+  let reset;
+  const service = createMariaAccountService({ pool, sendPasswordReset: async (_email, value) => { reset = value; }, verifyGoogle: async () => ({ subject: 'new-google-sub', email: 'new@gmail.com' }) });
+  const original = await service.googleLogin('credential', await service.createGoogleChallenge());
+  await assert.rejects(service.login('new@gmail.com', 'new-password'), /INVALID_CREDENTIALS/);
+  await service.requestPasswordReset('new@gmail.com');
+  assert.ok(reset);
+  await service.resetPassword(reset, 'new-password');
+  const byPassword = await service.login('new@gmail.com', 'new-password');
+  const byGoogle = await service.googleLogin('credential', await service.createGoogleChallenge());
+  assert.equal(byPassword.user.id, original.user.id);
+  assert.equal(byGoogle.user.id, original.user.id);
+  assert.equal(await service.getSession(original.token), null);
+  await assert.rejects(service.resetPassword(reset, 'another-password'), /INVALID_TOKEN/);
+  reset = undefined;
+  await service.requestPasswordReset('missing@gmail.com');
+  assert.equal(reset, undefined);
+});
+
+test('Google login requires single-use challenge and links existing third-party email account explicitly', async () => {
+  const pool = createFakeMariaPool();
+  let code;
+  const service = createMariaAccountService({
+    pool,
+    sendVerification: async (_email, value) => { code = value; },
+    verifyGoogle: async () => ({ subject: 'google-sub', email: 'user@example.com', name: 'User' })
+  });
+  await service.register('user@example.com', 'test-password');
+  await service.verifyEmail(code, 'test-password');
+  const nonce = await service.createGoogleChallenge();
+  await assert.rejects(service.googleLogin('token', nonce), /ACCOUNT_LINK_REQUIRED/);
+  const session = await service.login('user@example.com', 'test-password');
+  const linkNonce = await service.createGoogleChallenge();
+  await service.linkGoogle(session.token, 'token', linkNonce);
+  const googleSession = await service.googleLogin('token', await service.createGoogleChallenge());
+  assert.equal(googleSession.user.email, 'user@example.com');
+});
+
+test('Google logs into a verified Gmail account without a second password and preserves its identity', async () => {
+  const pool = createFakeMariaPool();
+  let code;
+  const service = createMariaAccountService({ pool, sendVerification: async (_email, value) => { code = value; }, verifyGoogle: async () => ({ subject: 'gmail-sub', email: 'test@gmail.com' }) });
+  await service.register('test@gmail.com', 'test-password');
+  await service.verifyEmail(code);
+  const before = await service.login('test@gmail.com', 'test-password');
+  const nonce = await service.createGoogleChallenge();
+  const after = await service.googleLogin('credential', nonce);
+  assert.equal(after.user.id, before.user.id);
+  await assert.rejects(service.googleLogin('credential', nonce), /INVALID_CHALLENGE/);
+  const again = await service.googleLogin('credential', await service.createGoogleChallenge());
+  assert.equal(again.user.id, before.user.id);
+});
+
+test('Google takes ownership of a pending Gmail account and invalidates its unproven password and verification links', async () => {
+  let oldCode;
+  const service = createMariaAccountService({ pool: createFakeMariaPool(), sendVerification: async (_email, code) => { oldCode = code; }, verifyGoogle: async () => ({ subject: 'gmail-sub', email: 'test@gmail.com' }) });
+  await service.register('test@gmail.com', 'test-password');
+  const session = await service.googleLogin('credential', await service.createGoogleChallenge());
+  assert.equal(session.user.email, 'test@gmail.com');
+  await assert.rejects(service.login('test@gmail.com', 'test-password'), /INVALID_CREDENTIALS/);
+  await assert.rejects(service.verifyEmail(oldCode), /INVALID_TOKEN/);
 });

@@ -1,6 +1,10 @@
 import { getCatalog } from './planCatalog';
+import { centralEntitlement, hasCentralLink } from './centralEntitlements';
+import { centralPlanRequest } from './centralEntitlements';
+import { centralOwner, requireCentralPlanOwner, reserveCentralPlan, centralResourceOperation, markCentralInventoryDirty } from './centralPlanLedger';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { accountingKey, devPlan } from './devPlans';
+import { getDevOverrides } from './devOverrides';
 import { activePlan, PLAN_LIMITS, trialAvailable, trialEnd, USAGE_WINDOW_MS, type MeteredFeature, type Plan, type TrialFeature } from './planPolicy';
 
 type Db = PrismaClient | Prisma.TransactionClient;
@@ -16,13 +20,19 @@ export async function ensurePlanLedger(db: Db): Promise<void> {
   await db.$executeRawUnsafe('CREATE TABLE IF NOT EXISTS PlanPrinterClaim (ownerKey TEXT NOT NULL, jobId TEXT NOT NULL, draftId TEXT NOT NULL, PRIMARY KEY(ownerKey, jobId))');
   await db.$executeRawUnsafe('CREATE TABLE IF NOT EXISTS PlanScanReceipt (ownerKey TEXT NOT NULL, draftId TEXT NOT NULL, documentId INTEGER NOT NULL, fingerprint TEXT NOT NULL, PRIMARY KEY(ownerKey, draftId))');
 }
+const isPublicTestMode = () => process.env.ETECZKA_PUBLIC_TEST_MODE === '1' && process.env.NODE_ENV !== 'production';
+
 export async function getPlan(db: Db, ownerKey: string, now = new Date()): Promise<Plan> {
   const override = devPlan(ownerKey); if (override) return override;
+  if (isPublicTestMode() || getDevOverrides().bypassPlanLimits) return 'premium';
+  const id=/^user:(\d+)$/.exec(ownerKey);if(id){const central=await centralEntitlement(Number(id[1]));if(central)return central.plan;if(await hasCentralLink(db,Number(id[1])))return 'free';}
   const subscription = await db.subscription.findUnique({ where: { ownerKey } });
   return activePlan(subscription?.plan, subscription?.status, subscription?.cancelAtPeriodEnd, subscription?.currentPeriodEnd, now);
 }
 /** Check or explicitly start a trial. Read-only checks never start the clock. */
 export async function featureTrial(db: Db, ownerKey: string, feature: TrialFeature, start: boolean, now = new Date()) {
+  if (isPublicTestMode() && !devPlan(ownerKey)) return { allowed: true, startedAt: null, endsAt: null };
+  const central=requireCentralPlanOwner(ownerKey);if(central){const result=await centralPlanRequest(central,'/ledger/trial',{feature,start});return {allowed:result.allowed,startedAt:result.startedAt===null?null:new Date(result.startedAt),endsAt:result.endsAt===null?null:new Date(result.endsAt)};}
   const plan = await getPlan(db, ownerKey, now);
   if (getCatalog().plans[plan][feature === 'ocr' ? 'ocr' : 'cloudBackup']) return { allowed: true, startedAt: null, endsAt: null };
   await ensurePlanLedger(db);
@@ -35,6 +45,7 @@ export async function featureTrial(db: Db, ownerKey: string, feature: TrialFeatu
 }
 /** Must be called in the same write transaction as the operation being metered. */
 export async function consumeUsage(db: Prisma.TransactionClient, ownerKey: string, plan: Plan, feature: MeteredFeature, operationId: string, amount: number, now = new Date()): Promise<void> {
+  const central=requireCentralPlanOwner(ownerKey);if(central){const previous=await db.$queryRaw<Array<{amount:bigint|number}>>`SELECT amount FROM PlanUsage WHERE ownerKey=${ownerKey} AND feature=${feature} AND operationId=${operationId}`;if(previous.length){if(Number(previous[0].amount)!==amount)throw new Error('Identyfikator operacji został użyty z inną liczbą.');return;}await reserveCentralPlan(db,central,feature,operationId,amount);await db.$executeRaw`INSERT INTO PlanUsage(ownerKey,feature,operationId,amount,usedAt) VALUES (${ownerKey},${feature},${operationId},${amount},${now.getTime()})`;return;}
   ownerKey = accountingKey(ownerKey);
   if (!operationId || !Number.isSafeInteger(amount) || amount < 1) throw new Error('Nieprawidłowe dane licznika.');
   const previous = await db.$queryRaw<Array<{ amount: bigint | number }>>`SELECT amount FROM PlanUsage WHERE ownerKey = ${ownerKey} AND feature = ${feature} AND operationId = ${operationId}`;
@@ -50,11 +61,13 @@ export async function consumeUsage(db: Prisma.TransactionClient, ownerKey: strin
 
 /** Counts all stored documents, including archive and trash, so users can free capacity by emptying trash. */
 export async function checkDocumentCapacity(db: Db, ownerId: number, plan: Plan, amount: number): Promise<void> {
+  const central=requireCentralPlanOwner(`user:${ownerId}`);if(central){await reserveCentralPlan(db as Prisma.TransactionClient,central,'documents',centralResourceOperation(),amount);return;}
   const limit = PLAN_LIMITS[plan].documents;
   if (limit === null) return;
   const count = await db.document.count({ where: { folder: { ownerId } } });
   if (count + amount > limit) throw new PlanLimitError('dokumenty', limit);
 }
+export async function checkTagCapacity(db:Db,ownerId:number,plan:Plan,localCount:number,amount=1){const central=requireCentralPlanOwner(`user:${ownerId}`);if(central){await reserveCentralPlan(db as Prisma.TransactionClient,central,'tags',centralResourceOperation(),amount);return;}const limit=PLAN_LIMITS[plan].tags;if(limit!==null&&localCount+amount>limit)throw new PlanLimitError('tagi',limit);}
 
 export type BackupPlanState = { trials: Array<{ feature: TrialFeature; startedAt: number }>; usage: Array<{ feature: MeteredFeature; operationId: string; amount: number; usedAt: number }> };
 export async function exportPlanState(db: Db, ownerKey: string): Promise<BackupPlanState> {
@@ -72,6 +85,7 @@ export function parseBackupPlanState(value: unknown): BackupPlanState | null {
 }
 /** Merge rather than reset trials and counters when restoring older snapshots. */
 export async function mergePlanState(db: Prisma.TransactionClient, ownerKey: string, state: BackupPlanState | null) {
+  if(centralOwner(ownerKey)){markCentralInventoryDirty();return;}
   if (!state) return;
   for (const item of state.trials) await db.$executeRaw`INSERT INTO PlanTrial(ownerKey, feature, startedAt) VALUES (${ownerKey}, ${item.feature}, ${item.startedAt}) ON CONFLICT(ownerKey, feature) DO UPDATE SET startedAt = MIN(startedAt, excluded.startedAt)`;
   for (const item of state.usage) await db.$executeRaw`INSERT OR IGNORE INTO PlanUsage(ownerKey, feature, operationId, amount, usedAt) VALUES (${ownerKey}, ${item.feature}, ${item.operationId}, ${item.amount}, ${item.usedAt})`;

@@ -12,9 +12,18 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.CentralHandoffError = void 0;
 exports.createCentralHandoffs = createCentralHandoffs;
 const node_crypto_1 = __importDefault(require("node:crypto"));
 const centralAccountLink_1 = require("./centralAccountLink");
+class CentralHandoffError extends Error {
+    constructor(code, retryAfter) {
+        super(code);
+        this.code = code;
+        this.retryAfter = retryAfter;
+    }
+}
+exports.CentralHandoffError = CentralHandoffError;
 function createCentralHandoffs(request = fetch) {
     const pending = new Map();
     const clearExpired = () => { const now = Date.now(); for (const [key, item] of pending)
@@ -23,7 +32,13 @@ function createCentralHandoffs(request = fetch) {
     function post(origin, path, data) {
         return __awaiter(this, void 0, void 0, function* () {
             const response = yield request(`${origin}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(data), redirect: 'error', signal: AbortSignal.timeout(10000) });
-            const result = yield response.json();
+            if (response.status === 429) {
+                const retry = Number(response.headers.get('retry-after'));
+                throw new CentralHandoffError('CENTRAL_RATE_LIMIT', Number.isFinite(retry) && retry > 0 ? Math.min(3600, Math.ceil(retry)) : 60);
+            }
+            if (response.status >= 500)
+                throw new CentralHandoffError('CENTRAL_UNAVAILABLE');
+            const result = yield response.json().catch(() => ({}));
             return { response, result };
         });
     }
@@ -38,7 +53,27 @@ function createCentralHandoffs(request = fetch) {
                     throw new Error('TOO_MANY_REQUESTS');
                 const verifier = node_crypto_1.default.randomBytes(32).toString('base64url');
                 const challenge = node_crypto_1.default.createHash('sha256').update(verifier).digest('base64url');
-                const { response, result } = yield post(origin, '/handoff/start', { challenge, deviceName: 'E-Teczka na komputerze' });
+                let started;
+                for (let attempt = 0; attempt < 2; attempt++) {
+                    try {
+                        started = yield post(origin, '/handoff/start', { challenge, deviceName: 'E-Teczka na komputerze' });
+                        break;
+                    }
+                    catch (error) {
+                        const e = error;
+                        const transient = e instanceof CentralHandoffError ? e.code === 'CENTRAL_UNAVAILABLE' : e.name === 'TypeError';
+                        if (attempt === 0 && transient) {
+                            yield new Promise(resolve => setTimeout(resolve, 200));
+                            continue;
+                        }
+                        if (e instanceof CentralHandoffError)
+                            throw e;
+                        throw new CentralHandoffError(e.name === 'TimeoutError' || e.name === 'AbortError' ? 'CENTRAL_TIMEOUT' : 'CENTRAL_CONNECTION_FAILED');
+                    }
+                }
+                if (!started)
+                    throw new CentralHandoffError('CENTRAL_UNAVAILABLE');
+                const { response, result } = started;
                 if (!response.ok || typeof result.requestId !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(result.requestId) || typeof result.displayCode !== 'string' || !/^\d{6}$/.test(result.displayCode) || typeof result.expiresAt !== 'number' || result.expiresAt <= Date.now() || result.expiresAt > Date.now() + 310000)
                     throw new Error('INVALID_RESPONSE');
                 const handle = node_crypto_1.default.randomBytes(32).toString('base64url');

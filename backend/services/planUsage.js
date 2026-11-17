@@ -14,8 +14,18 @@ const devPlans_1 = require("./devPlans");
 const planLedger_1 = require("./planLedger");
 const planPolicy_1 = require("./planPolicy");
 const tagOwnership_1 = require("./tagOwnership");
+const centralPlanLedger_1 = require("./centralPlanLedger");
+const centralEntitlements_1 = require("./centralEntitlements");
 function getPlanUsage(db_1, ownerKey_1, ownerId_1) {
     return __awaiter(this, arguments, void 0, function* (db, ownerKey, ownerId, now = new Date()) {
+        const central = (0, centralPlanLedger_1.centralOwner)(ownerKey);
+        if (central) {
+            yield (0, tagOwnership_1.prepareTags)(db);
+            yield (0, centralPlanLedger_1.recoverCentralPlanJournal)(db);
+            const state = yield (0, centralEntitlements_1.centralPlanRequest)(central, '/ledger/status');
+            const [ocr, cloudBackup] = yield Promise.all([(0, planLedger_1.featureTrial)(db, ownerKey, 'ocr', false), (0, planLedger_1.featureTrial)(db, ownerKey, 'cloudBackup', false)]);
+            return Object.assign(Object.assign({}, state), { developmentOverride: false, source: 'central', offlinePool: (0, centralPlanLedger_1.centralOfflineStatus)(central), ocr, cloudBackup });
+        }
         const plan = yield (0, planLedger_1.getPlan)(db, ownerKey, now);
         yield (0, planLedger_1.ensurePlanLedger)(db);
         yield (0, tagOwnership_1.prepareTags)(db);

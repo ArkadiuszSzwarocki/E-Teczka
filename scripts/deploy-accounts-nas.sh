@@ -44,12 +44,38 @@ if [ ! -f "$base/shared/.env.nas" ] || [ "$update_secrets" = 'yes' ]; then
       printf '%s\n' "$old_key" >> "$release/.env.updated"
       mv "$release/.env.updated" "$release/.env.nas"
     fi
+    old_signing_key=$(grep '^CENTRAL_ENTITLEMENT_PRIVATE_KEY=' "$base/shared/.env.nas" || true)
+    if [ -n "$old_signing_key" ]; then
+      grep -v '^CENTRAL_ENTITLEMENT_PRIVATE_KEY=' "$release/.env.nas" > "$release/.env.updated"
+      printf '%s\n' "$old_signing_key" >> "$release/.env.updated"
+      mv "$release/.env.updated" "$release/.env.nas"
+    fi
+    old_admin_key=$(grep '^CENTRAL_CATALOG_ADMIN_TOKEN=' "$base/shared/.env.nas" || true)
+    if [ -n "$old_admin_key" ]; then
+      grep -v '^CENTRAL_CATALOG_ADMIN_TOKEN=' "$release/.env.nas" > "$release/.env.updated"
+      printf '%s\n' "$old_admin_key" >> "$release/.env.updated"
+      mv "$release/.env.updated" "$release/.env.nas"
+    fi
     cp "$base/shared/.env.nas" "$base/shared/.env.nas.previous"
     config_changed=yes
   fi
   cp "$release/.env.nas" "$base/shared/.env.nas"
 fi
+if ! grep -q '^CENTRAL_ENTITLEMENT_PRIVATE_KEY=' "$base/shared/.env.nas"; then
+  if [ "$config_changed" != 'yes' ]; then
+    cp "$base/shared/.env.nas" "$base/shared/.env.nas.previous"
+    config_changed=yes
+  fi
+  grep '^CENTRAL_ENTITLEMENT_PRIVATE_KEY=' "$release/.env.nas" >> "$base/shared/.env.nas"
+fi
 chmod 600 "$base/shared/.env.nas"
+if ! grep -q '^CENTRAL_CATALOG_ADMIN_TOKEN=' "$base/shared/.env.nas"; then
+  if [ "$config_changed" != 'yes' ]; then
+    cp "$base/shared/.env.nas" "$base/shared/.env.nas.previous"
+    config_changed=yes
+  fi
+  grep '^CENTRAL_CATALOG_ADMIN_TOKEN=' "$release/.env.nas" >> "$base/shared/.env.nas"
+fi
 rm -f "$release/.env.nas"
 ln -s "$base/shared/.env.nas" "$release/.env.nas"
 cd "$release"

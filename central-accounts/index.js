@@ -1,5 +1,10 @@
 'use strict';
 const crypto = require('node:crypto');
+const {ensureEntitlementsSchema,createEntitlements}=require('./mariadb/entitlements');
+const {createPlayBilling,ensureBillingSchema}=require('./mariadb/playBilling');
+const {ensureCatalogSchema,getCatalog,saveCatalog}=require('./mariadb/planCatalog');
+const {ensureLedgerSchema,createCentralLedger}=require('./mariadb/planLedger');
+const {ensureFeedbackSchema,createFeedbackService}=require('./mariadb/feedbackService');
 const fs = require('node:fs');
 const path = require('node:path');
 const nodemailer = require('nodemailer');
@@ -15,6 +20,8 @@ const { createGoogleIdentityVerifier } = require('./googleIdentity');
 const { createHttpApp } = require('./httpApp');
 const { createProxyGate } = require('./proxyGate');
 const { createCloudflareGate } = require('./cloudflareGate');
+const { createTurnstileGate } = require('./turnstileGate');
+const { createShareRouter } = require('./shareService');
 
 // Direct development access is loopback-only. Container access requires an
 // explicitly trusted HTTPS-terminating proxy and a persistent rate-limit key.
@@ -51,6 +58,8 @@ if ((listenHost !== '127.0.0.1' || process.env.CENTRAL_RATE_LIMIT_KEY) && !/^[a-
 
 if (process.env.CENTRAL_TRUSTED_PROXY_IP && process.env.CENTRAL_TRUSTED_CLOUDFLARED_IP) throw new Error('Choose one trusted proxy mode.');
 const cloudflareGate = process.env.CENTRAL_TRUSTED_PROXY_IP ? createProxyGate(process.env.CENTRAL_TRUSTED_PROXY_IP, process.env.CENTRAL_PUBLIC_ORIGIN) : process.env.CENTRAL_TRUSTED_CLOUDFLARED_IP ? createCloudflareGate(process.env.CENTRAL_TRUSTED_CLOUDFLARED_IP) : undefined;
+const turnstileSiteKey = process.env.CENTRAL_TURNSTILE_SITE_KEY || '';
+const turnstileGate = createTurnstileGate({ secretKey: process.env.CENTRAL_TURNSTILE_SECRET_KEY || '' });
 const rateLimitSecret = process.env.CENTRAL_RATE_LIMIT_KEY ? Buffer.from(process.env.CENTRAL_RATE_LIMIT_KEY, 'hex') : crypto.randomBytes(32);
 const accountRateLimit = createMariaRateLimiter({ pool, namespace: 'account', limit: 10, secret: rateLimitSecret, identity: req => typeof req.body?.email === 'string' && req.body.email.length <= 254 ? req.body.email.trim().toLowerCase() : 'invalid' });
 
@@ -59,11 +68,27 @@ setInterval(() => {
   accounts.cleanExpired().catch(() => console.error('Nie udalo sie usunac wygaslych sesji.'));
 }, 3600000).unref();
 
-createHttpApp(accounts, {
+const shareRouter = process.env.SHARE_MASTER_KEY && process.env.SHARE_PUBLISH_SECRET ? createShareRouter({
+  dataDir: process.env.SHARE_DATA_DIR || path.join(__dirname, 'share-data'),
+  masterKey: process.env.SHARE_MASTER_KEY,
+  publisherSecret: process.env.SHARE_PUBLISH_SECRET,
+  publicBase: process.env.SHARE_PUBLIC_BASE || process.env.CENTRAL_PUBLIC_ORIGIN || verificationUrl.origin
+}) : undefined;
+
+const playBilling=createPlayBilling({pool,getSession:accounts.getSession});
+ensureEntitlementsSchema(pool).then(()=>ensureCatalogSchema(pool)).then(()=>ensureLedgerSchema(pool)).then(()=>ensureBillingSchema(pool)).then(()=>ensureFeedbackSchema(pool)).then(()=>{void playBilling.refreshDue().catch(()=>console.error('Nie udało się odświeżyć subskrypcji.'));setInterval(()=>{void playBilling.refreshDue().catch(()=>console.error('Nie udało się odświeżyć subskrypcji.'));},300000).unref();return createHttpApp(accounts, {
+  entitlements:createEntitlements({pool,getSession:accounts.getSession,privateKey:process.env.CENTRAL_ENTITLEMENT_PRIVATE_KEY,catalogReader:getCatalog}),
+  ledger:createCentralLedger({pool}),
+  catalog:{get:()=>getCatalog(pool),save:value=>saveCatalog(pool,value),adminToken:process.env.CENTRAL_CATALOG_ADMIN_TOKEN},
+  playBilling,
+  feedback:createFeedbackService({pool,getSession:accounts.getSession}),
+  shareRouter,
   rateLimit: createMariaRateLimiter({ pool }),
   accountRateLimit,
   handoffRateLimit: createMariaRateLimiter({ pool, namespace: 'handoff', limit: 150, windowMs: 300000 }),
   cloudflareGate,
+  turnstileGate,
   googleWebClientId,
+  turnstileSiteKey,
   appUrl: process.env.CENTRAL_APP_URL || (listenHost === '127.0.0.1' ? 'http://127.0.0.1:5173/?account=login' : '')
-}).listen(port, listenHost, () => console.log(`Central account API (MariaDB) listening on ${listenHost}:${port}`));
+}).listen(port, listenHost, () => console.log(`Central account API (MariaDB) listening on ${listenHost}:${port}`));}).catch(error=>{console.error('Central account startup failed:',error.code||error.message);process.exit(1);});

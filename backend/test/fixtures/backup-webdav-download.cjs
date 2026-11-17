@@ -24,5 +24,10 @@ test('route downloads the newest WebDAV backup using only its file name', async 
     assert.equal(response.status, 200); assert.equal(await response.text(), 'encrypted backup');
     assert.equal(calls[1].url, 'https://nas.example/dav/Kopie%20domowe/kopia%20test.zip.enc');
     assert.equal(calls[1].options.redirect, 'error');
+
+    const selected = await oldFetch(`http://127.0.0.1:${server.address().port}/backup/cloud/latest`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'user', password: 'test', filename: 'starsza kopia.zip.enc' }) });
+    assert.equal(selected.status, 200); assert.equal(await selected.text(), 'encrypted backup');
+    assert.equal(calls[2].url, 'https://nas.example/dav/Kopie%20domowe/starsza%20kopia.zip.enc');
+    assert.equal(calls[2].options.redirect, 'error');
   } finally { global.fetch = oldFetch; await new Promise(resolve => server.close(resolve)); process.chdir(previous); fs.rmSync(dir, { recursive: true, force: true }); }
 });

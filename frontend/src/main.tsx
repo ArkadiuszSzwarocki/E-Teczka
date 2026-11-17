@@ -5,9 +5,14 @@ import DeveloperPanel from './components/DeveloperPanel'
 import AccessLock from './AccessLock.tsx'
 import AccountGate from './components/AccountGate'
 import './index.css'
+import { initTheme } from './services/theme'
+import { initAppZoom } from './services/appZoom'
+
+initTheme();
+initAppZoom();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    {window.location.pathname === '/developer' ? <AccessLock><DeveloperPanel /></AccessLock> : <AccountGate><AccessLock optionalSetup><App /></AccessLock></AccountGate>}
+    {window.location.pathname === '/developer' ? <DeveloperPanel /> : <AccountGate><AccessLock optionalSetup><App /></AccessLock></AccountGate>}
   </React.StrictMode>,
 )

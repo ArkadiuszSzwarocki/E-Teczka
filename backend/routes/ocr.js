@@ -75,11 +75,9 @@ function createOcrRouter(prisma, queue) {
         const found = yield prisma.document.findFirst({ where: { id, folder: { ownerId: Number(res.locals.userId || 1) }, isDeleted: false }, select: { id: true } });
         if (!found)
             return res.status(404).json({ error: 'Nie znaleziono dokumentu.' });
-        if (req.method !== 'GET') {
-            const active = yield (0, planRestrictions_1.activeDocumentIds)(prisma, Number(res.locals.userId || 1), yield (0, planLedger_1.getPlan)(prisma, (0, ocrPremium_1.ocrOwnerKey)(res)));
-            if (active && !active.has(id))
-                return res.status(403).json({ code: 'PLAN_LIMIT_REACHED', error: 'Dokument jest tylko do odczytu z powodu limitu planu.' });
-        }
+        const active = yield (0, planRestrictions_1.activeDocumentIds)(prisma, Number(res.locals.userId || 1), yield (0, planLedger_1.getPlan)(prisma, (0, ocrPremium_1.ocrOwnerKey)(res)));
+        if (active && !active.has(id))
+            return res.status(403).json({ code: 'PLAN_LIMIT_REACHED', error: 'Dokument jest tylko do odczytu z powodu limitu planu.' });
         next();
     }));
     router.post('/:id', (req, res) => {
@@ -95,8 +93,14 @@ function createOcrRouter(prisma, queue) {
         try {
             const document = yield prisma.document.findUnique({ where: { id: Number(req.params.id) }, select: { ocrText: true } });
             const status = queue.status(Number(req.params.id), (0, ocrPremium_1.ocrOwnerKey)(res));
+            const fullText = (document === null || document === void 0 ? void 0 : document.ocrText) ? (0, ocrText_1.readOcrText)(document.ocrText) : '';
+            const rawOffset = Number(req.query.offset);
+            const rawLimit = Number(req.query.limit);
+            const offset = Number.isInteger(rawOffset) && rawOffset > 0 ? rawOffset : 0;
+            const hasLimit = Number.isInteger(rawLimit) && rawLimit > 0;
+            const text = hasLimit ? fullText.slice(offset, offset + Math.min(rawLimit, 100000)) : fullText;
             res.setHeader('Cache-Control', 'no-store');
-            res.json(Object.assign(Object.assign({}, status), { text: (document === null || document === void 0 ? void 0 : document.ocrText) ? (0, ocrText_1.readOcrText)(document.ocrText) : '' }));
+            res.json(Object.assign(Object.assign({}, status), { text, totalLength: fullText.length, offset, hasMore: offset + text.length < fullText.length }));
         }
         catch (_a) {
             res.status(500).json({ error: 'Nie udało się odczytać wyniku OCR.' });

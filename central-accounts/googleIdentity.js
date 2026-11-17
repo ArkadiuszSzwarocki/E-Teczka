@@ -3,7 +3,7 @@
 const { OAuth2Client } = require('google-auth-library');
 
 // Caller must obtain an ID token over HTTPS and must not automatically link
-// existing email accounts: Google is not authoritative for every email domain.
+// arbitrary email accounts: Google is authoritative for Gmail, but not every email domain.
 function createGoogleIdentityVerifier({ audiences, client = new OAuth2Client() }) {
   if (!Array.isArray(audiences) || !audiences.length || audiences.some(x => typeof x !== 'string' || !x.trim())) {
     throw new Error('Configure at least one Google OAuth client ID.');

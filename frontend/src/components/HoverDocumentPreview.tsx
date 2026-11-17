@@ -1,3 +1,4 @@
+import AuthenticatedImage from './AuthenticatedImage';
 import { useLayoutEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { DocumentRecord } from '../types/domain';
@@ -16,6 +17,6 @@ export default function HoverDocumentPreview({ document: doc, anchor, apiUrl, fe
   const source = `${apiUrl}/${doc.filePath?.replace(/\\/g, '/')}`;
   return createPortal(<div onMouseEnter={onEnter} onMouseLeave={onLeave} className="fixed z-[100] flex flex-col overflow-hidden rounded-lg border border-blue-500 bg-[#1e293b] shadow-[0_0_40px_rgba(0,0,0,0.8)]" style={position}>
     <div className="shrink-0 truncate border-b border-slate-700 bg-slate-800 p-2 text-xs font-bold text-blue-300">{doc.title}</div>
-    <div className="relative min-h-0 flex-1 bg-white">{doc.mimeType?.includes('pdf') || doc.filePath?.toLowerCase().endsWith('.pdf') ? <PannablePdf url={source} fetcher={fetcher} /> : <img src={source} alt={doc.title} className="absolute inset-0 h-full w-full object-contain" />}</div>
+    <div className="relative min-h-0 flex-1 bg-white">{doc.mimeType?.includes('pdf') || doc.filePath?.toLowerCase().endsWith('.pdf') ? <PannablePdf url={source} fetcher={fetcher} /> : <AuthenticatedImage url={source} fetcher={fetcher} alt={doc.title} className="absolute inset-0 h-full w-full" />}</div>
   </div>, document.body);
 }

@@ -1,3 +1,4 @@
+import AuthenticatedImage from './AuthenticatedImage';
 import { useEffect, useRef, useState } from 'react';
 import { generatePdfThumbnail } from '../services/documentUpload';
 import type { DocumentRecord } from '../types/domain';
@@ -37,6 +38,6 @@ export default function DocumentThumbnail({ document: doc, apiUrl, fetcher }: { 
     if (observer && element.current) observer.observe(element.current); else load();
     return () => { active = false; observer?.disconnect(); };
   }, [apiUrl, doc.filePath, doc.mimeType, doc.thumbnail, doc.updatedAt, fetcher]);
-  const image = thumbnail || (doc.mimeType?.includes('image') ? `${apiUrl}/${doc.filePath?.replace(/\\/g, '/')}` : null);
-  return <span ref={element} className="flex h-full w-full items-center justify-center">{image ? <img src={image} alt={`Miniatura: ${doc.title}`} className="h-full w-full object-contain pointer-events-none" /> : <span className="text-3xl pointer-events-none">📄</span>}</span>;
+  const imageUrl=doc.mimeType?.startsWith('image/')?`${apiUrl}/${doc.filePath.replace(/\\/g,'/')}`:null;
+  return <span ref={element} className="flex h-full w-full items-center justify-center">{thumbnail ? <img src={thumbnail} alt={`Miniatura: ${doc.title}`} className="h-full w-full object-contain pointer-events-none" /> : imageUrl ? <AuthenticatedImage url={imageUrl} fetcher={fetcher} alt={`Miniatura: ${doc.title}`} lazy className="h-full w-full pointer-events-none"/> : <span className="text-3xl pointer-events-none">📄</span>}</span>;
 }

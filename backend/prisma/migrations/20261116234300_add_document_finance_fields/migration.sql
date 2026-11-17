@@ -1,0 +1,4 @@
+ALTER TABLE "Document" ADD COLUMN "amountCents" INTEGER;
+ALTER TABLE "Document" ADD COLUMN "currency" TEXT NOT NULL DEFAULT 'PLN';
+ALTER TABLE "Document" ADD COLUMN "dueDate" DATETIME;
+ALTER TABLE "Document" ADD COLUMN "paymentStatus" TEXT;

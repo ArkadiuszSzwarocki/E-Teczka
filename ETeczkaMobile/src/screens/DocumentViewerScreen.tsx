@@ -1,3 +1,4 @@
+import { profileCacheDirectory, profileOperation } from '../services/mobileProfile';
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Image, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -26,10 +27,10 @@ export default function DocumentViewerScreen() {
     return normalized.toLowerCase().startsWith("uploads/") ? `/${normalized}` : `/uploads/${normalized}`;
   };
 
-  const downloadDocument = async () => {
+  const downloadDocument = profileOperation(async () => {
     const extension = document.filePath?.split(".").pop() || "pdf";
     // Do not reuse files saved by older versions which cached HTTP error pages.
-    const target = `${FileSystem.cacheDirectory}eteczka_v2_${document.id}.${extension}`;
+    const target = `${profileCacheDirectory()}eteczka_v2_${document.id}.${extension}`;
     const cached = await FileSystem.getInfoAsync(target);
     if (cached.exists) return { uri: target };
     const temporary = `${target}.${Date.now()}-${Math.random().toString(36).slice(2)}.download`;
@@ -49,7 +50,7 @@ export default function DocumentViewerScreen() {
       download,
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Pobieranie dokumentu trwa zbyt długo.")), 15_000)),
     ]);
-  };
+  });
 
   useEffect(() => { void (async () => {
     try { const saved = await downloadDocument(); setFileUri(saved.uri); }

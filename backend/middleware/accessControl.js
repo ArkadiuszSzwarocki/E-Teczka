@@ -15,6 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.configureAccountSessionValidator = configureAccountSessionValidator;
 exports.requireLocalDesktop = requireLocalDesktop;
 exports.requireAccess = requireAccess;
+exports.verifyAccountToken = verifyAccountToken;
 exports.registerPairingRoutes = registerPairingRoutes;
 const crypto_1 = __importDefault(require("crypto"));
 const fs_1 = __importDefault(require("fs"));
@@ -39,9 +40,9 @@ let accountSessionIsActive = null;
 function configureAccountSessionValidator(validator) {
     accountSessionIsActive = validator;
 }
-function savePairedDevices() {
+function savePairedDevices(devices = pairedDevices) {
     const temporaryFile = `${paths_1.pairedDevicesFile}.tmp`;
-    fs_1.default.writeFileSync(temporaryFile, JSON.stringify(pairedDevices, null, 2), { encoding: 'utf8', mode: 0o600 });
+    fs_1.default.writeFileSync(temporaryFile, JSON.stringify(devices, null, 2), { encoding: 'utf8', mode: 0o600 });
     fs_1.default.renameSync(temporaryFile, paths_1.pairedDevicesFile);
 }
 function createPairingCode() { return crypto_1.default.randomInt(10000000, 100000000).toString(); }
@@ -49,6 +50,7 @@ function rotatePairingCode() {
     pairingCode = createPairingCode();
     pairingExpiresAt = Date.now() + 10 * 60 * 1000;
     pairingAttempts.clear();
+    pairingOwner.replaceDeviceId = undefined;
 }
 function isLoopback(request) {
     const address = request.socket.remoteAddress || '';
@@ -117,7 +119,7 @@ function verifyAccountToken(token) {
     const [rawUserId, rawExpiry] = payload.split('.');
     const userId = Number(rawUserId);
     const expiresAt = Number(rawExpiry);
-    return Number.isInteger(userId) && userId > 0 && Number.isFinite(expiresAt) && expiresAt > Date.now() ? { userId } : null;
+    return Number.isInteger(userId) && userId > 0 && Number.isFinite(expiresAt) && expiresAt > 0 ? { userId } : null;
 }
 function registerPairingRoutes(app, mobileLimit = () => __awaiter(this, void 0, void 0, function* () { return 1; })) {
     app.get('/api/pairing-code', requireLocalDesktop, requireAccess, (_req, res) => __awaiter(this, void 0, void 0, function* () {
@@ -126,7 +128,7 @@ function registerPairingRoutes(app, mobileLimit = () => __awaiter(this, void 0, 
         const limit = yield mobileLimit(ownerKey);
         if (Date.now() >= pairingExpiresAt || pairingOwner.ownerKey !== ownerKey)
             rotatePairingCode();
-        pairingOwner = { ownerId, ownerKey, mobileLimit: limit };
+        pairingOwner = { ownerId, ownerKey, mobileLimit: limit, replaceDeviceId: pairingOwner.ownerKey === ownerKey ? pairingOwner.replaceDeviceId : undefined };
         res.json({ code: pairingCode, expiresAt: pairingExpiresAt });
     }));
     app.get('/api/network-info', requireLocalDesktop, (_req, res) => {
@@ -140,7 +142,17 @@ function registerPairingRoutes(app, mobileLimit = () => __awaiter(this, void 0, 
     app.get('/api/pairing-status', requireLocalDesktop, requireAccess, (_req, res) => __awaiter(this, void 0, void 0, function* () {
         const limit = yield mobileLimit(String(res.locals.billingOwnerKey || 'desktop-local'));
         const devices = pairedDevices.filter(device => (device.ownerKey || 'desktop-local') === String(res.locals.billingOwnerKey || 'desktop-local'));
-        res.json({ pairedDevices: devices.length, mobileDeviceLimit: limit, phoneConnected: devices.some((device) => Date.now() - Date.parse(device.lastSeenAt) < 30000) });
+        res.json({ devices: devices.map(({ id, name, createdAt, lastSeenAt }) => ({ id, name, createdAt, lastSeenAt })), pairedDevices: devices.length, mobileDeviceLimit: limit, phoneConnected: devices.some((device) => Date.now() - Date.parse(device.lastSeenAt) < 30000) });
+    }));
+    app.post('/api/pairing-replacement', requireLocalDesktop, requireAccess, (req, res) => __awaiter(this, void 0, void 0, function* () {
+        const ownerKey = String(res.locals.billingOwnerKey || 'desktop-local');
+        const device = pairedDevices.find(item => { var _a; return item.id === ((_a = req.body) === null || _a === void 0 ? void 0 : _a.deviceId) && (item.ownerKey || 'desktop-local') === ownerKey; });
+        if (!device)
+            return res.status(404).json({ error: 'Nie znaleziono telefonu przypisanego do tego konta.' });
+        const limit = yield mobileLimit(ownerKey);
+        rotatePairingCode();
+        pairingOwner = { ownerKey, ownerId: Number(res.locals.userId) || undefined, mobileLimit: limit, replaceDeviceId: device.id };
+        return res.json({ code: pairingCode, expiresAt: pairingExpiresAt, replaces: device.name });
     }));
     app.post('/api/pair', (req, res) => {
         var _a, _b;
@@ -157,12 +169,20 @@ function registerPairingRoutes(app, mobileLimit = () => __awaiter(this, void 0, 
         // Individual plans pair one mobile device per archive owner. Multi-device
         // business/family entitlements must be enforced here when those plans ship.
         const trustedPhones = pairedDevices.filter(device => (device.ownerKey || 'desktop-local') === pairingOwner.ownerKey);
-        if (trustedPhones.length >= pairingOwner.mobileLimit)
-            return res.status(403).json({ code: 'MOBILE_DEVICE_LIMIT_REACHED', error: `Osiągnięto limit zaufanych telefonów (${pairingOwner.mobileLimit}). Kolejnego telefonu nie można teraz połączyć.` });
+        const replaced = trustedPhones.find(device => device.id === pairingOwner.replaceDeviceId);
+        if (trustedPhones.length - (replaced ? 1 : 0) >= pairingOwner.mobileLimit)
+            return res.status(403).json({ code: 'MOBILE_DEVICE_LIMIT_REACHED', error: `Osiągnięto limit zaufanych telefonów (${pairingOwner.mobileLimit}). Aby ponownie sparować ten telefon lub zmienić telefon, na komputerze otwórz okno parowania i wybierz „Zastąp parowanie” przy zapisanym urządzeniu.` });
         const accessToken = crypto_1.default.randomBytes(32).toString('base64url');
         const now = new Date().toISOString();
-        pairedDevices.push({ id: crypto_1.default.randomUUID(), name: String(((_b = req.body) === null || _b === void 0 ? void 0 : _b.deviceName) || 'Telefon').slice(0, 64), tokenHash: crypto_1.default.createHash('sha256').update(accessToken).digest('hex'), createdAt: now, lastSeenAt: now, ownerId: pairingOwner.ownerId, ownerKey: pairingOwner.ownerKey });
-        savePairedDevices();
+        const updated = pairedDevices.filter(device => device !== replaced);
+        updated.push({ id: crypto_1.default.randomUUID(), name: String(((_b = req.body) === null || _b === void 0 ? void 0 : _b.deviceName) || 'Telefon').slice(0, 64), tokenHash: crypto_1.default.createHash('sha256').update(accessToken).digest('hex'), createdAt: now, lastSeenAt: now, ownerId: pairingOwner.ownerId, ownerKey: pairingOwner.ownerKey });
+        try {
+            savePairedDevices(updated);
+        }
+        catch (_c) {
+            return res.status(503).json({ error: 'Nie udało się zapisać parowania. Poprzedni telefon pozostał połączony.' });
+        }
+        pairedDevices = updated;
         rotatePairingCode();
         res.status(201).json({ accessToken });
     });

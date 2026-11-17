@@ -1,12 +1,12 @@
 type Props = { busy: boolean; onClose: () => void; onSelect: (interval: 'monthly' | 'yearly') => void };
 const features: Array<[string, string | boolean, string | boolean, string | boolean]> = [
-  ['Przechowywanie dokumentów', 'Do 25 dokumentów', 'Do 250 dokumentów', 'Bez limitu'],
+  ['Przechowywanie dokumentów', 'Do 200 dokumentów', 'Do 400 dokumentów', 'Bez limitu'],
   ['Kartoteki i foldery', true, true, true],
   ['Podgląd, zmiana nazwy i retencji', true, true, true],
-  ['Skanowanie aparatem telefonu', true, true, true],
-  ['Skanowanie z drukarki', false, false, true],
-  ['OCR i wyszukiwanie tekstu w skanach', false, false, true],
-  ['Scalanie i eksport wielu dokumentów do PDF', false, true, true],
+  ['Skanowanie aparatem telefonu', '50 / 7 dni', '100 / 7 dni', 'Bez limitu'],
+  ['Skanowanie z drukarki', '50 / 7 dni', '100 / 7 dni', 'Bez limitu'],
+  ['OCR i wyszukiwanie tekstu w skanach', '14 dni próbne', '14 dni próbne', 'Bez limitu'],
+  ['Scalanie i eksport wielu dokumentów do PDF', '10 / 7 dni', '20 / 7 dni', 'Bez limitu'],
   ['Powiadomienia o terminach (6–1 mies. i 15–1 dni)', false, true, true],
   ['Tagi i filtrowanie dokumentów', false, true, true],
   ['Udostępnianie kartotek użytkownikom', false, true, true],

@@ -40,7 +40,7 @@ export function createOcrRouter(prisma: PrismaClient, queue: ReturnType<typeof c
     if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ error: 'Nieprawidłowy dokument.' });
     const found = await prisma.document.findFirst({ where: { id, folder: { ownerId: Number(res.locals.userId || 1) }, isDeleted: false }, select: { id: true } });
     if (!found) return res.status(404).json({ error: 'Nie znaleziono dokumentu.' });
-    if (req.method !== 'GET') { const active = await activeDocumentIds(prisma, Number(res.locals.userId || 1), await getPlan(prisma, ocrOwnerKey(res))); if (active && !active.has(id)) return res.status(403).json({ code: 'PLAN_LIMIT_REACHED', error: 'Dokument jest tylko do odczytu z powodu limitu planu.' }); }
+    const active = await activeDocumentIds(prisma, Number(res.locals.userId || 1), await getPlan(prisma, ocrOwnerKey(res))); if (active && !active.has(id)) return res.status(403).json({ code: 'PLAN_LIMIT_REACHED', error: 'Dokument jest tylko do odczytu z powodu limitu planu.' });
     next();
   });
   router.post('/:id', (req, res) => {
@@ -51,7 +51,20 @@ export function createOcrRouter(prisma: PrismaClient, queue: ReturnType<typeof c
     try {
       const document = await prisma.document.findUnique({ where: { id: Number(req.params.id) }, select: { ocrText: true } });
       const status = queue.status(Number(req.params.id), ocrOwnerKey(res));
-      res.setHeader('Cache-Control', 'no-store'); res.json({ ...status, text: document?.ocrText ? readOcrText(document.ocrText) : '' });
+      const fullText = document?.ocrText ? readOcrText(document.ocrText) : '';
+      const rawOffset = Number(req.query.offset);
+      const rawLimit = Number(req.query.limit);
+      const offset = Number.isInteger(rawOffset) && rawOffset > 0 ? rawOffset : 0;
+      const hasLimit = Number.isInteger(rawLimit) && rawLimit > 0;
+      const text = hasLimit ? fullText.slice(offset, offset + Math.min(rawLimit, 100_000)) : fullText;
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({
+        ...status,
+        text,
+        totalLength: fullText.length,
+        offset,
+        hasMore: offset + text.length < fullText.length,
+      });
     } catch { res.status(500).json({ error: 'Nie udało się odczytać wyniku OCR.' }); }
   });
   router.put('/:id', async (req, res) => {

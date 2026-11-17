@@ -58,15 +58,15 @@ export async function createWebDavFolder(connection: WebDavConnection, folder: s
   await request(connection, [...segments(folder), name].join('/'), 'MKCOL');
 }
 
-/** Find a backup in the selected directory without trusting paths returned by the server. */
-export function findLatestWebDavBackup(xml: string, folderUrl: string): string | null {
+/** Lists all encrypted backups in the selected directory sorted newest-first without trusting server paths. */
+export function listWebDavBackups(xml: string, folderUrl: string): Array<{ name: string; modifiedAt: string | null }> {
   if (xml.length > 2_000_000) throw new Error('Lista plików NAS-a jest zbyt duża.');
   const current = new URL(folderUrl);
   const parsed = parser.parse(xml) as { multistatus?: { response?: unknown } | string };
-  if (parsed.multistatus === '') return null;
+  if (parsed.multistatus === '') return [];
   if (!parsed.multistatus || typeof parsed.multistatus !== 'object') throw new Error('NAS zwrócił nieprawidłową listę WebDAV.');
   const parent = `${current.pathname.replace(/\/+$/, '')}/`;
-  const candidates: Array<{ name: string; modified: number }> = [];
+  const candidates: Array<{ name: string; modified: number; modifiedAt: string | null }> = [];
   for (const entry of array(parsed.multistatus.response) as Array<{ href?: string; propstat?: unknown }>) {
     if (typeof entry.href !== 'string') continue;
     let url: URL; try { url = new URL(entry.href, current); } catch { continue; }
@@ -80,8 +80,13 @@ export function findLatestWebDavBackup(xml: string, folderUrl: string): string |
     if (!prop) continue;
     if (prop.resourcetype && typeof prop.resourcetype === 'object' && Object.prototype.hasOwnProperty.call(prop.resourcetype, 'collection')) continue;
     const modified = typeof prop.getlastmodified === 'string' ? Date.parse(prop.getlastmodified) : NaN;
-    candidates.push({ name, modified: Number.isFinite(modified) ? modified : 0 });
+    candidates.push({ name, modified: Number.isFinite(modified) ? modified : 0, modifiedAt: Number.isFinite(modified) ? new Date(modified).toISOString() : null });
   }
   candidates.sort((a, b) => b.modified - a.modified || b.name.localeCompare(a.name));
-  return candidates[0]?.name || null;
+  return candidates.map(({ name, modifiedAt }) => ({ name, modifiedAt }));
+}
+
+/** Find a backup in the selected directory without trusting paths returned by the server. */
+export function findLatestWebDavBackup(xml: string, folderUrl: string): string | null {
+  return listWebDavBackups(xml, folderUrl)[0]?.name || null;
 }

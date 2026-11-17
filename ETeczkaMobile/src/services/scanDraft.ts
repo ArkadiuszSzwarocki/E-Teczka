@@ -1,3 +1,4 @@
+import { profileKey, profileOperation } from './mobileProfile';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as SecureStore from 'expo-secure-store';
 import { isRetentionUnit, type RetentionUnit } from '../types/domain';
@@ -14,13 +15,13 @@ export type ScanDraft = {
   retentionEnabled?: boolean;
 };
 
-export async function saveScanDraft(draft: ScanDraft) {
-  await SecureStore.setItemAsync(DRAFT_KEY, JSON.stringify(draft));
+async function saveScanDraftImpl(draft: ScanDraft) {
+  await SecureStore.setItemAsync(profileKey(DRAFT_KEY), JSON.stringify(draft));
 }
 
-export async function loadScanDraft(folderId: number | null): Promise<ScanDraft | null> {
+async function loadScanDraftImpl(folderId: number | null): Promise<ScanDraft | null> {
   if (!folderId) return null;
-  const stored = await SecureStore.getItemAsync(DRAFT_KEY);
+  const stored = await SecureStore.getItemAsync(profileKey(DRAFT_KEY));
   if (!stored) return null;
   try {
     const draft: unknown = JSON.parse(stored);
@@ -45,6 +46,10 @@ export async function loadScanDraft(folderId: number | null): Promise<ScanDraft 
   }
 }
 
-export async function clearScanDraft() {
-  await SecureStore.deleteItemAsync(DRAFT_KEY);
+async function clearScanDraftImpl() {
+  await SecureStore.deleteItemAsync(profileKey(DRAFT_KEY));
 }
+
+export const saveScanDraft = profileOperation(saveScanDraftImpl);
+export const loadScanDraft = profileOperation(loadScanDraftImpl);
+export const clearScanDraft = profileOperation(clearScanDraftImpl);

@@ -26,7 +26,7 @@ const mfa = (0, backupMfaStore_1.createBackupMfaStore)(node_path_1.default.join(
 const grants = new Map();
 const attempts = new Map();
 const mfaOwner = (res) => `documents:${Number(res.locals.userId || 1)}`;
-const actions = { send: ['destination', 'cloud'], cloudRestore: ['cloud/latest', 'restore'], restore: ['restore'], export: ['export'], recoveryKey: ['recovery-key'], connect: ['oauth'] };
+const actions = { send: ['destination', 'cloud'], cloudList: ['cloud/latest'], cloudRestore: ['cloud/latest', 'restore'], restore: ['restore'], export: ['export'], recoveryKey: ['recovery-key'], connect: ['oauth'] };
 function createBackupMfaRouter(prisma) {
     const router = express_1.default.Router();
     router.get('/status', (_req, res) => { try {

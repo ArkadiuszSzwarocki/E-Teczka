@@ -1,7 +1,32 @@
+import { currentMobileAccount, selectMobileProfile, closeMobileProfile } from './mobileProfile';
 import { DeviceEventEmitter } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
+import * as Crypto from 'expo-crypto';
 
 const SESSION_KEY = 'eteczka_central_account_session_v1';
+const DEVICE_KEY = 'eteczka_central_device_v1';
+const PLAN_KEY = 'eteczka_central_plan_v1';
+export type CentralPlanName = 'free' | 'standard' | 'premium' | 'family' | 'business';
+export type CentralPlan = { accountId:string;deviceId:string;kind:'mobile';plan:CentralPlanName;expiresAt:number;validUntil:number|null };
+export type CentralPlanUsage={plan:CentralPlanName;documents:{used:number;reservedOffline?:number;limit:number|null};tags:{used:number;reservedOffline?:number;limit:number|null};cameraScan:{used:number;reservedOffline?:number;limit:number|null};printerScan:{used:number;reservedOffline?:number;limit:number|null};merge:{used:number;reservedOffline?:number;limit:number|null}};
+export async function getCentralPlanUsage(origin:string):Promise<CentralPlanUsage>{const session=await getCentralSession(origin);if(!session)throw new Error('Zaloguj się na konto.');const device=await mobileDevice(session.user.id);return post(origin,'/ledger/status',{},device.credential);}
+async function mobileDevice(userId:string) {
+  const key=`${DEVICE_KEY}_${userId}`;const stored=await SecureStore.getItemAsync(key);if(stored)return JSON.parse(stored) as {deviceId:string;credential:string};
+  const bytes=await Crypto.getRandomBytesAsync(32);const alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';let bits=0,value=0,credential='';for(const byte of bytes){value=(value<<8)|byte;bits+=8;while(bits>=6){bits-=6;credential+=alphabet[(value>>>bits)&63];}}if(bits)credential+=alphabet[(value<<(6-bits))&63];
+  const device={deviceId:Crypto.randomUUID(),credential};await SecureStore.setItemAsync(key,JSON.stringify(device));return device;
+}
+const VALID_PLANS: readonly CentralPlanName[] = ['free', 'standard', 'premium', 'family', 'business'];
+async function savePlan(origin:string,userId:string,signed:{payload:string}) {
+  const lease=JSON.parse(atob(signed.payload.replace(/-/g,'+').replace(/_/g,'/'))) as CentralPlan;
+  const device=await mobileDevice(userId);if(lease.accountId!==userId||lease.deviceId!==device.deviceId||lease.kind!=='mobile'||!VALID_PLANS.includes(lease.plan)||lease.expiresAt<=Date.now()||lease.expiresAt>Date.now()+86460000)throw new Error('Nieprawidłowe uprawnienia konta.');
+  // Received over HTTPS and kept in OS-protected SecureStore; never trust purchase fields from the UI.
+  await SecureStore.setItemAsync(`${PLAN_KEY}_${userId}`,JSON.stringify({origin:centralAccountOrigin(origin),lease}));return lease;
+}
+export async function refreshCentralPlan(origin:string):Promise<CentralPlan|null>{
+  const session=await getCentralSession(origin);if(!session)return null;const device=await mobileDevice(session.user.id);
+  try{return await savePlan(origin,session.user.id,await post(origin,'/entitlements/refresh',{},device.credential));}catch(error){if([401,403].includes(Number((error as Error&{status?:number}).status))){await SecureStore.deleteItemAsync(`${PLAN_KEY}_${session.user.id}`);await SecureStore.deleteItemAsync(SESSION_KEY);}throw error;}
+}
+export async function getCachedCentralPlan(origin:string):Promise<CentralPlan|null>{const session=await getCentralSession(origin);if(!session)return null;try{const raw=await SecureStore.getItemAsync(`${PLAN_KEY}_${session.user.id}`);const cached=raw?JSON.parse(raw):null;return cached?.origin===centralAccountOrigin(origin)&&cached.lease?.expiresAt>Date.now()&&cached.lease?.accountId===session.user.id?cached.lease:null;}catch{return null;}}
 export type CentralAccountUser = { id: string; email: string; name: string | null };
 type CentralSession = { origin: string; token: string; expiresAt: number; user: CentralAccountUser };
 
@@ -20,14 +45,18 @@ async function post<T>(origin: string, endpoint: string, body: object, token?: s
   try {
     const response = await fetch(`${centralAccountOrigin(origin)}${endpoint}`, { method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal, redirect: 'error' });
     const data = response.status === 204 ? {} : await response.json();
-    if (!response.ok) throw new Error(typeof data?.error === 'string' ? data.error : 'Operacja nie powiodła się.');
+    if (!response.ok) throw Object.assign(new Error(typeof data?.error === 'string' ? data.error : 'Operacja nie powiodła się.'),{status:response.status,code:data.code,conflictId:data.conflictId,devices:data.devices});
     return data as T;
   } finally { clearTimeout(timer); }
 }
 
 async function saveSession(origin: string, session: Omit<CentralSession, 'origin'>): Promise<CentralAccountUser> {
   if (!/^[A-Za-z0-9_-]{43}$/.test(session.token) || !Number.isFinite(session.expiresAt) || !session.user?.id || !session.user.email) throw new Error('Serwer zwrócił nieprawidłową sesję.');
-  await SecureStore.setItemAsync(SESSION_KEY, JSON.stringify({ ...session, origin: centralAccountOrigin(origin) }));
+  const device=await mobileDevice(session.user.id);
+  try{await savePlan(origin,session.user.id,await post(origin,'/entitlements/register',{...device,kind:'mobile',name:'E‑Teczka Mobile'},session.token));}catch(error){throw error;}
+  if(currentMobileAccount()!==session.user.id)DeviceEventEmitter.emit('eteczka-account-switch-start');
+  try{await selectMobileProfile(session.user.id,session.user.email);await SecureStore.setItemAsync(SESSION_KEY,JSON.stringify({...session,origin:centralAccountOrigin(origin)}));}catch(error){DeviceEventEmitter.emit('eteczka-account-switch-failed',error instanceof Error?error.message:'Nie udało się zmienić konta.');throw error;}
+  DeviceEventEmitter.emit('eteczka-central-session-changed');
   return session.user;
 }
 
@@ -57,6 +86,7 @@ export async function refreshCentralUser(origin: string): Promise<CentralAccount
     if (!response.ok) throw new Error('Nie udało się sprawdzić sesji.');
     const user = await response.json() as CentralAccountUser;
     if (user.id !== session.user.id || !user.email) throw new Error('Serwer zwrócił nieprawidłowe dane konta.');
+    await refreshCentralPlan(origin);
     return user;
   } finally { clearTimeout(timer); }
 }
@@ -65,6 +95,56 @@ export async function logoutCentralAccount(origin: string) {
   const session = await getCentralSession(origin);
   // Keep the local credential if the server cannot revoke it, so the user can retry.
   if (session) await post(origin, '/logout', {}, session.token);
+  DeviceEventEmitter.emit('eteczka-account-switch-start');
+  await closeMobileProfile();
   await SecureStore.deleteItemAsync(SESSION_KEY);
   DeviceEventEmitter.emit('eteczka-central-logout');
 }
+
+export async function deleteCentralAccount(origin: string) {
+  const session = await getCentralSession(origin);
+  if (!session) throw new Error('Najpierw zaloguj się na konto E‑Teczki.');
+  await post(origin, '/delete-account', {}, session.token);
+  DeviceEventEmitter.emit('eteczka-account-switch-start');
+  await closeMobileProfile();
+  await SecureStore.deleteItemAsync(SESSION_KEY);
+  DeviceEventEmitter.emit('eteczka-central-logout');
+}
+
+export function privacyPolicyUrl(origin: string): string {
+  return `${centralAccountOrigin(origin)}/privacy`;
+}
+
+export type CentralPromotion = { id: string; name: string; plan: Exclude<CentralPlanName, 'free'>; interval: 'monthly' | 'yearly'; percent: number; startsAt: string; endsAt: string; enabled: boolean };
+export type CentralCatalog = { plans: Record<CentralPlanName, { name: string; monthly: number; yearly: number }>; promotions: CentralPromotion[] };
+
+export async function getCentralCatalog(origin: string): Promise<CentralCatalog | null> {
+  const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(`${centralAccountOrigin(origin)}/catalog`, { signal: controller.signal, redirect: 'error' });
+    return res.ok ? ((await res.json()) as CentralCatalog) : null;
+  } catch { return null; }
+  finally { clearTimeout(timer); }
+}
+
+export function activePromotions(catalog: CentralCatalog, now = Date.now()): CentralPromotion[] {
+  const best = new Map<string, CentralPromotion>();
+  for (const promo of catalog.promotions || []) {
+    if (!promo.enabled) continue;
+    const start = Date.parse(promo.startsAt); const end = Date.parse(promo.endsAt);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || now < start || now >= end) continue;
+    const key = `${promo.plan}:${promo.interval}`;
+    const prev = best.get(key);
+    if (!prev || promo.percent > prev.percent || (promo.percent === prev.percent && promo.id.localeCompare(prev.id) < 0)) best.set(key, promo);
+  }
+  return Array.from(best.values()).sort((a, b) => b.percent - a.percent);
+}
+
+/** Changing accounts preserves encrypted vaults and does not require the old vault PIN. */
+export async function chooseAnotherMobileAccount(origin:string){
+ const session=await getCentralSession(origin);DeviceEventEmitter.emit('eteczka-account-switch-start');
+ try{await closeMobileProfile();await SecureStore.deleteItemAsync(SESSION_KEY);DeviceEventEmitter.emit('eteczka-central-logout');}
+ catch(error){DeviceEventEmitter.emit('eteczka-account-switch-failed',error instanceof Error?error.message:'Nie udało się zmienić konta.');throw error;}
+ if(session)void post(origin,'/logout',{},session.token).catch(()=>undefined);
+}
+

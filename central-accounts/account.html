@@ -4,29 +4,35 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Konto E-Teczki</title>
 <link rel="stylesheet" href="/account.css">
-<main>
-  <h1>Konto E-Teczki</h1>
+<main class="account-panel">
+  <div class="account-brand"><svg aria-hidden="true" width="28" height="28" viewBox="0 0 28 28" fill="none"><rect x="3" y="3" width="22" height="22" rx="6" fill="#2563eb"/><path d="M10 9h9M10 14h7M10 19h9" stroke="white" stroke-width="2" stroke-linecap="round"/></svg><span>E‑Teczka</span></div>
+  <h1 id="accountTitle">Zaloguj się do E‑Teczki</h1>
   <p id="status" role="status"></p>
   <section id="handoff" hidden><p id="handoffInfo"></p><p>Porównaj ten kod z kodem wyświetlonym na Twoim urządzeniu. Zatwierdź tylko, jeśli są takie same.</p><button id="approveHandoff" type="button" disabled>Potwierdź logowanie urządzenia</button></section>
   <section id="signedInNext" hidden>
-    <h2>Co dalej?</h2>
+    <h2 id="nextTitle">Co dalej?</h2>
     <p id="nextMessage">Aby otworzyć dokumenty, przejdź do okna aplikacji E‑Teczka i wpisz tam e-mail oraz hasło w zakładce „Zaloguj się”.</p>
     <a id="returnToApp" class="primary-link" hidden>Wróć do aplikacji →</a>
-    <p class="footnote">Konto w przeglądarce i dostęp do dokumentów na komputerze łączysz po potwierdzeniu urządzenia.</p>
+    <p id="handoffFootnote" class="footnote">Konto w przeglądarce i dostęp do dokumentów na komputerze łączysz po potwierdzeniu urządzenia.</p>
   </section>
   <section id="credentials">
+    <p id="googleIntro" hidden>Kliknij przycisk Google, aby wybrać konto i przejść do aplikacji.</p>
+    <div id="passwordCredentials">
     <form id="form">
       <label>E-mail <input id="email" type="email" autocomplete="email" required maxlength="254"></label>
       <label>Hasło <input id="password" type="password" autocomplete="current-password" required minlength="8" maxlength="200"></label>
+      <div id="turnstile"></div>
       <button type="submit">Zaloguj</button>
     </form>
     <button id="register" type="button">Utwórz konto</button><p>W wiadomości potwierdzisz adres. Użyjesz hasła podanego przy rejestracji.</p>
     <button id="resend" type="button">Wyślij ponownie link potwierdzający</button>
     <button id="reset" type="button">Nie pamiętam hasła</button>
+    </div>
     <div id="google"></div>
   </section>
   <section id="googleLinkSection" hidden><button id="showGoogleLink" type="button">Połącz z kontem Google</button><div id="googleLink"></div></section>
   <button id="logout" type="button" hidden>Wyloguj</button>
+  <section id="deviceSection" hidden><h2>Plan i zaufane urządzenia</h2><p id="devicePlan"></p><div id="deviceList"></div></section>
 </main>
 <script src="/accountUi.js" defer></script>
 </html>

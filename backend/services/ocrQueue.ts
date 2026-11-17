@@ -5,6 +5,8 @@ import type { PrismaClient } from '@prisma/client';
 import { encrypt, decrypt } from './backupCrypto';
 import { protectOcrText } from './ocrText';
 import { extractDocumentText } from './ocrEngine';
+import { extractFinanceFromOcr } from './financeOcrParser';
+import { parseReceiptFromOcr } from './receiptOcrParser';
 import { featureTrial } from './planLedger';
 
 type State = 'queued' | 'processing' | 'done' | 'error' | 'paused';
@@ -57,15 +59,42 @@ export function createOcrQueue(prisma: PrismaClient, options: Options) {
         if (!(await featureTrial(prisma, next.ownerKey, 'ocr', false)).allowed) { update(next.documentId, next.ownerKey, { state: 'paused', error: 'Okres próbny OCR zakończył się. Funkcja wymaga planu Premium.' }); continue; }
         update(next.documentId, next.ownerKey, { state: 'processing', error: undefined });
         try {
-          const document = await prisma.document.findUnique({ where: { id: next.documentId }, select: { id: true, filePath: true, mimeType: true, isDeleted: true } });
+          const document = await prisma.document.findUnique({ where: { id: next.documentId }, select: { id: true, filePath: true, mimeType: true, isDeleted: true, merchantName: true, amountCents: true, dueDate: true, paymentStatus: true } });
           if (!document || document.isDeleted) throw new Error('Dokument nie jest dostępny.');
           const fullPath = path.resolve(options.uploadsDirectory, document.filePath);
           const relative = path.relative(path.resolve(options.uploadsDirectory), fullPath);
           if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('Nieprawidłowa ścieżka dokumentu.');
           const text = await extract(fullPath, document.mimeType);
           if (text.length > 2_000_000) throw new Error('Dokument przekracza limit 2 milionów znaków tekstu OCR.');
-          const updated = await prisma.document.updateMany({ where: { id: document.id, filePath: document.filePath, isDeleted: false }, data: { ocrText: protectOcrText(text) } });
+          const extracted = extractFinanceFromOcr(text);
+          const receipt = parseReceiptFromOcr(text);
+          const financePatch: { merchantName?: string; amountCents?: number; currency?: string; dueDate?: Date; paymentStatus?: string } = {};
+          if (!document.merchantName && receipt.merchantName) financePatch.merchantName = receipt.merchantName;
+          const detectedCents = receipt.amountCents ?? extracted.amountCents;
+          if (document.amountCents === null && detectedCents !== null) {
+            financePatch.amountCents = detectedCents;
+            financePatch.currency = extracted.currency || 'PLN';
+            if (!document.paymentStatus) financePatch.paymentStatus = receipt.paymentStatus || 'unpaid';
+          } else if (!document.paymentStatus && receipt.paymentStatus) {
+            financePatch.paymentStatus = receipt.paymentStatus;
+          }
+          if (document.dueDate === null && extracted.dueDate !== null) {
+            financePatch.dueDate = extracted.dueDate;
+          }
+          const updated = await prisma.document.updateMany({ where: { id: document.id, filePath: document.filePath, isDeleted: false }, data: { ocrText: protectOcrText(text), ...financePatch } });
           if (updated.count !== 1) throw new Error('Dokument zmienił się podczas rozpoznawania.');
+          if (receipt.items.length > 0) {
+            await prisma.documentLineItem.deleteMany({ where: { documentId: document.id } });
+            await prisma.documentLineItem.createMany({
+              data: receipt.items.map(item => ({
+                documentId: document.id,
+                name: item.name,
+                quantity: item.quantity,
+                totalCents: item.totalCents,
+                category: item.category,
+              })),
+            });
+          }
           update(next.documentId, next.ownerKey, { state: 'done' });
         } catch (error) {
           const message = error instanceof Error && /Brak lokalnego pliku językowego|przekracza limit|format dokumentu|nie jest dostępny|Dokument zmienił/.test(error.message) ? error.message : 'Nie udało się rozpoznać dokumentu. Sprawdź plik i spróbuj ponownie.';

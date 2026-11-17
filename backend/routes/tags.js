@@ -17,8 +17,8 @@ const express_1 = __importDefault(require("express"));
 const tagOwnership_1 = require("../services/tagOwnership");
 const errors_1 = require("../utils/errors");
 const planLedger_1 = require("../services/planLedger");
+const centralPlanLedger_1 = require("../services/centralPlanLedger");
 const ocrPremium_1 = require("../services/ocrPremium");
-const planPolicy_1 = require("../services/planPolicy");
 const planRestrictions_1 = require("../services/planRestrictions");
 function createTagRouter(prisma) {
     const router = express_1.default.Router();
@@ -50,9 +50,7 @@ function createTagRouter(prisma) {
                 const existing = yield tx.tag.findUnique({ where: { name } });
                 if (existing && ids.includes(existing.id))
                     throw new Error('Taki tag już istnieje.');
-                const limit = planPolicy_1.PLAN_LIMITS[plan].tags;
-                if (limit !== null && ids.length >= limit)
-                    throw new planLedger_1.PlanLimitError('tagi', limit);
+                yield (0, planLedger_1.checkTagCapacity)(tx, ownerId, plan, ids.length);
                 const result = existing || (yield tx.tag.create({ data: { name, color } }));
                 yield tx.$executeRaw `INSERT INTO PlanTagOwner(ownerId, tagId) VALUES (${ownerId}, ${result.id})`;
                 return result;
@@ -74,6 +72,7 @@ function createTagRouter(prisma) {
                 return res.status(400).json({ error: 'Nieprawidłowy tag.' });
             yield (0, tagOwnership_1.prepareTags)(prisma);
             const removed = yield prisma.$transaction((tx) => __awaiter(this, void 0, void 0, function* () {
+                (0, centralPlanLedger_1.markCentralInventoryDirty)();
                 const deleted = yield tx.$executeRaw `DELETE FROM PlanTagOwner WHERE ownerId = ${ownerId} AND tagId = ${id}`;
                 if (!deleted)
                     return false;

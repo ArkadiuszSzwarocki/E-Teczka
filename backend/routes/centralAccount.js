@@ -14,6 +14,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createCentralAccountRouter = createCentralAccountRouter;
 const accountMfa_1 = require("../services/accountMfa");
+const centralEntitlements_1 = require("../services/centralEntitlements");
+const centralPlanLedger_1 = require("../services/centralPlanLedger");
 const node_crypto_1 = require("node:crypto");
 const express_1 = __importDefault(require("express"));
 const centralAccountLink_1 = require("../services/centralAccountLink");
@@ -21,8 +23,10 @@ const auth_1 = require("./auth");
 const centralHandoff_1 = require("../services/centralHandoff");
 const backupPrimary_1 = require("../services/backupPrimary");
 const planLedger_1 = require("../services/planLedger");
+const centralEntitlements_2 = require("../services/centralEntitlements");
 // Local-desktop access must be enforced by the caller before mounting this router.
-function createCentralAccountRouter(prisma, verify = centralAccountLink_1.verifyCentralSession, handoffs = (0, centralHandoff_1.createCentralHandoffs)(), verifyDesktop = backupPrimary_1.verifyBackupPrimary) {
+function createCentralAccountRouter(prisma, verify = centralAccountLink_1.verifyCentralSession, handoffs = (0, centralHandoff_1.createCentralHandoffs)(), verifyDesktop = backupPrimary_1.verifyBackupPrimary, prepareDevice) {
+    const enrollDevice = prepareDevice || ((userId, base, accountId, token) => __awaiter(this, void 0, void 0, function* () { yield (0, centralEntitlements_1.registerCentralDevice)(userId, base, accountId, token); yield (0, centralPlanLedger_1.bootstrapCentralPlan)(prisma, userId); }));
     const router = express_1.default.Router();
     const links = (0, centralAccountLink_1.createCentralAccountLinks)(prisma);
     let desktopFailures = 0;
@@ -54,11 +58,14 @@ function createCentralAccountRouter(prisma, verify = centralAccountLink_1.verify
             return res.status(400).json({ error: 'Podaj poprawny adres e-mail.' });
         try {
             const upstream = yield fetch(`${base}/request-password-reset`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email }), redirect: 'error', signal: AbortSignal.timeout(15000) });
-            if (upstream.status === 429)
-                return res.status(429).json({ error: 'Zbyt wiele prób. Spróbuj ponownie później.' });
+            if (upstream.status === 429) {
+                const retry = Number(upstream.headers.get('retry-after'));
+                const waitText = Number.isFinite(retry) && retry > 0 ? `za ${Math.ceil(retry / 60)} min` : 'za kilka minut';
+                return res.status(429).json({ error: `Zbyt wiele prób wysłania linku. Spróbuj ponownie ${waitText}.` });
+            }
             if (!upstream.ok)
                 return res.status(503).json({ error: 'Usługa jest chwilowo niedostępna. Spróbuj ponownie.' });
-            return res.status(202).json({ message: 'Jeśli ten adres należy do potwierdzonego konta z hasłem, wyślemy link do jego zmiany. Sprawdź również folder spam.' });
+            return res.status(202).json({ message: 'Jeśli ten adres należy do potwierdzonego konta, wyślemy jednorazowy link do ustawienia lub zmiany hasła E‑Teczki. Sprawdź również folder spam. Logowanie Google pozostanie dostępne.' });
         }
         catch (_b) {
             return res.status(503).json({ error: 'Nie można połączyć się z usługą kont. Spróbuj ponownie.' });
@@ -121,8 +128,14 @@ function createCentralAccountRouter(prisma, verify = centralAccountLink_1.verify
         try {
             return res.json(yield handoffs.start(base));
         }
-        catch (_a) {
-            return res.status(503).json({ error: 'Nie udało się rozpocząć logowania.' });
+        catch (error) {
+            if (error instanceof centralHandoff_1.CentralHandoffError && error.code === 'CENTRAL_RATE_LIMIT') {
+                res.setHeader('Retry-After', String(error.retryAfter || 60));
+                return res.status(429).json({ code: error.code, retryAfter: error.retryAfter, error: `Serwer kont ograniczył liczbę prób. Spróbuj ponownie za ${error.retryAfter || 60} s.` });
+            }
+            const code = error instanceof centralHandoff_1.CentralHandoffError ? error.code : 'CENTRAL_HANDOFF_FAILED';
+            console.warn('[login/start]', code);
+            return res.status(503).json({ code, error: code === 'CENTRAL_CONNECTION_FAILED' ? 'Nie można połączyć się z konto.arecki.pl. Sprawdź internet i spróbuj ponownie.' : code === 'CENTRAL_TIMEOUT' ? 'Serwer kont nie odpowiedział na czas. Spróbuj ponownie.' : 'Usługa logowania jest chwilowo niedostępna. Spróbuj ponownie za chwilę.' });
         }
     }));
     router.post('/handoff/poll', (req, res) => __awaiter(this, void 0, void 0, function* () {
@@ -134,10 +147,64 @@ function createCentralAccountRouter(prisma, verify = centralAccountLink_1.verify
             return res.status(400).json({ error: 'Logowanie wygasło lub nie udało się połączyć.' });
         }
     }));
+    const fetchCentralDevices = (originUrl, centralToken) => __awaiter(this, void 0, void 0, function* () {
+        const upstream = yield fetch(`${originUrl}/devices`, {
+            headers: { authorization: `Bearer ${centralToken}` },
+            redirect: 'error',
+            signal: AbortSignal.timeout(7000),
+        });
+        if (!upstream.ok)
+            throw new Error('CENTRAL_DEVICES_UNAVAILABLE');
+        const data = yield upstream.json();
+        return {
+            plan: data.plan || 'free',
+            deviceLimits: data.deviceLimits || { desktop: 1, mobile: 1 },
+            devices: Array.isArray(data.devices) ? data.devices.map(d => ({
+                deviceId: String(d.device_id || ''),
+                kind: d.kind === 'mobile' ? 'mobile' : 'desktop',
+                name: String(d.name || (d.kind === 'mobile' ? 'Urządzenie mobilne' : 'Komputer')),
+                createdAt: Number(d.created_at || 0),
+                lastSeen: Number(d.last_seen || 0),
+            })) : [],
+        };
+    });
+    router.post('/handoff/devices', (req, res) => __awaiter(this, void 0, void 0, function* () {
+        var _a;
+        try {
+            const approved = yield handoffs.take(String(((_a = req.body) === null || _a === void 0 ? void 0 : _a.handle) || ''));
+            return res.json(yield fetchCentralDevices(approved.origin, approved.centralToken));
+        }
+        catch (_b) {
+            return res.status(400).json({ error: 'Nie udało się pobrać listy zaufanych urządzeń. Zaloguj się ponownie.' });
+        }
+    }));
+    router.post('/handoff/devices/revoke', (req, res) => __awaiter(this, void 0, void 0, function* () {
+        var _a, _b;
+        const deviceId = typeof ((_a = req.body) === null || _a === void 0 ? void 0 : _a.deviceId) === 'string' ? req.body.deviceId.trim() : '';
+        if (!deviceId)
+            return res.status(400).json({ error: 'Brak identyfikatora urządzenia.' });
+        try {
+            const approved = yield handoffs.take(String(((_b = req.body) === null || _b === void 0 ? void 0 : _b.handle) || ''));
+            const upstream = yield fetch(`${approved.origin}/devices/revoke`, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json', authorization: `Bearer ${approved.centralToken}` },
+                body: JSON.stringify({ deviceId }),
+                redirect: 'error',
+                signal: AbortSignal.timeout(7000),
+            });
+            if (!upstream.ok)
+                return res.status(502).json({ error: 'Nie udało się usunąć zaufania urządzenia.' });
+            return res.json(yield fetchCentralDevices(approved.origin, approved.centralToken));
+        }
+        catch (_c) {
+            return res.status(400).json({ error: 'Sesja logowania wygasła. Rozpocznij logowanie ponownie.' });
+        }
+    }));
     router.post('/handoff/finish', (req, res) => __awaiter(this, void 0, void 0, function* () {
         var _a, _b;
         try {
-            const handle = String(((_a = req.body) === null || _a === void 0 ? void 0 : _a.handle) || ''), approved = yield handoffs.take(handle);
+            const handle = String(((_a = req.body) === null || _a === void 0 ? void 0 : _a.handle) || '');
+            const approved = yield handoffs.take(handle);
             let localId = yield links.find(approved.origin, approved.user.id);
             if (!localId && ((_b = req.body) === null || _b === void 0 ? void 0 : _b.createNew) === true) {
                 const email = approved.user.email.trim().toLowerCase();
@@ -155,11 +222,25 @@ function createCentralAccountRouter(prisma, verify = centralAccountLink_1.verify
             const user = yield prisma.user.findUnique({ where: { id: localId }, select: { id: true, email: true, name: true } });
             if (!user)
                 return res.status(409).json({ error: 'Nie znaleziono konta lokalnego.' });
+            try {
+                yield enrollDevice(user.id, approved.origin, approved.user.id, approved.centralToken);
+            }
+            catch (enrollError) {
+                if (enrollError instanceof Error && enrollError.message === 'CENTRAL_DEVICE_LIMIT') {
+                    const deviceData = yield fetchCentralDevices(approved.origin, approved.centralToken).catch(() => null);
+                    return res.status(403).json(Object.assign({ code: 'DEVICE_LIMIT_REACHED', error: 'Osiągnięto limit urządzeń konta. Usuń nieużywane urządzenie poniżej lub zmień plan.' }, (deviceData || {})));
+                }
+                throw enrollError;
+            }
             const session = yield (0, auth_1.createSession)(prisma, user.id, user.email, user.name, req.body);
             handoffs.finish(handle);
             return res.json(session);
         }
         catch (error) {
+            if (error instanceof Error && error.message === 'CENTRAL_DEVICE_LIMIT')
+                return res.status(403).json({ code: 'DEVICE_LIMIT_REACHED', error: 'Osiągnięto limit urządzeń konta. Usuń nieużywane urządzenie poniżej lub zmień plan.' });
+            if (error instanceof Error && error.message === 'CENTRAL_ENTITLEMENTS_UNAVAILABLE')
+                return res.status(503).json({ error: 'Serwer kont wymaga aktualizacji lub jest niedostępny. Nie udało się pobrać planu konta.' });
             if (error instanceof accountMfa_1.AccountMfaRequired)
                 return res.status(401).json({ code: error.code, error: error.message });
             if (error instanceof auth_1.DeviceLimitError)
@@ -181,6 +262,7 @@ function createCentralAccountRouter(prisma, verify = centralAccountLink_1.verify
                 return res.status(409).json({ error: 'Konto centralne jest już połączone z innym kontem lokalnym.' });
             if (existing === null)
                 yield links.link(approved.origin, approved.user.id, localId);
+            yield enrollDevice(localId, approved.origin, approved.user.id, approved.centralToken);
             handoffs.finish(handle);
             return res.status(204).end();
         }
@@ -215,11 +297,16 @@ function createCentralAccountRouter(prisma, verify = centralAccountLink_1.verify
             yield (0, planLedger_1.copyDesktopPlanState)(prisma, `user:${user.id}`);
             if (existing === null)
                 yield links.link(approved.origin, approved.user.id, user.id);
+            yield enrollDevice(user.id, approved.origin, approved.user.id, approved.centralToken);
             const session = yield (0, auth_1.createSession)(prisma, user.id, user.email, user.name, req.body);
             handoffs.finish(handle);
             return res.json(session);
         }
         catch (error) {
+            if (error instanceof Error && error.message === 'CENTRAL_DEVICE_LIMIT')
+                return res.status(403).json({ code: 'DEVICE_LIMIT_REACHED', error: 'Osiągnięto limit urządzeń konta. Usuń nieużywane urządzenie na konto.arecki.pl/account (sekcja „Plan i zaufane urządzenia”) lub zmień plan.' });
+            if (error instanceof Error && error.message === 'CENTRAL_ENTITLEMENTS_UNAVAILABLE')
+                return res.status(503).json({ error: 'Serwer kont wymaga aktualizacji lub jest niedostępny. Nie udało się pobrać planu konta.' });
             if (error instanceof accountMfa_1.AccountMfaRequired)
                 return res.status(401).json({ code: error.code, error: error.message });
             if (error instanceof auth_1.DeviceLimitError)
@@ -244,11 +331,16 @@ function createCentralAccountRouter(prisma, verify = centralAccountLink_1.verify
                 yield tx.$executeRaw `INSERT INTO CentralAccountLink(centralOrigin, centralId, localUserId, createdAt) VALUES (${approved.origin}, ${approved.user.id}, ${created.id}, ${new Date().toISOString()})`;
                 return created;
             }));
+            yield enrollDevice(user.id, approved.origin, approved.user.id, approved.centralToken);
             const session = yield (0, auth_1.createSession)(prisma, user.id, user.email, user.name, req.body);
             handoffs.finish(handle);
             return res.status(201).json(session);
         }
         catch (error) {
+            if (error instanceof Error && error.message === 'CENTRAL_DEVICE_LIMIT')
+                return res.status(403).json({ code: 'DEVICE_LIMIT_REACHED', error: 'Osiągnięto limit urządzeń konta. Usuń nieużywane urządzenie na konto.arecki.pl/account (sekcja „Plan i zaufane urządzenia”) lub zmień plan.' });
+            if (error instanceof Error && error.message === 'CENTRAL_ENTITLEMENTS_UNAVAILABLE')
+                return res.status(503).json({ error: 'Serwer kont wymaga aktualizacji lub jest niedostępny. Nie udało się pobrać planu konta.' });
             if (error instanceof accountMfa_1.AccountMfaRequired)
                 return res.status(401).json({ code: error.code, error: error.message });
             if (error instanceof auth_1.DeviceLimitError)
@@ -273,6 +365,7 @@ function createCentralAccountRouter(prisma, verify = centralAccountLink_1.verify
                 return res.status(204).end();
             if (existing !== null)
                 return res.status(409).json({ error: 'Konto centralne jest już połączone z innym kontem lokalnym.' });
+            yield enrollDevice(localId, base, remote.id, req.body.centralToken);
             yield links.link(base, remote.id, localId);
             return res.status(204).end();
         }
@@ -293,6 +386,7 @@ function createCentralAccountRouter(prisma, verify = centralAccountLink_1.verify
             const user = yield prisma.user.findUnique({ where: { id: localId }, select: { id: true, email: true, name: true } });
             if (!user)
                 return res.status(409).json({ error: 'Nie znaleziono połączonego konta lokalnego.' });
+            yield enrollDevice(user.id, base, remote.id, req.body.centralToken);
             return res.json(yield (0, auth_1.createSession)(prisma, user.id, user.email, user.name, req.body));
         }
         catch (error) {
@@ -315,12 +409,59 @@ function createCentralAccountRouter(prisma, verify = centralAccountLink_1.verify
             const remote = yield verify(base, (_a = req.body) === null || _a === void 0 ? void 0 : _a.centralToken);
             if ((yield links.localUserId(bearer(req))) !== localId)
                 return res.status(401).json({ error: 'Sesja lokalna wygasła.' });
+            yield (0, centralEntitlements_1.revokeCentralDevice)(localId, req.body.centralToken);
             if (!(yield links.unlink(base, remote.id, localId)))
                 return res.status(404).json({ error: 'Nie znaleziono powiązania kont.' });
             return res.status(204).end();
         }
         catch (_b) {
             return res.status(401).json({ error: 'Nie udało się potwierdzić sesji konta centralnego.' });
+        }
+    }));
+    router.post('/sync-session', (req, res) => __awaiter(this, void 0, void 0, function* () {
+        var _a;
+        const base = origin();
+        if (!base)
+            return res.status(503).json({ error: 'Konto centralne nie jest skonfigurowane.' });
+        const localId = yield links.localUserId(bearer(req));
+        if (!localId)
+            return res.status(401).json({ error: 'Sesja lokalna wygasła.' });
+        const centralToken = typeof ((_a = req.body) === null || _a === void 0 ? void 0 : _a.centralToken) === 'string' ? req.body.centralToken : '';
+        try {
+            const remote = yield verify(base, centralToken);
+            const linkedLocalId = yield links.find(base, remote.id);
+            if (linkedLocalId !== localId) {
+                yield links.revokeLocalSessions(localId);
+                return res.status(401).json({ revoked: true, error: 'Sesja została unieważniona.' });
+            }
+            return res.json({ valid: true });
+        }
+        catch (error) {
+            if (error instanceof Error && error.message === 'INVALID_SESSION') {
+                yield links.revokeLocalSessions(localId);
+                return res.status(401).json({ revoked: true, error: 'Sesja centralna wygasła lub została unieważniona.' });
+            }
+            return res.status(503).json({ offline: true, error: 'Brak połączenia z usługą kont; zachowano dostęp offline.' });
+        }
+    }));
+    router.post('/google-play/verify', (req, res) => __awaiter(this, void 0, void 0, function* () {
+        var _a, _b, _c;
+        const localId = yield links.localUserId(bearer(req));
+        if (!localId)
+            return res.status(401).json({ error: 'Najpierw zaloguj się na konto.' });
+        const packageName = typeof ((_a = req.body) === null || _a === void 0 ? void 0 : _a.packageName) === 'string' ? req.body.packageName.trim() : '';
+        const subscriptionId = typeof ((_b = req.body) === null || _b === void 0 ? void 0 : _b.subscriptionId) === 'string' ? req.body.subscriptionId.trim() : '';
+        const purchaseToken = typeof ((_c = req.body) === null || _c === void 0 ? void 0 : _c.purchaseToken) === 'string' ? req.body.purchaseToken.trim() : '';
+        if (!packageName || !subscriptionId || !purchaseToken)
+            return res.status(400).json({ error: 'Brak wymaganych danych zakupu Google Play.' });
+        try {
+            return res.json(yield (0, centralEntitlements_2.verifyCentralPurchase)(localId, { packageName, subscriptionId, purchaseToken }));
+        }
+        catch (error) {
+            const msg = error instanceof Error ? error.message : '';
+            if (['BILLING_NOT_CONFIGURED', 'CENTRAL_ACCOUNT_REQUIRED'].includes(msg))
+                return res.status(503).json({ error: 'Weryfikacja Google Play nie jest jeszcze skonfigurowana na serwerze.' });
+            return res.status(400).json({ error: 'Nie udało się potwierdzić subskrypcji Google Play.' });
         }
     }));
     return router;

@@ -14,6 +14,7 @@ exports.webDavFileUrl = webDavFileUrl;
 exports.webDavFolderUrl = webDavFolderUrl;
 exports.listWebDavFolders = listWebDavFolders;
 exports.createWebDavFolder = createWebDavFolder;
+exports.listWebDavBackups = listWebDavBackups;
 exports.findLatestWebDavBackup = findLatestWebDavBackup;
 const fast_xml_parser_1 = require("fast-xml-parser");
 const parser = new fast_xml_parser_1.XMLParser({ ignoreAttributes: true, removeNSPrefix: true });
@@ -109,15 +110,15 @@ function createWebDavFolder(connection, folder, name) {
         yield request(connection, [...segments(folder), name].join('/'), 'MKCOL');
     });
 }
-/** Find a backup in the selected directory without trusting paths returned by the server. */
-function findLatestWebDavBackup(xml, folderUrl) {
-    var _a, _b;
+/** Lists all encrypted backups in the selected directory sorted newest-first without trusting server paths. */
+function listWebDavBackups(xml, folderUrl) {
+    var _a;
     if (xml.length > 2000000)
         throw new Error('Lista plików NAS-a jest zbyt duża.');
     const current = new URL(folderUrl);
     const parsed = parser.parse(xml);
     if (parsed.multistatus === '')
-        return null;
+        return [];
     if (!parsed.multistatus || typeof parsed.multistatus !== 'object')
         throw new Error('NAS zwrócił nieprawidłową listę WebDAV.');
     const parent = `${current.pathname.replace(/\/+$/, '')}/`;
@@ -129,7 +130,7 @@ function findLatestWebDavBackup(xml, folderUrl) {
         try {
             url = new URL(entry.href, current);
         }
-        catch (_c) {
+        catch (_b) {
             continue;
         }
         if (url.origin !== current.origin || !url.pathname.startsWith(parent))
@@ -141,7 +142,7 @@ function findLatestWebDavBackup(xml, folderUrl) {
         try {
             name = decodeURIComponent(relative);
         }
-        catch (_d) {
+        catch (_c) {
             continue;
         }
         if (!name.toLowerCase().endsWith('.zip.enc') || name.includes('/') || name.includes('\\') || name === '..')
@@ -153,8 +154,13 @@ function findLatestWebDavBackup(xml, folderUrl) {
         if (prop.resourcetype && typeof prop.resourcetype === 'object' && Object.prototype.hasOwnProperty.call(prop.resourcetype, 'collection'))
             continue;
         const modified = typeof prop.getlastmodified === 'string' ? Date.parse(prop.getlastmodified) : NaN;
-        candidates.push({ name, modified: Number.isFinite(modified) ? modified : 0 });
+        candidates.push({ name, modified: Number.isFinite(modified) ? modified : 0, modifiedAt: Number.isFinite(modified) ? new Date(modified).toISOString() : null });
     }
     candidates.sort((a, b) => b.modified - a.modified || b.name.localeCompare(a.name));
-    return ((_b = candidates[0]) === null || _b === void 0 ? void 0 : _b.name) || null;
+    return candidates.map(({ name, modifiedAt }) => ({ name, modifiedAt }));
+}
+/** Find a backup in the selected directory without trusting paths returned by the server. */
+function findLatestWebDavBackup(xml, folderUrl) {
+    var _a;
+    return ((_a = listWebDavBackups(xml, folderUrl)[0]) === null || _a === void 0 ? void 0 : _a.name) || null;
 }

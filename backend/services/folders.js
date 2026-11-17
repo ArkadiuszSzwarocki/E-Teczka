@@ -20,10 +20,13 @@ function collectFolderBranch(prisma, folderId, ownerId) {
         return ids;
     });
 }
-/** Documents can only be stored in a subfolder, never at the root level. */
+/** Documents can be stored in both root and nested folders owned by the user. */
 function isDocumentFolder(prisma, folderId) {
     return __awaiter(this, void 0, void 0, function* () {
-        const folder = yield prisma.folder.findUnique({ where: { id: Number(folderId) }, select: { parentId: true } });
-        return Boolean(folder === null || folder === void 0 ? void 0 : folder.parentId);
+        const id = Number(folderId);
+        if (!Number.isInteger(id) || id < 1)
+            return false;
+        const folder = yield prisma.folder.findUnique({ where: { id }, select: { id: true } });
+        return Boolean(folder);
     });
 }

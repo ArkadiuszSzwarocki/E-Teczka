@@ -29,6 +29,10 @@ export interface DocumentRecord {
   retentionUnit: RetentionUnit;
   isArchived?: boolean;
   isDeleted?: boolean;
+  amountCents?: number | null;
+  currency?: string;
+  dueDate?: string | null;
+  paymentStatus?: 'paid' | 'unpaid' | null;
   tags?: DocumentTag[];
   user?: { name: string | null; email: string | null } | null;
 }

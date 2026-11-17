@@ -6,7 +6,8 @@ exports.setDevPlan = setDevPlan;
 exports.accountingKey = accountingKey;
 const overrides = new Map();
 function devPlansEnabled() {
-    return process.env.ETECZKA_DEV_PLANS === '1' && process.env.NODE_ENV !== 'production' && (process.env.STRIPE_SECRET_KEY || '').startsWith('sk_test_');
+    const stripeKey = process.env.STRIPE_SECRET_KEY || '';
+    return (process.env.ETECZKA_DEV_PLANS === '1' || process.env.ETECZKA_PUBLIC_TEST_MODE === '1') && process.env.NODE_ENV !== 'production' && (!stripeKey || stripeKey.startsWith('sk_test_'));
 }
 function devPlan(ownerKey) { return devPlansEnabled() ? overrides.get(ownerKey) : undefined; }
 function setDevPlan(ownerKey, plan) { if (plan === null)

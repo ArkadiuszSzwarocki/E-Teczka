@@ -1,0 +1,14 @@
+import { useEffect, useState } from 'react';
+import { getElectronIpc } from '../services/electron';
+
+type Result={ok?:boolean;error?:string;token?:string;user?:{email?:string}};
+// React StrictMode must not open two native consent dialogs during startup.
+const pending=new Map<string,Promise<Result>>();
+function authenticate(email:string){let task=pending.get(email);if(!task){task=Promise.resolve(getElectronIpc()?.invoke('eteczka-hello-login',{email})).then(value=>value as Result);pending.set(email,task);void task.finally(()=>pending.delete(email)).catch(()=>undefined);}return task;}
+export default function TrustedHelloStart({accounts,autoStart,onAuthenticated,onUseOther}:{accounts:{email:string}[];autoStart:boolean;onAuthenticated:()=>void;onUseOther:()=>void}){
+ const [email,setEmail]=useState(accounts[0]?.email||''),[busy,setBusy]=useState(autoStart&&accounts.length===1),[error,setError]=useState('');
+ function accept(result:Result){if(!result?.ok||!result.token||!result.user?.email)throw new Error(result?.error||'Nie udało się zalogować przez Windows Hello.');localStorage.setItem('eteczka_auth_token',result.token);onAuthenticated();}
+ useEffect(()=>{if(!autoStart||accounts.length!==1)return;let active=true;void authenticate(accounts[0].email).then(result=>{if(active)accept(result);}).catch(error=>{if(active)setError(error instanceof Error?error.message:'Windows Hello jest niedostępne.');}).finally(()=>{if(active)setBusy(false);});return()=>{active=false;};},[]);
+ async function login(){setBusy(true);setError('');try{accept(await authenticate(email));}catch(error){setError(error instanceof Error?error.message:'Windows Hello jest niedostępne.');}finally{setBusy(false);}}
+ return <main className="grid min-h-screen place-items-center bg-slate-950 p-6 text-white"><section className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-8"><p className="text-sm font-semibold text-blue-300">E-Teczka · Zaufany komputer</p><h1 className="mt-3 text-2xl font-bold">Otwórz przez Windows Hello</h1><p className="mt-3 text-sm leading-6 text-slate-400">Potwierdź tożsamość w oknie systemu Windows, aby przejść do swoich dokumentów.</p>{accounts.length>1?<select aria-label="Zaufane konto" disabled={busy} value={email} onChange={event=>setEmail(event.target.value)} className="mt-4 w-full rounded-lg bg-slate-950 p-3">{accounts.map(account=><option key={account.email}>{account.email}</option>)}</select>:<p className="mt-4 break-all text-sm text-slate-300">{email}</p>}<button disabled={busy} onClick={()=>void login()} className="mt-6 w-full rounded-lg bg-blue-600 p-3 font-semibold disabled:opacity-50">{busy?'Oczekiwanie na Windows Hello…':'Otwórz E-Teczkę'}</button>{error&&<p role="alert" className="mt-4 text-sm text-red-300">{error}</p>}<button disabled={busy} onClick={onUseOther} className="mt-4 w-full text-sm text-blue-300 disabled:opacity-50">Użyj Google lub hasła</button></section></main>;
+}

@@ -1,6 +1,6 @@
 export type AccessMode = 'pin' | 'password';
 
-export type AccessStatus = { configured: boolean; mode: AccessMode | null; loginMethod?: 'password' | 'pin'; recoveryAvailable?: boolean; mailConfigured?: boolean };
+export type AccessStatus = { configured: boolean; mode: AccessMode | null; loginMethod?: 'password' | 'pin' | 'hello'; helloVerified?: boolean; helloLoginRegistered?: boolean; recoveryAvailable?: boolean; mailConfigured?: boolean };
 export type AccessResult = { ok: boolean; error?: string };
 export type WiaDevice = { id: string; name: string; manufacturer?: string };
 export type WiaScanResult = { ok: boolean; path?: string };
@@ -20,14 +20,33 @@ export function getElectronIpc(): IpcRenderer | null {
   return electron?.ipcRenderer ?? null;
 }
 
+let activeAccountPopup: Window | null = null;
+
+export function closeExternalAccountPopup(): void {
+  const ipc = getElectronIpc();
+  if (ipc) {
+    void ipc.invoke('eteczka-close-external-account').catch(() => undefined);
+  }
+  try {
+    if (activeAccountPopup && !activeAccountPopup.closed) activeAccountPopup.close();
+  } catch { /* ignore cross-window close errors */ }
+  activeAccountPopup = null;
+  try { window.focus(); } catch { /* ignore focus errors */ }
+}
+
 export async function openExternalAccountUrl(raw: string, origin: string): Promise<void> {
   const url = new URL(raw);
   if (!(url.protocol === 'https:' || (url.protocol === 'http:' && url.hostname === '127.0.0.1')) || url.origin !== origin || url.pathname !== '/account' || !/^#[A-Za-z0-9_-]{43}$/.test(url.hash)) throw new Error('Nieprawidłowy adres konta.');
-  const electron = (window as ElectronWindow).require?.('electron') as { shell?: { openExternal: (url: string) => Promise<void> } } | undefined;
-  if (electron?.shell) { await electron.shell.openExternal(url.href); return; }
-  const opened = window.open(url.href, '_blank', 'noopener,noreferrer');
-  // Browsers may return null for noopener even when the tab opened.
-  void opened;
+  const ipc = getElectronIpc();
+  if (ipc) {
+    try { await ipc.invoke('eteczka-open-external-account', url.href); return; }
+    catch { /* fall back to direct shell/window open */ }
+  }
+  const electron = (window as ElectronWindow).require?.('electron') as { shell?: { openExternal: (url: string, options?: { activate?: boolean }) => Promise<void> } } | undefined;
+  if (electron?.shell) { await electron.shell.openExternal(url.href, { activate: true }); return; }
+  const left = Math.max(0, Math.round((window.screenX || 0) + ((window.outerWidth || 1024) - 520) / 2));
+  const top = Math.max(0, Math.round((window.screenY || 0) + ((window.outerHeight || 768) - 680) / 2));
+  activeAccountPopup = window.open(url.href, 'eteczka_account_auth', `popup=yes,width=520,height=680,left=${left},top=${top}`);
 }
 
 type NodeFileSystem = {
@@ -62,4 +81,15 @@ export function isWiaDeviceList(value: unknown): value is WiaDevice[] {
 
 export function isWiaScanResult(value: unknown): value is WiaScanResult {
   return Boolean(value) && typeof value === 'object' && typeof (value as WiaScanResult).ok === 'boolean';
+}
+
+export async function devReloadApp(): Promise<void> {
+  const ipc = getElectronIpc();
+  if (ipc) {
+    try {
+      const reloaded = await ipc.invoke('eteczka-dev-reload');
+      if (reloaded) return;
+    } catch { /* fall back to window reload */ }
+  }
+  window.location.reload();
 }

@@ -42,6 +42,10 @@ export function createCentralAccountLinks(prisma: PrismaClient) {
       await table();
       const changed = await prisma.$executeRaw`DELETE FROM CentralAccountLink WHERE centralOrigin = ${origin} AND centralId = ${centralId} AND localUserId = ${localUserId}`;
       return changed === 1;
+    },
+    async revokeLocalSessions(localUserId: number): Promise<number> {
+      const deleted = await prisma.authSession.deleteMany({ where: { userId: localUserId } });
+      return deleted.count;
     }
   };
 }

@@ -10,15 +10,17 @@ exports.PLAN_LIMITS = {
     free: { documents: 200, tags: 3, cameraScan: 50, printerScan: 50, merge: 10 },
     standard: { documents: 400, tags: 6, cameraScan: 100, printerScan: 100, merge: 20 },
     premium: { documents: null, tags: null, cameraScan: null, printerScan: null, merge: null },
+    family: { documents: null, tags: null, cameraScan: null, printerScan: null, merge: null },
+    business: { documents: null, tags: null, cameraScan: null, printerScan: null, merge: null },
 };
 exports.USAGE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
-function refreshPlanPolicy() { const catalog = (0, planCatalog_1.getCatalog)(); for (const id of ['free', 'standard', 'premium'])
+function refreshPlanPolicy() { const catalog = (0, planCatalog_1.getCatalog)(); for (const id of ['free', 'standard', 'premium', 'family', 'business'])
     Object.assign(exports.PLAN_LIMITS[id], catalog.plans[id].limits); exports.USAGE_WINDOW_MS = catalog.usageDays * 86400000; }
 refreshPlanPolicy();
 function activePlan(plan, status, cancelAtPeriodEnd = false, currentPeriodEnd, now = new Date()) {
     if (!['active', 'trialing'].includes(status || '') || (cancelAtPeriodEnd && currentPeriodEnd && currentPeriodEnd <= now))
         return 'free';
-    return plan === 'premium' || plan === 'standard' ? plan : 'free';
+    return plan === 'premium' || plan === 'standard' || plan === 'family' || plan === 'business' ? plan : 'free';
 }
 function trialEnd(feature, startedAt) {
     if (feature === 'ocr')

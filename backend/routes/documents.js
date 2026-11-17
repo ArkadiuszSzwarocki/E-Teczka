@@ -27,26 +27,28 @@ exports.createDocumentRouter = createDocumentRouter;
 const express_1 = __importDefault(require("express"));
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
-const crypto_1 = require("crypto");
 const paths_1 = require("../config/paths");
 const folders_1 = require("../services/folders");
 const errors_1 = require("../utils/errors");
 const premium_1 = require("../middleware/premium");
-const pdf_lib_1 = require("pdf-lib");
 const ocrEnqueue_1 = require("../services/ocrEnqueue");
 const ocrPremium_1 = require("../services/ocrPremium");
 const planLedger_1 = require("../services/planLedger");
 const mergeDocuments_1 = require("../services/mergeDocuments");
 const base64DataUrl_1 = require("../services/base64DataUrl");
 const tagOwnership_1 = require("../services/tagOwnership");
+const familyAccess_1 = require("../services/familyAccess");
+const resumableUpload_1 = require("../services/resumableUpload");
 const planRestrictions_1 = require("../services/planRestrictions");
 const duplicateDocuments_1 = require("../services/duplicateDocuments");
+const documentExportPdf_1 = require("../services/documentExportPdf");
+const documentBase64Upload_1 = require("../services/documentBase64Upload");
 const retentionUnits = new Set(['years', 'months', 'days', 'minutes']);
 function documentUpdate(body) {
     if (!body || typeof body !== 'object' || Array.isArray(body))
         return null;
     const source = body;
-    const allowed = new Set(['title', 'folderId', 'retentionEnabled', 'retentionValue', 'retentionUnit', 'isArchived', 'isDeleted', 'deletedAt', 'tagIds']);
+    const allowed = new Set(['title', 'folderId', 'retentionEnabled', 'retentionValue', 'retentionUnit', 'isArchived', 'isDeleted', 'deletedAt', 'createdAt', 'tagIds', 'amountCents', 'currency', 'dueDate', 'paymentStatus']);
     if (Object.keys(source).some((key) => !allowed.has(key)))
         return null;
     if (source.title !== undefined && (typeof source.title !== 'string' || !source.title.trim() || source.title.length > 255))
@@ -68,6 +70,14 @@ function documentUpdate(body) {
     if (source.createdAt !== undefined && (typeof source.createdAt !== 'string' || Number.isNaN(new Date(source.createdAt).getTime())))
         return null;
     if (source.tagIds !== undefined && (!Array.isArray(source.tagIds) || source.tagIds.some((id) => !Number.isInteger(Number(id)) || Number(id) < 1)))
+        return null;
+    if (source.amountCents !== undefined && source.amountCents !== null && (!Number.isInteger(Number(source.amountCents)) || Number(source.amountCents) < 0 || Number(source.amountCents) > 1000000000))
+        return null;
+    if (source.currency !== undefined && (typeof source.currency !== 'string' || !/^[A-Z]{3}$/.test(source.currency)))
+        return null;
+    if (source.dueDate !== undefined && source.dueDate !== null && (typeof source.dueDate !== 'string' || Number.isNaN(new Date(source.dueDate).getTime())))
+        return null;
+    if (source.paymentStatus !== undefined && source.paymentStatus !== null && !['paid', 'unpaid'].includes(String(source.paymentStatus)))
         return null;
     return source;
 }
@@ -114,12 +124,66 @@ function createDocumentRouter(prisma, ocrQueue) {
             res.status(500).json({ error: 'Nie udało się opróżnić kosza.' });
         }
     }));
+    router.post('/upload-resumable/init', (req, res) => __awaiter(this, void 0, void 0, function* () {
+        var _a, _b, _c, _d, _e;
+        try {
+            const folderId = Number((_a = req.body) === null || _a === void 0 ? void 0 : _a.folderId);
+            const totalChunks = Number((_b = req.body) === null || _b === void 0 ? void 0 : _b.totalChunks);
+            if (!Number.isInteger(folderId) || folderId < 1 || !Number.isInteger(totalChunks) || totalChunks < 1 || totalChunks > 2000) {
+                return res.status(400).json({ error: 'Nieprawidłowe parametry inicjalizacji uploadu.' });
+            }
+            if (!(yield (0, familyAccess_1.canAccessFolder)(prisma, ownerId(res), folderId)) || !(yield (0, folders_1.isDocumentFolder)(prisma, folderId))) {
+                return res.status(400).json({ error: 'Dokumenty można dodawać wyłącznie do dostępnej kartoteki.' });
+            }
+            const session = (0, resumableUpload_1.initResumableSession)({
+                uploadId: typeof ((_c = req.body) === null || _c === void 0 ? void 0 : _c.uploadId) === 'string' ? req.body.uploadId : undefined,
+                ownerId: ownerId(res),
+                folderId,
+                fileName: String(((_d = req.body) === null || _d === void 0 ? void 0 : _d.fileName) || 'dokument.pdf'),
+                mimeType: String(((_e = req.body) === null || _e === void 0 ? void 0 : _e.mimeType) || 'application/pdf'),
+                totalChunks,
+            });
+            return res.json(session);
+        }
+        catch (error) {
+            return res.status(400).json({ error: error instanceof Error ? error.message : 'Błąd inicjalizacji uploadu.' });
+        }
+    }));
+    router.put('/upload-resumable/:uploadId/chunk/:index', (req, res) => {
+        var _a;
+        try {
+            const data = typeof ((_a = req.body) === null || _a === void 0 ? void 0 : _a.data) === 'string' ? req.body.data : '';
+            if (!data)
+                return res.status(400).json({ error: 'Brak danych części pliku.' });
+            (0, resumableUpload_1.writeResumableChunk)(req.params.uploadId, ownerId(res), Number(req.params.index), data);
+            return res.json({ uploadId: req.params.uploadId, index: Number(req.params.index), received: true });
+        }
+        catch (error) {
+            return res.status(400).json({ error: error instanceof Error ? error.message : 'Błąd zapisu części pliku.' });
+        }
+    });
+    router.post('/upload-resumable/:uploadId/complete', (req, res) => __awaiter(this, void 0, void 0, function* () {
+        try {
+            const plan = yield (0, planLedger_1.getPlan)(prisma, (0, ocrPremium_1.ocrOwnerKey)(res));
+            const document = yield (0, resumableUpload_1.completeResumableSession)(prisma, req.params.uploadId, ownerId(res), res.locals.userId || null, plan);
+            void (0, ocrEnqueue_1.enqueuePremiumOcr)(prisma, ocrQueue, res, document.id);
+            return res.json({ success: true, document });
+        }
+        catch (error) {
+            if (error instanceof planLedger_1.PlanLimitError)
+                return res.status(403).json({ code: error.code, error: error.message, resetsAt: error.resetsAt });
+            if (error instanceof duplicateDocuments_1.DuplicateDocumentError)
+                return res.status(409).json({ code: error.code, error: error.message, existingTitle: error.existingTitle });
+            return res.status(400).json({ error: error instanceof Error ? error.message : 'Błąd scalania pliku.' });
+        }
+    }));
     router.use('/:id', (req, res, next) => __awaiter(this, void 0, void 0, function* () {
         if (req.method === 'POST' && (req.params.id === 'export-pdf' || req.params.id === 'upload-base64'))
             return next();
         if (!/^\d+$/.test(req.params.id) || Number(req.params.id) < 1)
             return res.status(400).json({ error: 'Nieprawidłowy identyfikator dokumentu.' });
-        const document = yield prisma.document.findFirst({ where: { id: Number(req.params.id), folder: { ownerId: ownerId(res) } } });
+        const accessible = yield (0, familyAccess_1.getAccessibleFolderIds)(prisma, ownerId(res));
+        const document = yield prisma.document.findFirst({ where: { id: Number(req.params.id), folderId: { in: accessible } } });
         if (!document)
             return res.status(404).json({ error: 'Nie znaleziono dokumentu.' });
         res.locals.currentDocument = document;
@@ -128,7 +192,11 @@ function createDocumentRouter(prisma, ocrQueue) {
     router.get('/', (req, res) => __awaiter(this, void 0, void 0, function* () {
         try {
             const folderId = req.query.folderId;
-            const where = folderId ? { folderId: Number(folderId), folder: { ownerId: ownerId(res) } } : { folder: { ownerId: ownerId(res) } };
+            const accessible = yield (0, familyAccess_1.getAccessibleFolderIds)(prisma, ownerId(res));
+            const requestedFolderId = folderId ? Number(folderId) : null;
+            if (requestedFolderId !== null && !accessible.includes(requestedFolderId))
+                return res.json([]);
+            const where = requestedFolderId !== null ? { folderId: requestedFolderId } : { folderId: { in: accessible } };
             const records = yield prisma.document.findMany({
                 where,
                 orderBy: { createdAt: 'desc' },
@@ -192,19 +260,20 @@ function createDocumentRouter(prisma, ocrQueue) {
                 return res.status(400).json({ error: 'Nieprawidłowe dane aktualizacji dokumentu.' });
             const { tagIds } = update, data = __rest(update, ["tagIds"]);
             let destinationDigest;
-            const onlyTrash = data.isDeleted === true && Object.keys(data).every(key => key === 'isDeleted' || key === 'deletedAt') && tagIds === undefined;
-            const active = yield (0, planRestrictions_1.activeDocumentIds)(prisma, ownerId(res), yield (0, planLedger_1.getPlan)(prisma, (0, ocrPremium_1.ocrOwnerKey)(res)));
-            if (!onlyTrash && active !== null && !active.has(id))
-                return res.status(403).json({ code: 'PLAN_LIMIT_REACHED', error: 'Dokument przekracza limit planu. Możesz go otworzyć, pobrać albo usunąć. Aby go edytować, zwolnij miejsce lub wybierz wyższy plan.' });
             const current = res.locals.currentDocument;
             const restoring = ((current === null || current === void 0 ? void 0 : current.isDeleted) && data.isDeleted === false) || ((current === null || current === void 0 ? void 0 : current.isArchived) && data.isArchived === false);
+            const onlyTrash = data.isDeleted === true && Object.keys(data).every(key => key === 'isDeleted' || key === 'deletedAt') && tagIds === undefined;
+            const onlyArchive = !(current === null || current === void 0 ? void 0 : current.isDeleted) && data.isArchived === true && Object.keys(data).every(key => key === 'isArchived' || key === 'retentionEnabled') && tagIds === undefined;
+            const onlyMove = !restoring && !(current === null || current === void 0 ? void 0 : current.isDeleted) && !(current === null || current === void 0 ? void 0 : current.isArchived) && data.folderId !== undefined && Object.keys(data).every(key => key === 'folderId') && tagIds === undefined;
+            const active = yield (0, planRestrictions_1.activeDocumentIds)(prisma, ownerId(res), yield (0, planLedger_1.getPlan)(prisma, (0, ocrPremium_1.ocrOwnerKey)(res)));
+            if (!onlyTrash && !onlyArchive && !onlyMove && active !== null && !active.has(id))
+                return res.status(403).json({ code: 'PLAN_LIMIT_REACHED', error: 'Dokument przekracza limit planu. Możesz go przenieść, zarchiwizować albo usunąć. Aby go edytować lub udostępniać, zwolnij miejsce lub wybierz wyższy plan.' });
             if (restoring && data.folderId === undefined)
-                return res.status(400).json({ error: 'Wybierz podkartotekę, do której przywrócić dokument.' });
+                return res.status(400).json({ error: 'Wybierz kartotekę, do której przywrócić dokument.' });
             if (data.folderId !== undefined) {
                 const destinationId = Number(data.folderId);
-                const destination = yield prisma.folder.findFirst({ where: { id: destinationId, ownerId: ownerId(res) }, select: { parentId: true } });
-                if (!destination || !destination.parentId)
-                    return res.status(400).json({ error: 'Wybierz własną podkartotekę docelową.' });
+                if (!(yield (0, familyAccess_1.canAccessFolder)(prisma, ownerId(res), destinationId)))
+                    return res.status(400).json({ error: 'Wybierz dostępną kartotekę docelową.' });
                 data.folderId = destinationId;
                 const original = res.locals.currentDocument;
                 if (destinationId !== original.folderId || restoring)
@@ -214,6 +283,8 @@ function createDocumentRouter(prisma, ocrQueue) {
                 data.deletedAt = new Date();
             if (data.isDeleted === false)
                 data.deletedAt = null;
+            if (data.isArchived === true && data.retentionEnabled === undefined)
+                data.retentionEnabled = false;
             let activeTags = null;
             if (Array.isArray(tagIds)) {
                 yield (0, tagOwnership_1.prepareTags)(prisma);
@@ -278,96 +349,36 @@ function createDocumentRouter(prisma, ocrQueue) {
                 return !(0, base64DataUrl_1.parseBase64DataUrl)(candidate.data);
             }))
                 return res.status(400).json({ error: 'Co najmniej jeden plik ma nieprawidłowy format.' });
-            const targetFolder = yield prisma.folder.findFirst({ where: { id: Number(folderId), ownerId: ownerId(res) } });
-            if (!targetFolder || !(yield (0, folders_1.isDocumentFolder)(prisma, folderId)))
-                return res.status(400).json({ error: 'Dokumenty można dodawać wyłącznie do własnej podkartoteki.' });
+            if (!(yield (0, familyAccess_1.canAccessFolder)(prisma, ownerId(res), Number(folderId))) || !(yield (0, folders_1.isDocumentFolder)(prisma, folderId)))
+                return res.status(400).json({ error: 'Dokumenty można dodawać wyłącznie do dostępnej kartoteki.' });
             const ownerKey = (0, ocrPremium_1.ocrOwnerKey)(res);
             const plan = yield (0, planLedger_1.getPlan)(prisma, ownerKey);
             if (((_a = req.body) === null || _a === void 0 ? void 0 : _a.isMerge) === true) {
-                yield (0, planLedger_1.ensurePlanLedger)(prisma);
                 const title = typeof req.body.mergedTitle === 'string' ? req.body.mergedTitle.trim() : '';
                 if (!title || title.length > 255)
                     return res.status(400).json({ error: 'Podaj tytuł scalonego dokumentu.' });
-                let merged;
+                const retention = req.body.mergedRetention || {};
+                const value = Number(retention.value);
+                if (!Number.isInteger(value) || value < 1 || !retentionUnits.has(retention.unit) || typeof retention.enabled !== 'boolean')
+                    return res.status(400).json({ error: 'Nieprawidłowe ustawienia retencji.' });
                 try {
-                    merged = yield (0, mergeDocuments_1.mergeDocuments)(files);
+                    const saved = yield (0, documentBase64Upload_1.saveMergedBase64Document)(prisma, {
+                        owner: ownerId(res), userId: res.locals.userId || null, ownerKey, plan, folderId: Number(folderId),
+                        title, physicalLocation: physicalLocation || null, files, retention: { enabled: retention.enabled, value, unit: retention.unit },
+                    });
+                    void (0, ocrEnqueue_1.enqueuePremiumOcr)(prisma, ocrQueue, res, saved.id);
+                    return res.json({ success: true, savedDocs: [saved] });
                 }
                 catch (error) {
                     if (error instanceof mergeDocuments_1.UnsupportedMergeFormat)
                         return res.status(400).json({ error: error.message });
                     throw error;
                 }
-                const retention = req.body.mergedRetention || {};
-                const value = Number(retention.value);
-                if (!Number.isInteger(value) || value < 1 || !retentionUnits.has(retention.unit) || typeof retention.enabled !== 'boolean')
-                    return res.status(400).json({ error: 'Nieprawidłowe ustawienia retencji.' });
-                const filename = `${Date.now()}-${(0, crypto_1.randomUUID)()}.pdf`;
-                const destination = path_1.default.join(paths_1.uploadsDir, filename);
-                fs_1.default.writeFileSync(destination, merged, { flag: 'wx' });
-                try {
-                    const saved = yield prisma.$transaction((tx) => __awaiter(this, void 0, void 0, function* () { yield (0, duplicateDocuments_1.assertUniqueDocument)(tx, ownerId(res), Number(folderId), (0, duplicateDocuments_1.hashBuffer)(merged)); yield (0, planLedger_1.checkDocumentCapacity)(tx, ownerId(res), plan, 1); yield (0, planLedger_1.consumeUsage)(tx, ownerKey, plan, 'merge', (0, crypto_1.randomUUID)(), 1); return tx.document.create({ data: { title, filePath: filename, mimeType: 'application/pdf', folderId: Number(folderId), physicalLocation: physicalLocation || null, retentionEnabled: retention.enabled, retentionValue: value, retentionUnit: retention.unit, userId: res.locals.userId || null } }); }));
-                    void (0, ocrEnqueue_1.enqueuePremiumOcr)(prisma, ocrQueue, res, saved.id);
-                    return res.json({ success: true, savedDocs: [saved] });
-                }
-                catch (error) {
-                    fs_1.default.unlinkSync(destination);
-                    throw error;
-                }
             }
-            const writtenFiles = [];
-            const skippedDuplicates = [];
-            let savedDocs;
-            try {
-                savedDocs = yield prisma.$transaction((tx) => __awaiter(this, void 0, void 0, function* () {
-                    const documents = [];
-                    for (let i = 0; i < files.length; i++) {
-                        const file = files[i];
-                        const retention = retentions[i] || {};
-                        const retentionEnabled = retention.enabled !== false;
-                        const retentionValue = Number(retention.value) || 5;
-                        const retentionUnit = ['years', 'months', 'days', 'minutes'].includes(retention.unit) ? retention.unit : 'years';
-                        const decoded = (0, base64DataUrl_1.parseBase64DataUrl)(file.data);
-                        if (!decoded)
-                            throw new Error('Nieprawidłowe dane pliku.');
-                        const content = Buffer.from(decoded.base64, 'base64');
-                        try {
-                            yield (0, duplicateDocuments_1.assertUniqueDocument)(tx, ownerId(res), Number(folderId), (0, duplicateDocuments_1.hashBuffer)(content));
-                        }
-                        catch (error) {
-                            if (error instanceof duplicateDocuments_1.DuplicateDocumentError) {
-                                skippedDuplicates.push({ name: file.name, existingTitle: error.existingTitle });
-                                continue;
-                            }
-                            throw error;
-                        }
-                        yield (0, planLedger_1.checkDocumentCapacity)(tx, ownerId(res), plan, 1);
-                        const extension = path_1.default.extname(file.name).toLowerCase();
-                        const safeExtension = /^\.[a-z0-9]{1,10}$/.test(extension) ? extension : '';
-                        const filename = `${(0, crypto_1.randomUUID)()}${safeExtension}`;
-                        const destination = path_1.default.join(paths_1.uploadsDir, filename);
-                        fs_1.default.writeFileSync(destination, content, { flag: 'wx' });
-                        writtenFiles.push(destination);
-                        const saved = yield tx.document.create({ data: {
-                                title: file.name, filePath: filename, mimeType: decoded.mimeType, folderId: Number(folderId),
-                                physicalLocation: physicalLocation || null, retentionEnabled, retentionValue, retentionUnit,
-                                thumbnail: file.thumbnail || null, userId: res.locals.userId || null,
-                            } });
-                        documents.push(saved);
-                    }
-                    return documents;
-                }));
-            }
-            catch (error) {
-                for (const destination of writtenFiles) {
-                    try {
-                        fs_1.default.unlinkSync(destination);
-                    }
-                    catch (cleanupError) {
-                        console.error('[upload] Nie udało się usunąć pliku po błędzie zapisu:', (0, errors_1.errorMessage)(cleanupError));
-                    }
-                }
-                throw error;
-            }
+            const { savedDocs, skippedDuplicates } = yield (0, documentBase64Upload_1.saveBatchBase64Documents)(prisma, {
+                owner: ownerId(res), userId: res.locals.userId || null, plan, folderId: Number(folderId),
+                physicalLocation: physicalLocation || null, files, retentions,
+            });
             for (const saved of savedDocs)
                 void (0, ocrEnqueue_1.enqueuePremiumOcr)(prisma, ocrQueue, res, saved.id);
             res.json({ success: true, savedDocs, skippedDuplicates });
@@ -379,7 +390,7 @@ function createDocumentRouter(prisma, ocrQueue) {
                 return res.status(409).json({ code: error.code, error: error.message, existingTitle: error.existingTitle });
             const details = (0, errors_1.errorMessage)(error);
             console.error('[POST /api/documents/upload-base64] Błąd dekodowania:', details);
-            res.status(500).json({ error: 'Błąd wgrywania Base64', details });
+            res.status(500).json({ error: details ? `Błąd wgrywania Base64: ${details}` : 'Błąd wgrywania Base64', details });
         }
     }));
     router.post('/export-pdf', (req, res) => __awaiter(this, void 0, void 0, function* () {
@@ -390,34 +401,20 @@ function createDocumentRouter(prisma, ocrQueue) {
             const ids = Array.isArray((_a = req.body) === null || _a === void 0 ? void 0 : _a.documentIds) ? req.body.documentIds.map(Number).filter((id) => Number.isInteger(id) && id > 0) : [];
             if (!ids.length || ids.length > 100)
                 return res.status(400).json({ error: 'Wybierz od 1 do 100 dokumentów.' });
-            const records = yield prisma.document.findMany({ where: { id: { in: ids }, folder: { ownerId: ownerId(res) } } });
+            const accessible = yield (0, familyAccess_1.getAccessibleFolderIds)(prisma, ownerId(res));
+            const records = yield prisma.document.findMany({ where: { id: { in: ids }, folderId: { in: accessible } } });
             if (records.length !== ids.length)
                 return res.status(403).json({ error: 'Nie masz dostępu do wszystkich wybranych dokumentów.' });
-            const output = yield pdf_lib_1.PDFDocument.create();
-            for (const record of records) {
-                const file = fs_1.default.readFileSync(path_1.default.join(paths_1.uploadsDir, record.filePath));
-                if (record.mimeType.includes('pdf') || record.filePath.toLowerCase().endsWith('.pdf')) {
-                    const source = yield pdf_lib_1.PDFDocument.load(file);
-                    const pages = yield output.copyPages(source, source.getPageIndices());
-                    pages.forEach(page => output.addPage(page));
-                }
-                else if (record.mimeType.includes('png') || record.filePath.toLowerCase().endsWith('.png')) {
-                    const image = yield output.embedPng(file);
-                    const page = output.addPage([image.width, image.height]);
-                    page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
-                }
-                else {
-                    const image = yield output.embedJpg(file);
-                    const page = output.addPage([image.width, image.height]);
-                    page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
-                }
-            }
-            const bytes = yield output.save();
+            const active = yield (0, planRestrictions_1.activeDocumentIds)(prisma, ownerId(res), yield (0, planLedger_1.getPlan)(prisma, (0, ocrPremium_1.ocrOwnerKey)(res)));
+            if (active && ids.some((docId) => !active.has(docId)))
+                return res.status(403).json({ code: 'PLAN_LIMIT_REACHED', error: 'Co najmniej jeden wybrany dokument jest tylko do odczytu w obecnym planie.' });
+            const bytes = yield (0, documentExportPdf_1.exportDocumentsAsPdf)(records);
             res.setHeader('Content-Type', 'application/pdf');
             res.setHeader('Content-Disposition', `attachment; filename="eteczka-eksport-${Date.now()}.pdf"`);
-            res.send(Buffer.from(bytes));
+            res.send(bytes);
         }
         catch (error) {
+            console.error('[POST /api/documents/export-pdf]', error);
             res.status(500).json({ error: 'Nie udało się utworzyć połączonego PDF-a.', details: (0, errors_1.errorMessage)(error) });
         }
     }));

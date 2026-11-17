@@ -19,6 +19,8 @@ const node_crypto_1 = __importDefault(require("node:crypto"));
 const backupCrypto_1 = require("./backupCrypto");
 const ocrText_1 = require("./ocrText");
 const ocrEngine_1 = require("./ocrEngine");
+const financeOcrParser_1 = require("./financeOcrParser");
+const receiptOcrParser_1 = require("./receiptOcrParser");
 const planLedger_1 = require("./planLedger");
 /** Durable, serialized local queue. The state and recognized text are encrypted on disk. */
 function createOcrQueue(prisma, options) {
@@ -80,6 +82,7 @@ function createOcrQueue(prisma, options) {
     }
     function process() {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a;
             if (running)
                 return;
             running = true;
@@ -104,7 +107,7 @@ function createOcrQueue(prisma, options) {
                     }
                     update(next.documentId, next.ownerKey, { state: 'processing', error: undefined });
                     try {
-                        const document = yield prisma.document.findUnique({ where: { id: next.documentId }, select: { id: true, filePath: true, mimeType: true, isDeleted: true } });
+                        const document = yield prisma.document.findUnique({ where: { id: next.documentId }, select: { id: true, filePath: true, mimeType: true, isDeleted: true, merchantName: true, amountCents: true, dueDate: true, paymentStatus: true } });
                         if (!document || document.isDeleted)
                             throw new Error('Dokument nie jest dostępny.');
                         const fullPath = node_path_1.default.resolve(options.uploadsDirectory, document.filePath);
@@ -114,9 +117,39 @@ function createOcrQueue(prisma, options) {
                         const text = yield extract(fullPath, document.mimeType);
                         if (text.length > 2000000)
                             throw new Error('Dokument przekracza limit 2 milionów znaków tekstu OCR.');
-                        const updated = yield prisma.document.updateMany({ where: { id: document.id, filePath: document.filePath, isDeleted: false }, data: { ocrText: (0, ocrText_1.protectOcrText)(text) } });
+                        const extracted = (0, financeOcrParser_1.extractFinanceFromOcr)(text);
+                        const receipt = (0, receiptOcrParser_1.parseReceiptFromOcr)(text);
+                        const financePatch = {};
+                        if (!document.merchantName && receipt.merchantName)
+                            financePatch.merchantName = receipt.merchantName;
+                        const detectedCents = (_a = receipt.amountCents) !== null && _a !== void 0 ? _a : extracted.amountCents;
+                        if (document.amountCents === null && detectedCents !== null) {
+                            financePatch.amountCents = detectedCents;
+                            financePatch.currency = extracted.currency || 'PLN';
+                            if (!document.paymentStatus)
+                                financePatch.paymentStatus = receipt.paymentStatus || 'unpaid';
+                        }
+                        else if (!document.paymentStatus && receipt.paymentStatus) {
+                            financePatch.paymentStatus = receipt.paymentStatus;
+                        }
+                        if (document.dueDate === null && extracted.dueDate !== null) {
+                            financePatch.dueDate = extracted.dueDate;
+                        }
+                        const updated = yield prisma.document.updateMany({ where: { id: document.id, filePath: document.filePath, isDeleted: false }, data: Object.assign({ ocrText: (0, ocrText_1.protectOcrText)(text) }, financePatch) });
                         if (updated.count !== 1)
                             throw new Error('Dokument zmienił się podczas rozpoznawania.');
+                        if (receipt.items.length > 0) {
+                            yield prisma.documentLineItem.deleteMany({ where: { documentId: document.id } });
+                            yield prisma.documentLineItem.createMany({
+                                data: receipt.items.map(item => ({
+                                    documentId: document.id,
+                                    name: item.name,
+                                    quantity: item.quantity,
+                                    totalCents: item.totalCents,
+                                    category: item.category,
+                                })),
+                            });
+                        }
                         update(next.documentId, next.ownerKey, { state: 'done' });
                     }
                     catch (error) {

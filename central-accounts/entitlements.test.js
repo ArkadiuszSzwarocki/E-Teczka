@@ -1,0 +1,22 @@
+const test=require('node:test'),assert=require('node:assert/strict'),crypto=require('node:crypto');
+const {createEntitlements}=require('./mariadb/entitlements');const {createFakeMariaPool}=require('./mariadb/fakePool');
+test('central plans follow the account, enforce device limits, expire and revoke without trusting client plan fields',async()=>{
+ const pool=createFakeMariaPool();pool.tables.accounts.push({id:1,public_id:'a'.repeat(32)},{id:2,public_id:'b'.repeat(32)});let now=100000;
+ const privateKey=crypto.generateKeyPairSync('ed25519').privateKey.export({format:'der',type:'pkcs8'}).toString('base64');
+ const service=createEntitlements({pool,privateKey,now:()=>now,getSession:async raw=>raw==='session1'?{internal_id:1,id:'a'.repeat(32)}:raw==='session2'?{internal_id:2,id:'b'.repeat(32)}:null});
+ const device=(id,kind='desktop')=>({deviceId:id,credential:crypto.randomBytes(32).toString('base64url'),kind,name:'Test',plan:'premium'});
+ const first=device('desktop-device-1'),second=device('desktop-device-2'),mobile=device('mobile-device-1','mobile');
+ await assert.rejects(service.register('invalid',first),/UNAUTHORIZED/);
+ const lease=await service.register('session1',first);const read=value=>JSON.parse(Buffer.from(value.payload,'base64url').toString());
+ assert.equal(read(lease).plan,'free');assert.equal(read(lease).accountId,'a'.repeat(32));
+ assert.equal(crypto.verify(null,Buffer.from(lease.payload),crypto.createPublicKey({key:Buffer.from(lease.publicKey,'base64'),type:'spki',format:'der'}),Buffer.from(lease.signature,'base64url')),true);
+ await assert.rejects(service.register('session1',second),/DEVICE_LIMIT_REACHED/);await service.register('session1',mobile);
+ await assert.rejects(service.register('session1',device('mobile-device-2','mobile')),/DEVICE_LIMIT_REACHED/);
+ await assert.rejects(service.register('session1',{...first,credential:second.credential}),/DEVICE_CREDENTIAL_REQUIRED/);
+ Object.assign(pool.tables.account_plans.find(p=>p.account_id===1),{plan:'standard',status:'active',valid_until:now+10000});
+ const upgraded=await service.register('session1',second);assert.equal(read(upgraded).plan,'standard');assert.equal(read(upgraded).expiresAt,now+10000);assert.equal(read(await service.refresh(first.credential)).plan,'standard');
+ await service.revoke('session2',first.deviceId);assert.equal(read(await service.refresh(first.credential)).accountId,'a'.repeat(32));
+ await service.revoke('session1',first.deviceId);await assert.rejects(service.refresh(first.credential),/DEVICE_REVOKED/);
+ now+=11000;assert.equal(read(await service.refresh(second.credential)).plan,'free');
+ const list=await service.list('session1');assert.equal(list.devices.some(d=>'credential_hash'in d),false);assert.equal(list.plan,'free');
+});

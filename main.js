@@ -1,10 +1,109 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, safeStorage, shell, nativeImage } = require('electron');
+ipcMain.handle('eteczka-show-main-window', event => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.setAlwaysOnTop(true);
+  win.show();
+  win.focus();
+  app.focus({ steal: true });
+  win.setAlwaysOnTop(false);
+});
+ipcMain.handle('eteczka-capture-screenshot', async event => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || !ownRenderer(event)) return null;
+  const image = await win.webContents.capturePage();
+  const jpeg = image.toJPEG(82);
+  return {
+    dataUrl: `data:image/jpeg;base64,${jpeg.toString('base64')}`,
+    appVersion: app.getVersion(),
+    platform: process.platform,
+  };
+});
+let accountAuthWindow = null;
+
+function createCleanAccountUserAgent(win) {
+  return win.webContents.getUserAgent().replace(/\s*Electron\/[^\s]+/gi, '');
+}
+
+ipcMain.handle('eteczka-close-external-account', async (event) => {
+  if (!ownRenderer(event)) return false;
+  if (accountAuthWindow && !accountAuthWindow.isDestroyed()) {
+    accountAuthWindow.close();
+  }
+  accountAuthWindow = null;
+  return true;
+});
+
+ipcMain.handle('eteczka-open-external-account', async (event, rawUrl) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || !ownRenderer(event) || typeof rawUrl !== 'string') return false;
+  const url = new URL(rawUrl);
+  if (!(url.protocol === 'https:' || (url.protocol === 'http:' && url.hostname === '127.0.0.1')) || url.pathname !== '/account' || !/^#[A-Za-z0-9_-]{43}$/.test(url.hash)) {
+    throw new Error('Nieprawidłowy adres konta.');
+  }
+  if (accountAuthWindow && !accountAuthWindow.isDestroyed()) {
+    accountAuthWindow.focus();
+    await accountAuthWindow.loadURL(url.href);
+    return true;
+  }
+  const parentBounds = win.getBounds();
+  const width = 520;
+  const height = 680;
+  const x = Math.max(0, Math.round(parentBounds.x + (parentBounds.width - width) / 2));
+  const y = Math.max(0, Math.round(parentBounds.y + (parentBounds.height - height) / 2));
+  accountAuthWindow = new BrowserWindow({
+    width,
+    height,
+    x,
+    y,
+    parent: win,
+    autoHideMenuBar: true,
+    title: 'Logowanie Google — E‑Teczka',
+    backgroundColor: '#0b1120',
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+    },
+  });
+  const cleanUa = createCleanAccountUserAgent(accountAuthWindow);
+  accountAuthWindow.webContents.setUserAgent(cleanUa);
+  accountAuthWindow.webContents.setWindowOpenHandler(({ url: popupUrl }) => {
+    try {
+      const parsed = new URL(popupUrl);
+      if (parsed.protocol === 'https:' && (parsed.hostname.endsWith('.google.com') || parsed.hostname === 'accounts.google.com' || parsed.origin === url.origin)) {
+        return {
+          action: 'allow',
+          overrideBrowserWindowOptions: {
+            width: 500,
+            height: 640,
+            autoHideMenuBar: true,
+            webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true },
+          },
+        };
+      }
+    } catch { /* block invalid URLs */ }
+    return { action: 'deny' };
+  });
+  accountAuthWindow.webContents.on('did-create-window', (childWin) => {
+    childWin.webContents.setUserAgent(cleanUa);
+  });
+  accountAuthWindow.on('closed', () => {
+    accountAuthWindow = null;
+    if (!win.isDestroyed()) win.focus();
+  });
+  await accountAuthWindow.loadURL(url.href);
+  return true;
+});
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, execFile } = require('child_process');
 const http = require('http');
 const fs = require('fs');
 const { createAccessLock } = require('./desktop/accessLock');
 const { createRecoveryMailer } = require('./desktop/recoveryMail');
+const { checkWindowsHelloAvailability, verifyWithWindowsHello } = require('./desktop/windowsHello');
+const { createHelloLogin } = require('./desktop/helloLogin');
 
 // Isolated first-run testing keeps the real profile, PIN and sessions intact.
 if (process.env.ETECZKA_PROFILE_DIR) {
@@ -21,17 +120,29 @@ let quitting = false;
 const recoveryMailer = createRecoveryMailer(path.join(__dirname, 'backend'));
 let accessLock = createAccessLock({ file: path.join(app.getPath('userData'), 'access-lock.json'), sendRecoveryMail: recoveryMailer.send, mailConfigured: recoveryMailer.configured });
 let loginMethodFile = path.join(app.getPath('userData'), 'login-method.json');
-function loginMethod() { try { const saved = JSON.parse(fs.readFileSync(loginMethodFile, 'utf8')); if (saved.method === 'pin' || saved.method === 'password') return saved.method; } catch {} return accessLock.status().mode === 'pin' ? 'pin' : 'password'; }
+const helloLogin = createHelloLogin({ filename:path.join(app.getPath('userData'),'hello-login.bin'), safeStorage, verifyHello:verifyWithWindowsHello });
+let selectedAccountEmail = '';
+let lastHelloSessionToken = '';
+const ownRenderer = event => Boolean(mainWindow && event.sender === mainWindow.webContents);
+ipcMain.handle('eteczka-hello-accounts', event => ownRenderer(event) ? helloLogin.list() : []);
+ipcMain.handle('eteczka-hello-login', async(event, settings) => {
+  if(!ownRenderer(event))return {ok:false,error:'Niedostępne okno.'};
+  const result=await helloLogin.login(event.sender.id,String(settings?.email||''),String(settings?.mfaCode||''));
+  if(result.ok){lastHelloSessionToken=result.token;verifiedSenders.set(event.sender.id,Date.now()+5*60000);}
+  return result;
+});
+function loginMethod() { try { const saved = JSON.parse(fs.readFileSync(loginMethodFile, 'utf8')); if (saved.method === 'pin' || saved.method === 'password' || saved.method === 'hello') return saved.method; } catch {} return accessLock.status().mode === 'pin' ? 'pin' : 'password'; }
 const verifiedSenders = new Map();
 const isVerified = (event) => (verifiedSenders.get(event.sender.id) || 0) > Date.now();
 
-ipcMain.handle('eteczka-access-use-account', async (_event, token) => {
+ipcMain.handle('eteczka-access-use-account', async (event, token) => {
   if (typeof token !== 'string' || token.length > 4096) return { ok: false, error: 'Nieprawidłowa sesja.' };
   try {
     const response = await fetch('http://127.0.0.1:3000/api/auth/me', { headers: { authorization: `Bearer ${token}` }, redirect: 'error', signal: AbortSignal.timeout(5000) });
     if (!response.ok) throw new Error('SESSION_INVALID');
     const user = await response.json();
     if (!Number.isSafeInteger(user.id) || user.id < 1) throw new Error('SESSION_INVALID');
+    selectedAccountEmail = user.email;
     const root = app.getPath('userData');
     const legacy = path.join(root, 'access-lock.json');
     const file = user.id === 1 && fs.existsSync(legacy) ? legacy : path.join(root, 'accounts', String(user.id), 'access-lock.json');
@@ -40,16 +151,31 @@ ipcMain.handle('eteczka-access-use-account', async (_event, token) => {
     accessLock = createAccessLock({ file, sendRecoveryMail: recoveryMailer.send, mailConfigured: recoveryMailer.configured });
     if (!fs.existsSync(loginMethodFile)) fs.writeFileSync(loginMethodFile, JSON.stringify({method:accessLock.status().mode === 'pin' ? 'pin' : 'password'}), {mode:0o600});
     verifiedSenders.clear();
+    if(token===lastHelloSessionToken)verifiedSenders.set(event.sender.id,Date.now()+5*60000);
     return { ok: true };
   } catch { return { ok: false, error: 'Nie udało się sprawdzić konta dla lokalnej blokady.' }; }
 });
 
-ipcMain.handle('eteczka-access-status', () => ({ ...accessLock.status(), loginMethod: loginMethod() }));
-ipcMain.handle('eteczka-access-set-method', (_event, settings) => {
-  if (!settings || !['password','pin'].includes(settings.method)) return { ok: false, error: 'Niedostępna metoda logowania.' };
+ipcMain.handle('eteczka-access-status', event => ({ ...accessLock.status(), loginMethod: loginMethod(), helloVerified:isVerified(event), helloLoginRegistered:helloLogin.list().some(item=>item.email===selectedAccountEmail) }));
+ipcMain.handle('eteczka-hello-available', () => checkWindowsHelloAvailability());
+ipcMain.handle('eteczka-hello-verify', async (event) => {
+  const result = await verifyWithWindowsHello('Potwierdź tożsamość w E-Teczce');
+  if (result.ok) verifiedSenders.set(event.sender.id, Date.now() + 5 * 60_000);
+  return result;
+});
+ipcMain.handle('eteczka-access-set-method', async (event, settings) => {
+  if(!ownRenderer(event))return {ok:false,error:'Niedostępne okno.'};
+  if (!settings || !['password','pin','hello'].includes(settings.method)) return { ok: false, error: 'Niedostępna metoda logowania.' };
   const status = accessLock.status();
   if (status.configured && !accessLock.verify(settings.currentSecret).ok) return { ok: false, error: 'Potwierdź obecną blokadę, aby zmienić sposób logowania.' };
   if (settings.method === 'pin' && (!status.configured || status.mode !== 'pin')) return { ok: false, error: 'Najpierw ustaw PIN w sekcji Zmiana PIN-u.' };
+  if (settings.method === 'hello') {
+    const hello = await checkWindowsHelloAvailability();
+    if (!hello.available) return { ok: false, error: 'Windows Hello nie jest skonfigurowane na tym urządzeniu.' };
+    const result=await helloLogin.enroll(settings.token,settings.deviceId);if(!result.ok)return result;
+  } else if(helloLogin.list().some(item=>item.email===selectedAccountEmail)) {
+    const result=await helloLogin.revoke(settings.token,selectedAccountEmail);if(!result.ok)return result;
+  }
   try { fs.writeFileSync(loginMethodFile + '.tmp', JSON.stringify({method:settings.method}), {mode:0o600}); fs.renameSync(loginMethodFile + '.tmp', loginMethodFile); return {ok:true}; }
   catch { return {ok:false,error:'Nie udało się zapisać metody.'}; }
 });
@@ -114,9 +240,12 @@ function acquireWithWia(deviceId, onStage) {
 ipcMain.handle('eteczka-wia-scan', async (event, deviceId) => acquireWithWia(deviceId, (stage) => event.sender.send('eteczka-wia-status', stage)));
 
 function startBackend() {
-  const backendPath = path.join(__dirname, 'backend', 'index.js');
-  backendProcess = spawn('node', [backendPath], {
-    cwd: path.join(__dirname, 'backend'),
+  const backendDir = path.join(__dirname, 'backend');
+  const tsNodeBin = path.join(backendDir, 'node_modules', 'ts-node', 'dist', 'bin.js');
+  const useTsNode = Boolean(process.env.ETECZKA_DEV_URL) && fs.existsSync(tsNodeBin);
+  const args = useTsNode ? [tsNodeBin, '--preferTsExts', path.join(backendDir, 'index.ts')] : [path.join(backendDir, 'index.js')];
+  backendProcess = spawn('node', args, {
+    cwd: backendDir,
     env: { ...process.env, PORT: '3000' }
   });
 
@@ -128,6 +257,43 @@ function startBackend() {
     console.error(`[BACKEND ERR]: ${data}`);
   });
 }
+
+function findPort3000Pid() {
+  return new Promise((resolve) => {
+    if (process.platform !== 'win32') return resolve(null);
+    execFile('powershell', ['-NoProfile', '-Command', '(Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1).OwningProcess'], (err, stdout) => {
+      const pid = Number((stdout || '').trim());
+      resolve(Number.isInteger(pid) && pid > 0 ? pid : null);
+    });
+  });
+}
+
+async function restartBackendForDev() {
+  if (backendProcess) {
+    try { backendProcess.kill(); } catch {}
+    backendProcess = null;
+  } else {
+    const pid = await findPort3000Pid();
+    if (pid && pid !== process.pid) {
+      try { process.kill(pid); } catch {}
+    }
+  }
+  await new Promise((resolve) => setTimeout(resolve, 900));
+  if (!(await backendAvailable())) startBackend();
+  for (let i = 0; i < 60; i++) {
+    if (await backendAvailable()) return true;
+    await new Promise((resolve) => setTimeout(resolve, 350));
+  }
+  return false;
+}
+
+ipcMain.handle('eteczka-dev-reload', async (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || !ownRenderer(event) || !process.env.ETECZKA_DEV_URL) return false;
+  await restartBackendForDev();
+  if (!win.isDestroyed()) win.webContents.reloadIgnoringCache();
+  return true;
+});
 
 function backendAvailable() {
   return new Promise((resolve) => {
@@ -171,16 +337,24 @@ function retryServer(retries) {
 
 function createWindow() {
   if (mainWindow) return;
+  const appIconPath = path.join(__dirname, 'assets', process.platform === 'win32' ? 'icon.ico' : 'icon.png');
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     autoHideMenuBar: true,
     title: 'E-Teczka – Cyfrowe Archiwum Dokumentów',
+    ...(fs.existsSync(appIconPath) ? { icon: appIconPath } : {}),
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false
     }
   });
+
+  // Native input also covers embedded PDF frames, whose DOM events do not bubble.
+  let lastSessionInput=0;
+  const sessionInput=()=>{const now=Date.now();if(now-lastSessionInput<500)return;lastSessionInput=now;if(mainWindow&&!mainWindow.webContents.isDestroyed())mainWindow.webContents.send('eteczka-user-activity');};
+  mainWindow.webContents.on('before-mouse-event',sessionInput);
+  mainWindow.webContents.on('before-input-event',sessionInput);
 
   mainWindow.maximize();
   if (process.env.ETECZKA_PROFILE_DIR) {
@@ -198,13 +372,54 @@ function createWindow() {
     mainWindow = null;
   });
   mainWindow.on('close', (event) => {
-    if (!quitting && tray) { event.preventDefault(); mainWindow.hide(); }
+    if (quitting || !tray) return;
+    event.preventDefault();
+    if (!mainWindow.isDestroyed()) mainWindow.webContents.send('eteczka-confirm-close');
   });
+}
+
+ipcMain.handle('eteczka-minimize-to-tray', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || !ownRenderer(event) || win.isDestroyed()) return false;
+  win.hide();
+  if (process.platform === 'win32' && tray) {
+    tray.displayBalloon({ title: 'E-Teczka', content: 'Aplikacja została zminimalizowana do zasobnika przy zegarze.' });
+  }
+  return true;
+});
+
+ipcMain.handle('eteczka-quit-app', (event) => {
+  if (!ownRenderer(event)) return false;
+  void quitGracefully();
+  return true;
+});
+
+let quitInProgress = false;
+async function quitGracefully() {
+  if (quitInProgress) return;
+  quitInProgress = true;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    await new Promise((resolve) => {
+      let settled = false;
+      const done = () => { if (!settled) { settled = true; clearTimeout(timer); ipcMain.removeHandler('eteczka-quit-ready'); resolve(); } };
+      const timer = setTimeout(done, 60_000);
+      ipcMain.handle('eteczka-quit-ready', () => { done(); return true; });
+      mainWindow.webContents.send('eteczka-prepare-quit');
+    });
+  }
+  quitting = true;
+  app.quit();
 }
 
 async function createTray() {
   try {
-    const icon = await app.getFileIcon(process.execPath, { size: 'small' });
+    const customIconPath = path.join(__dirname, 'assets', 'icon.png');
+    const icon = fs.existsSync(customIconPath)
+      ? nativeImage.createFromPath(customIconPath).resize({ width: 16, height: 16 })
+      : await app.getFileIcon(process.execPath, { size: 'small' });
     if (icon.isEmpty()) return;
     tray = new Tray(icon);
     tray.setToolTip('E-Teczka — działa w tle');
@@ -212,7 +427,7 @@ async function createTray() {
     tray.setContextMenu(Menu.buildFromTemplate([
       { label: 'Otwórz E-Teczkę', click: show },
       { type: 'separator' },
-      { label: 'Zakończ E-Teczkę', click: () => { quitting = true; app.quit(); } },
+      { label: 'Zakończ E-Teczkę', click: () => { void quitGracefully(); } },
     ]));
     tray.on('double-click', show);
   } catch (error) { console.error('Nie udało się uruchomić ikony E-Teczki:', error); }

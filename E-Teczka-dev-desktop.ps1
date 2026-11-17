@@ -12,13 +12,30 @@ if ($frontend) {
 $backend = Get-NetTCPConnection -State Listen -LocalPort 3000 -ErrorAction SilentlyContinue | Select-Object -First 1
 $tls = Get-NetTCPConnection -State Listen -LocalPort 3443 -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($backend) {
+    $devActive = $false
     try {
         $info = Invoke-RestMethod -Uri 'http://127.0.0.1:3000/api/network-info' -TimeoutSec 3
         $cert = Invoke-RestMethod -Uri 'http://127.0.0.1:3000/api/local-ca-info' -TimeoutSec 3
         if ($info.port -ne 3443 -or $cert.fingerprint -notmatch '^([A-Fa-f0-9]{2}:){31}[A-Fa-f0-9]{2}$' -or !$tls -or $tls.OwningProcess -ne $backend.OwningProcess) { throw 'not-eteczka' }
+        try {
+            $null = Invoke-RestMethod -Uri 'http://127.0.0.1:3000/api/dev/catalog/overrides' -Headers @{ Origin = 'http://127.0.0.1:5173' } -TimeoutSec 2
+            $devActive = $true
+        } catch {
+            $devActive = $false
+        }
     } catch {
         Write-Host 'Port 3000 jest zajety przez inny albo nieaktualny serwer. Nie zamykam go automatycznie.' -ForegroundColor Yellow
         exit 1
+    }
+    if (-not $devActive) {
+        $procInfo = Get-CimInstance Win32_Process -Filter "ProcessId = $($backend.OwningProcess)" -ErrorAction SilentlyContinue
+        if ($procInfo -and $procInfo.CommandLine -like "*$projectDir*") {
+            Write-Host 'Zatrzymuje stary backend bez trybu deweloperskiego, aby uruchomic nodemon z ETECZKA_DEV_PLANS=1...' -ForegroundColor Yellow
+            Stop-Process -Id $backend.OwningProcess -Force
+            Start-Sleep -Milliseconds 600
+            & npm.cmd run 'dev:desktop'
+            exit $LASTEXITCODE
+        }
     }
     Write-Host 'Korzystam z dzialajacego serwera E-Teczki. Interfejs bedzie odswiezany po zmianach.' -ForegroundColor Green
     Write-Host 'Zmiany backendu wymagaja restartu serwera, jesli nie jest uruchomiony w trybie deweloperskim.' -ForegroundColor Yellow

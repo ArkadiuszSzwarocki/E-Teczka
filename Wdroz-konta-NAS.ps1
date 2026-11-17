@@ -5,6 +5,7 @@ param(
     [ValidateRange(1,65535)][int]$SshPort = 22,
     [switch]$Sudo,
     [switch]$UpdateSecrets,
+    [switch]$SinglePassword,
     [switch]$PrepareOnly
 )
 $ErrorActionPreference = 'Stop'
@@ -23,6 +24,12 @@ foreach ($command in @('node','tar','ssh','scp')) {
 if (!(Test-Path -LiteralPath (Join-Path $source '.env'))) { throw 'Brakuje central-accounts/.env.' }
 if (!$PrepareOnly -and !$NasUser) { $NasUser = Read-Host 'Nazwa uzytkownika SSH na NAS-ie (nie haslo)' }
 if (!$PrepareOnly -and $NasUser -notmatch '^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$') { throw 'Nieprawidlowa nazwa uzytkownika SSH.' }
+if ($SinglePassword -and !$PrepareOnly) {
+    $puttyDir = Join-Path $env:ProgramFiles 'PuTTY'
+    $plink = Join-Path $puttyDir 'plink.exe'
+    $pscp = Join-Path $puttyDir 'pscp.exe'
+    if (!(Test-Path -LiteralPath $plink) -or !(Test-Path -LiteralPath $pscp)) { throw 'Tryb jednego hasla wymaga PuTTY (plink.exe i pscp.exe w Program Files\PuTTY).' }
+}
 
 New-Item -ItemType Directory -Force -Path $work | Out-Null
 # Restrict the local bundle, because it contains the SMTP and DB credentials.
@@ -44,6 +51,42 @@ try {
         return
     }
     $remote = "$NasUser@$NasHost"
+    if ($SinglePassword) {
+        $secret = Read-Host "Haslo SSH uzytkownika $NasUser (takze do sudo)" -AsSecureString
+        $secretPtr = [IntPtr]::Zero
+        $previousOutputEncoding = $OutputEncoding
+        try {
+            $OutputEncoding = New-Object Text.UTF8Encoding($false)
+            $secretPtr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secret)
+            $plainPassword = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($secretPtr)
+            if ([string]::IsNullOrEmpty($plainPassword) -or $plainPassword -match '[\r\n\x00]') { throw 'Haslo nie moze byc puste ani zawierac znaku nowej linii.' }
+            $passwordFile = Join-Path $work 'ssh-password.txt'
+            [IO.File]::WriteAllText($passwordFile, $plainPassword + "`n", (New-Object Text.UTF8Encoding($false)))
+            Write-Host 'Lacze z QNAP-em. Przy pierwszym polaczeniu moze pojawic sie pytanie o klucz hosta.' -ForegroundColor Cyan
+            # First connection permits normal PuTTY host-key confirmation; later calls are noninteractive.
+            & $plink -ssh -T -P $SshPort -pwfile $passwordFile $remote "umask 077; mkdir -p '$remoteBase/incoming' '$remoteBase/releases' '$remoteBase/shared'"
+            if ($LASTEXITCODE -ne 0) { throw 'Polaczenie z NAS-em nie powiodlo sie.' }
+            & $pscp -batch -scp -P $SshPort -pwfile $passwordFile $archive "${remote}:$remoteBase/incoming/$releaseId.tar.gz"
+            if ($LASTEXITCODE -ne 0) { throw 'Kopiowanie paczki nie powiodlo sie.' }
+            & $pscp -batch -scp -P $SshPort -pwfile $passwordFile (Join-Path $projectRoot 'scripts\deploy-accounts-nas.sh') "${remote}:$remoteBase/incoming/$releaseId.sh"
+            if ($LASTEXITCODE -ne 0) { throw 'Kopiowanie skryptu nie powiodlo sie.' }
+            $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+            $update = if ($UpdateSecrets) { 'yes' } else { 'no' }
+            $prefix = if ($Sudo) { "sudo -S -p '' " } else { '' }
+            # Password is supplied on standard input, never in the command line or log.
+            # No PTY: the remote terminal cannot echo the supplied password.
+            $plainPassword | & $plink -batch -ssh -T -P $SshPort -pwfile $passwordFile $remote "${prefix}sh '$remoteBase/incoming/$releaseId.sh' '$remoteBase' '$releaseId' '$hash' '$update'"
+            if ($LASTEXITCODE -ne 0) { throw 'Wdrozenie nie powiodlo sie. Sprawdz komunikaty powyzej.' }
+            Write-Host 'Gotowe. Zaktualizowano kontener eteczka-accounts i konfiguracje kont.' -ForegroundColor Green
+            return
+        } finally {
+            $OutputEncoding = $previousOutputEncoding
+            if ($secretPtr -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($secretPtr) }
+            $plainPassword = $null
+            if ($secret) { $secret.Dispose() }
+            if ($passwordFile -and (Test-Path -LiteralPath $passwordFile)) { Remove-Item -LiteralPath $passwordFile -Force }
+        }
+    }
     $sshArgs = @('-p', [string]$SshPort)
     Write-Host 'Laczenie z NAS-em. SSH moze poprosic o haslo i potwierdzenie klucza serwera.' -ForegroundColor Cyan
     & ssh @sshArgs $remote "umask 077; mkdir -p '$remoteBase/incoming' '$remoteBase/releases' '$remoteBase/shared'"

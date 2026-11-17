@@ -4,7 +4,7 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = "file:./eteczka.db"
+  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -147,9 +147,28 @@ model Document {
   isDeleted        Boolean   @default(false)
   deletedAt        DateTime?
   physicalLocation String?
+  merchantName     String?
+  amountCents      Int?
+  currency         String    @default("PLN")
+  dueDate          DateTime?
+  paymentStatus    String?
+  lineItems        DocumentLineItem[]
   createdAt        DateTime  @default(now())
 
   updatedAt DateTime @updatedAt @default(now())
+}
+
+model DocumentLineItem {
+  id         Int      @id @default(autoincrement())
+  documentId Int
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  name       String
+  quantity   Float    @default(1)
+  totalCents Int
+  category   String   @default("Inne")
+  createdAt  DateTime @default(now())
+
+  @@index([documentId])
 }
 
 model Tag {

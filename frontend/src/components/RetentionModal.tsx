@@ -40,9 +40,9 @@ export default function RetentionModal({
           </p>
         )}
         <form onSubmit={onSubmit}>
-          {state.restoreFrom && <label className="mb-4 block text-sm font-semibold text-slate-200">Przywróć do podkartoteki
-            <select required value={state.targetFolderId || ''} onChange={event => onStateChange({ ...state, targetFolderId: event.target.value })} className="mt-2 w-full rounded border border-slate-600 bg-[#0f172a] px-3 py-2 text-white" aria-label="Docelowa podkartoteka">
-              <option value="">— wybierz podkartotekę —</option>{folderOptions}
+          {state.restoreFrom && <label className="mb-4 block text-sm font-semibold text-slate-200">Przywróć do kartoteki
+            <select required value={state.targetFolderId || ''} onChange={event => onStateChange({ ...state, targetFolderId: event.target.value })} className="mt-2 w-full rounded border border-slate-600 bg-[#0f172a] px-3 py-2 text-white" aria-label="Docelowa kartoteka">
+              <option value="">— wybierz kartotekę —</option>{folderOptions}
             </select>
           </label>}
           <p className="mb-2 text-sm font-semibold text-slate-200">Czas życia dokumentu</p>

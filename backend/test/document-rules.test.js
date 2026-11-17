@@ -43,20 +43,21 @@ test('collectFolderBranch returns a whole nested branch', async () => {
   assert.deepEqual(await collectFolderBranch(prisma, 1), [1, 2, 4, 3]);
 });
 
-test('documents are allowed only in a non-root folder', async () => {
+test('documents are allowed in both root and nested folders', async () => {
   const prisma = {
     folder: {
       findUnique: async ({ where }) => {
-        if (where.id === 10) return { parentId: null };
-        if (where.id === 11) return { parentId: 10 };
+        if (where.id === 10) return { id: 10, parentId: null };
+        if (where.id === 11) return { id: 11, parentId: 10 };
         return null;
       },
     },
   };
 
-  assert.equal(await isDocumentFolder(prisma, 10), false);
+  assert.equal(await isDocumentFolder(prisma, 10), true);
   assert.equal(await isDocumentFolder(prisma, 11), true);
   assert.equal(await isDocumentFolder(prisma, 99), false);
+  assert.equal(await isDocumentFolder(prisma, 0), false);
 });
 
 test('sync parsing accepts valid documents and rejects malformed retention data', () => {

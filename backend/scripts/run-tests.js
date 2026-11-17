@@ -7,7 +7,7 @@ const { spawnSync } = require('node:child_process');
 const parent = fs.realpathSync(os.tmpdir());
 const sandbox = fs.mkdtempSync(path.join(parent, 'eteczka-tests-'));
 const pattern = path.resolve(__dirname, '..', 'test', '*.test.js');
-const result = spawnSync(process.execPath, ['--test', '--test-concurrency=1', pattern], { cwd: sandbox, stdio: 'inherit', env: process.env });
+const result = spawnSync(process.execPath, ['--test', '--test-concurrency=1', pattern], { cwd: sandbox, stdio: 'inherit', env: {...process.env,NODE_ENV:'test',ETECZKA_CENTRAL_ACCOUNT_URL:''} });
 try {
   const actual = fs.realpathSync(sandbox);
   if (path.dirname(actual) === parent && path.basename(actual).startsWith('eteczka-tests-')) fs.rmSync(actual, { recursive: true, force: true });

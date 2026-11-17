@@ -1,10 +1,12 @@
 import { AccountMfaRequired, verifyAccountMfa } from '../services/accountMfa';
-import { SESSION_DURATION_MS, activeSessionWhere, effectiveSessionExpiry } from '../services/sessionPolicy';
+import { SESSION_DURATION_MS, ensureIdleSessionPolicy, activeSessionWhere, effectiveSessionExpiry } from '../services/sessionPolicy';
 import { getCatalog } from '../services/planCatalog';
 import crypto from 'crypto';
 import express from 'express';
 import type { PrismaClient } from '@prisma/client';
 import { authSecret } from '../security/authSecret';
+import { centralEntitlement, hasCentralLink } from '../services/centralEntitlements';
+import { getDevOverrides } from '../services/devOverrides';
 
 const AUTH_SECRET = authSecret();
 
@@ -38,6 +40,7 @@ function validCredentials(body: unknown): body is { email: string; password: str
 
 export function createAuthRouter(prisma: PrismaClient) {
   const router = express.Router();
+  const ready=ensureIdleSessionPolicy(prisma);router.use(async(_req,res,next)=>{try{await ready;next();}catch{return res.status(503).json({error:'Nie udało się przygotować sesji.'});}});
 
   router.post('/register', async (request, response) => {
     if (!validCredentials(request.body)) return response.status(400).json({ error: 'Podaj poprawny e‑mail i hasło (minimum 8 znaków).' });
@@ -70,13 +73,21 @@ export function createAuthRouter(prisma: PrismaClient) {
     response.json({ success: true });
   });
 
+  router.post('/activity',async(request,response)=>{
+    const token=request.header('authorization')?.replace(/^Bearer\s+/i,'');if(!token)return response.status(401).json({error:'Brak aktywnej sesji.'});
+    const now=new Date(),expiresAt=new Date(now.getTime()+SESSION_DURATION_MS);
+    const result=await prisma.authSession.updateMany({where:{tokenHash:crypto.createHash('sha256').update(token).digest('hex'),...activeSessionWhere(now)},data:{expiresAt}});
+    if(!result.count)return response.status(401).json({error:'Sesja wygasła. Zaloguj się ponownie.'});
+    return response.json({expiresAt,serverNow:now,idleTimeoutMs:SESSION_DURATION_MS});
+  });
+
   router.get('/me', async (request, response) => {
     const token = request.header('authorization')?.replace(/^Bearer\s+/i, '');
     if (!token) return response.status(401).json({ error: 'Brak aktywnej sesji.' });
     const session = await prisma.authSession.findFirst({ where: { tokenHash: crypto.createHash('sha256').update(token).digest('hex'), ...activeSessionWhere() }, include: { user: true } });
     const user = session?.user;
     if (!user) return response.status(401).json({ error: 'Sesja wygasła.' });
-    response.json({ id: user.id, email: user.email, name: user.name, expiresAt: effectiveSessionExpiry(session.createdAt, session.expiresAt) });
+    response.json({ id: user.id, email: user.email, name: user.name, expiresAt: effectiveSessionExpiry(session.createdAt, session.expiresAt),serverNow:new Date(),idleTimeoutMs:SESSION_DURATION_MS });
   });
 
   return router;
@@ -84,14 +95,18 @@ export function createAuthRouter(prisma: PrismaClient) {
 
 export class DeviceLimitError extends Error { constructor(public readonly limit: number) { super(`Limit urządzeń dla tego planu został osiągnięty (${limit}). Wyloguj inne urządzenie albo wybierz wyższy plan.`); } }
 
-export async function createSession(prisma: PrismaClient, userId: number, email: string, name: string | null, body?: Record<string, unknown>) {
-  verifyAccountMfa(userId, body?.mfaCode);
+export async function createSession(prisma: PrismaClient, userId: number, email: string, name: string | null, body?: Record<string, unknown>, authentication: 'standard' | 'trusted-hello' = 'standard') {
+  // This mode is supplied internally only after verification of a registered device signature.
+  if (authentication !== 'trusted-hello') verifyAccountMfa(userId, body?.mfaCode);
+  const overrides = getDevOverrides();
+  const central=await centralEntitlement(userId,true);if(central?.blocked && !overrides.bypassDeviceLimit)throw new DeviceLimitError(0);
+  if(!central&&await hasCentralLink(prisma,userId))throw new Error('CENTRAL_REGISTRATION_REQUIRED');
   const deviceId = typeof body?.deviceId === 'string' && body.deviceId.trim().length >= 8 ? body.deviceId.trim().slice(0, 128) : crypto.randomUUID();
   const deviceName = typeof body?.deviceName === 'string' ? body.deviceName.trim().slice(0, 80) : 'Nieznane urządzenie';
   const subscription = await prisma.subscription.findUnique({ where: { ownerKey: `user:${userId}` } });
-  const plan = subscription?.plan === 'premium' && ['active', 'trialing'].includes(subscription.status) ? 'premium' : subscription?.plan === 'standard' && ['active', 'trialing'].includes(subscription.status) ? 'standard' : 'free';
+  const plan = central ? central.plan : subscription?.plan === 'premium' && ['active', 'trialing'].includes(subscription.status) ? 'premium' : subscription?.plan === 'standard' && ['active', 'trialing'].includes(subscription.status) ? 'standard' : 'free';
   const limit = getCatalog().plans[plan].accountDevices ?? Number.POSITIVE_INFINITY;
-  if (Number.isFinite(limit)) {
+  if (Number.isFinite(limit) && !overrides.bypassDeviceLimit) {
     const activeSessions = await prisma.authSession.findMany({ where: { userId, ...activeSessionWhere() }, select: { deviceId: true } });
     const deviceCount = new Set(activeSessions.map(session => session.deviceId).filter(Boolean)).size;
     const alreadyRegistered = activeSessions.some(session => session.deviceId === deviceId);

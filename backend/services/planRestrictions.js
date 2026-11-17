@@ -12,9 +12,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.activeDocumentIds = activeDocumentIds;
 exports.activeTagIds = activeTagIds;
 const planPolicy_1 = require("./planPolicy");
+const centralPlanLedger_1 = require("./centralPlanLedger");
+const centralEntitlements_1 = require("./centralEntitlements");
 function activeDocumentIds(db, ownerId, plan) {
     return __awaiter(this, void 0, void 0, function* () {
-        const limit = planPolicy_1.PLAN_LIMITS[plan].documents;
+        const central = (0, centralPlanLedger_1.centralOwner)(`user:${ownerId}`);
+        const limit = central ? (yield (0, centralEntitlements_1.centralPlanRequest)(central, '/ledger/status')).allowance.documents : planPolicy_1.PLAN_LIMITS[plan].documents;
         if (limit === null)
             return null;
         const documents = yield db.document.findMany({ where: { folder: { ownerId } }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: limit, select: { id: true } });
@@ -23,7 +26,8 @@ function activeDocumentIds(db, ownerId, plan) {
 }
 function activeTagIds(db, ownerId, plan) {
     return __awaiter(this, void 0, void 0, function* () {
-        const limit = planPolicy_1.PLAN_LIMITS[plan].tags;
+        const central = (0, centralPlanLedger_1.centralOwner)(`user:${ownerId}`);
+        const limit = central ? (yield (0, centralEntitlements_1.centralPlanRequest)(central, '/ledger/status')).allowance.tags : planPolicy_1.PLAN_LIMITS[plan].tags;
         if (limit === null)
             return null;
         const tags = yield db.$queryRaw `SELECT t.id FROM Tag t JOIN PlanTagOwner o ON o.tagId=t.id WHERE o.ownerId=${ownerId} ORDER BY t.createdAt ASC,t.id ASC LIMIT ${limit}`;

@@ -15,13 +15,15 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.createFolderRouter = createFolderRouter;
 const express_1 = __importDefault(require("express"));
 const folders_1 = require("../services/folders");
+const familyAccess_1 = require("../services/familyAccess");
 const errors_1 = require("../utils/errors");
 function createFolderRouter(prisma) {
     const router = express_1.default.Router();
     const ownerId = (res) => Number(res.locals.userId || 1);
     router.get('/', (_req, res) => __awaiter(this, void 0, void 0, function* () {
         try {
-            res.json(yield prisma.folder.findMany({ where: { ownerId: ownerId(res) }, orderBy: { order: 'asc' }, include: { _count: { select: { documents: { where: { isArchived: false, isDeleted: false } } } } } }));
+            const accessibleIds = yield (0, familyAccess_1.getAccessibleFolderIds)(prisma, ownerId(res));
+            res.json(yield prisma.folder.findMany({ where: { id: { in: accessibleIds } }, orderBy: { order: 'asc' }, include: { _count: { select: { documents: { where: { isArchived: false, isDeleted: false } } } } } }));
         }
         catch (error) {
             const details = (0, errors_1.errorMessage)(error);
@@ -33,8 +35,12 @@ function createFolderRouter(prisma) {
         try {
             const { name, parentId } = req.body;
             const currentOwner = ownerId(res);
-            const count = yield prisma.folder.count({ where: { parentId: parentId ? Number(parentId) : null, ownerId: currentOwner } });
-            res.json(yield prisma.folder.create({ data: { name, parentId: parentId ? Number(parentId) : null, order: count, ownerId: currentOwner } }));
+            const parsedParent = parentId ? Number(parentId) : null;
+            if (parsedParent !== null && !(yield (0, familyAccess_1.canAccessFolder)(prisma, currentOwner, parsedParent))) {
+                return res.status(403).json({ error: 'Brak dostępu do kartoteki nadrzędnej.' });
+            }
+            const count = yield prisma.folder.count({ where: { parentId: parsedParent, ownerId: currentOwner } });
+            res.json(yield prisma.folder.create({ data: { name, parentId: parsedParent, order: count, ownerId: currentOwner } }));
         }
         catch (error) {
             const details = (0, errors_1.errorMessage)(error);
@@ -42,17 +48,49 @@ function createFolderRouter(prisma) {
             res.status(500).json({ error: 'Błąd tworzenia kartoteki', details });
         }
     }));
+    router.post('/reorder', (req, res) => __awaiter(this, void 0, void 0, function* () {
+        var _a;
+        try {
+            const ids = Array.isArray((_a = req.body) === null || _a === void 0 ? void 0 : _a.orderedIds) ? req.body.orderedIds.map(Number).filter((n) => Number.isInteger(n) && n > 0) : [];
+            if (!ids.length)
+                return res.status(400).json({ error: 'Brak listy kartotek.' });
+            const accessible = new Set(yield (0, familyAccess_1.getAccessibleFolderIds)(prisma, ownerId(res)));
+            const allowedIds = ids.filter((id) => accessible.has(id));
+            yield prisma.$transaction(allowedIds.map((id, idx) => prisma.folder.updateMany({ where: { id }, data: { order: idx } })));
+            res.json({ success: true });
+        }
+        catch (error) {
+            res.status(500).json({ error: 'Błąd zapisu kolejności kartotek.', details: (0, errors_1.errorMessage)(error) });
+        }
+    }));
     router.use('/:id', (req, res, next) => __awaiter(this, void 0, void 0, function* () {
-        const folder = yield prisma.folder.findFirst({ where: { id: Number(req.params.id), ownerId: ownerId(res) } });
-        if (!folder)
+        const id = Number(req.params.id);
+        if (!(yield (0, familyAccess_1.canAccessFolder)(prisma, ownerId(res), id)))
             return res.status(404).json({ error: 'Nie znaleziono kartoteki.' });
         next();
     }));
     router.patch('/:id', (req, res) => __awaiter(this, void 0, void 0, function* () {
         try {
-            const { name } = req.body;
-            if (name)
-                return res.json(yield prisma.folder.update({ where: { id: Number(req.params.id) }, data: { name } }));
+            const { name, parentId } = req.body || {};
+            const data = {};
+            if (typeof name === 'string' && name.trim())
+                data.name = name.trim();
+            if (parentId !== undefined) {
+                if (parentId === null)
+                    data.parentId = null;
+                else {
+                    const targetParent = Number(parentId);
+                    const branch = yield (0, folders_1.collectFolderBranch)(prisma, Number(req.params.id), ownerId(res));
+                    if (!Number.isInteger(targetParent) || branch.includes(targetParent))
+                        return res.status(400).json({ error: 'Nie można przenieść kartoteki do samej siebie ani podkartoteki.' });
+                    const owned = yield prisma.folder.findFirst({ where: { id: targetParent, ownerId: ownerId(res) }, select: { id: true } });
+                    if (!owned)
+                        return res.status(404).json({ error: 'Nie znaleziono kartoteki docelowej.' });
+                    data.parentId = targetParent;
+                }
+            }
+            if (Object.keys(data).length)
+                return res.json(yield prisma.folder.update({ where: { id: Number(req.params.id) }, data }));
             res.json({ success: true });
         }
         catch (error) {
@@ -97,11 +135,12 @@ function createFolderRouter(prisma) {
         }
     }));
     router.post('/:id/delete-safely', (req, res) => __awaiter(this, void 0, void 0, function* () {
-        var _a;
+        var _a, _b;
         try {
             const currentOwner = ownerId(res);
             const sourceId = Number(req.params.id);
             const transferFolderId = ((_a = req.body) === null || _a === void 0 ? void 0 : _a.transferFolderId) ? Number(req.body.transferFolderId) : null;
+            const mode = ((_b = req.body) === null || _b === void 0 ? void 0 : _b.mode) === 'trash' ? 'trash' : 'transfer';
             const result = yield prisma.$transaction((tx) => __awaiter(this, void 0, void 0, function* () {
                 const source = yield tx.folder.findFirst({ where: { id: sourceId, ownerId: currentOwner }, select: { id: true } });
                 if (!source)
@@ -115,6 +154,18 @@ function createFolderRouter(prisma) {
                     tx.document.count({ where: { folderId: { in: ids }, isDeleted: false, isArchived: true } }),
                     tx.document.count({ where: { folderId: { in: ids }, isDeleted: true } }),
                 ]);
+                const totalDocs = documentCount + archivedCount + trashedCount;
+                if (mode === 'trash') {
+                    if (totalDocs > 0) {
+                        const fallback = yield tx.folder.findFirst({ where: { ownerId: currentOwner, id: { notIn: ids } }, orderBy: [{ parentId: 'desc' }, { id: 'asc' }], select: { id: true } });
+                        if (!fallback)
+                            throw new Error('Aby przenieść dokumenty do kosza i usunąć tę kartotekę, pozostaw w systemie przynajmniej jedną inną kartotekę.');
+                        yield tx.document.updateMany({ where: { folderId: { in: ids } }, data: { isDeleted: true, isArchived: false, deletedAt: new Date(), folderId: fallback.id } });
+                    }
+                    for (const folderId of [...ids].reverse())
+                        yield tx.folder.delete({ where: { id: folderId } });
+                    return { success: true, movedDocuments: 0, trashedDocuments: documentCount + archivedCount, preservedArchived: 0, preservedTrash: trashedCount, targetFolderId: null };
+                }
                 if (documentCount && (!transferFolderId || ids.includes(transferFolderId)))
                     throw new Error('Wybierz inną podkartotekę docelową dla aktywnych dokumentów.');
                 let targetId = transferFolderId;
@@ -126,7 +177,7 @@ function createFolderRouter(prisma) {
                 else if (archivedCount || trashedCount) {
                     throw new Error('Wybierz podkartotekę, aby zachować dokumenty z archiwum i kosza.');
                 }
-                if (targetId && (documentCount || archivedCount || trashedCount))
+                if (targetId && totalDocs)
                     yield tx.document.updateMany({ where: { folderId: { in: ids } }, data: { folderId: targetId } });
                 for (const folderId of [...ids].reverse())
                     yield tx.folder.delete({ where: { id: folderId } });

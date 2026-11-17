@@ -5,6 +5,7 @@ import { getElectronIpc, isAccessResult, isAccessStatus, type AccessMode } from 
 export default function AccessLock({ children, optionalSetup = false }: { children: React.ReactNode; optionalSetup?: boolean }) {
   const [loading, setLoading] = useState(true);
   const [configured, setConfigured] = useState(false);
+  const [helloEnabled, setHelloEnabled] = useState(false);
   const [mode, setMode] = useState<AccessMode>('pin');
   const [newMode, setNewMode] = useState<AccessMode>('pin');
   const [secret, setSecret] = useState('');
@@ -36,7 +37,9 @@ export default function AccessLock({ children, optionalSetup = false }: { childr
         if (!isAccessStatus(response)) throw new Error('Nieprawidłowa odpowiedź blokady.');
         const status = response;
         setConfigured(status.configured);
-        if (optionalSetup && (!status.configured || status.loginMethod === 'password')) setUnlocked(true);
+        setHelloEnabled(status.loginMethod === 'hello');
+        if (status.loginMethod === 'hello' && (status.helloVerified || optionalSetup)) setUnlocked(true);
+        if (optionalSetup && status.loginMethod !== 'hello' && (!status.configured || status.loginMethod === 'password')) setUnlocked(true);
         if (status.mode) { setMode(status.mode); setNewMode(status.mode); }
         setRecoveryAvailable(Boolean(status.recoveryAvailable));
         setMailConfigured(Boolean(status.mailConfigured));
@@ -93,6 +96,7 @@ export default function AccessLock({ children, optionalSetup = false }: { childr
 
   if (loading) return <div className="min-h-screen bg-[#0f172a]" />;
   if (unlocked) return <>{children}</>;
+  if (helloEnabled) return <main className="min-h-screen bg-[#0f172a] text-white flex items-center justify-center p-6"><section className="w-full max-w-md rounded-2xl border border-slate-700 bg-[#1e293b] p-8 shadow-2xl"><h1 className="text-2xl font-bold">Odblokuj E‑Teczkę</h1><p className="mt-3 text-sm leading-6 text-slate-400">Potwierdź tożsamość za pomocą Windows Hello.</p><button onClick={() => void (async () => { setError(''); try { const result = await getElectronIpc()?.invoke('eteczka-hello-verify'); if (isAccessResult(result) && result.ok) setUnlocked(true); else setError(isAccessResult(result) ? result.error || 'Weryfikacja nie została ukończona.' : 'Windows Hello jest niedostępne.'); } catch { setError('Nie udało się uruchomić Windows Hello.'); } })()} className="mt-6 w-full rounded-lg bg-blue-600 py-3 font-semibold hover:bg-blue-500">Odblokuj przez Windows Hello</button>{error && <p role="alert" className="mt-4 text-sm text-red-300">{error}</p>}</section></main>;
 
   const title = configured ? 'E‑Teczka jest zablokowana' : 'Zabezpiecz E‑Teczkę';
   const subtitle = configured
@@ -128,6 +132,19 @@ export default function AccessLock({ children, optionalSetup = false }: { childr
         {!configured && mailConfigured && <><input value={recoveryEmail} onChange={event => setRecoveryEmail(event.target.value)} type="email" placeholder="E-mail do odzyskiwania (opcjonalnie)" className="mt-4 w-full rounded-lg border border-slate-600 bg-[#0f172a] px-4 py-3 text-white" /><button disabled={recoveryBusy || !recoveryEmail} onClick={() => void sendCode('enroll')} className="mt-2 text-sm text-blue-300 disabled:opacity-50">Wyślij kod potwierdzający adres</button>{recoveryEmail && <input value={recoveryCode} onChange={event => setRecoveryCode(event.target.value)} inputMode="numeric" maxLength={8} placeholder="Kod z e-maila" className="mt-2 w-full rounded-lg border border-slate-600 bg-[#0f172a] px-4 py-3 text-white" />}</>}
       </>}
       {error && <p className="text-red-400 text-sm mt-3">{error}</p>}
+      {configured && helloEnabled && !recoveryView && (
+        <button
+          onClick={() => void (async () => {
+            setError('');
+            const res = await getElectronIpc()?.invoke('eteczka-hello-verify');
+            if (isAccessResult(res) && res.ok) setUnlocked(true);
+            else setError(isAccessResult(res) && res.error ? res.error : 'Weryfikacja Windows Hello nie powiodła się.');
+          })()}
+          className="mt-4 w-full rounded-lg border border-emerald-500/60 bg-emerald-950/40 py-3 font-bold text-emerald-200 hover:bg-emerald-900/50"
+        >
+          Odblokuj przez Windows Hello
+        </button>
+      )}
       <button disabled={recoveryBusy || (recoveryView ? (!recoveryCode || !newSecret || newSecret !== confirmNewSecret) : (!configured && (!secret || secret !== confirmSecret)))} onClick={() => void (recoveryView ? resetAccess() : submit())} className="mt-5 w-full rounded-lg bg-blue-600 py-3.5 font-bold hover:bg-blue-500 disabled:opacity-50">{recoveryView ? 'Potwierdź kod i ustaw nowy dostęp' : configured ? 'Otwórz E‑Teczkę' : 'Włącz blokadę aplikacji'}</button>
       {configured && recoveryAvailable && <button onClick={() => { setRecoveryView(!recoveryView); setError(''); }} className="mt-4 w-full rounded-lg border border-blue-500 px-4 py-3 text-sm font-semibold text-blue-200">{recoveryView ? 'Wróć do wpisywania hasła / PIN-u' : 'Nie pamiętam hasła ani PIN-u — reset e-mailem'}</button>}
       {configured && !recoveryAvailable && <p className="mt-4 text-center text-xs text-slate-400">Reset e-mailem nie był skonfigurowany dla tej blokady.</p>}

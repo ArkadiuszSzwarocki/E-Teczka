@@ -41,17 +41,6 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-var __rest = (this && this.__rest) || function (s, e) {
-    var t = {};
-    for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p) && e.indexOf(p) < 0)
-        t[p] = s[p];
-    if (s != null && typeof Object.getOwnPropertySymbols === "function")
-        for (var i = 0, p = Object.getOwnPropertySymbols(s); i < p.length; i++) {
-            if (e.indexOf(p[i]) < 0 && Object.prototype.propertyIsEnumerable.call(s, p[i]))
-                t[p[i]] = s[p[i]];
-        }
-    return t;
-};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -60,60 +49,30 @@ exports.runScheduledCloudBackup = runScheduledCloudBackup;
 exports.createBackupRouter = createBackupRouter;
 exports.createBackupOAuthCallbackRouter = createBackupOAuthCallbackRouter;
 const express_1 = __importDefault(require("express"));
-const fs_1 = __importDefault(require("fs"));
-const path_1 = __importDefault(require("path"));
-const crypto_1 = __importDefault(require("crypto"));
-const stream_1 = require("stream");
+const node_crypto_1 = __importDefault(require("node:crypto"));
 const archiver = __importStar(require("archiver"));
 const multer_1 = __importDefault(require("multer"));
-const paths_1 = require("../config/paths");
 const premium_1 = require("../middleware/premium");
 const planLedger_1 = require("../services/planLedger");
 const ocrPremium_1 = require("../services/ocrPremium");
 const backupCrypto_1 = require("../services/backupCrypto");
 const accessControl_1 = require("../middleware/accessControl");
 const restoreBackup_1 = require("../services/restoreBackup");
+const externalImport_1 = require("../services/externalImport");
 const webdavFolders_1 = require("../services/webdavFolders");
 const webdavCertificate_1 = require("../services/webdavCertificate");
 const backupMfa_1 = require("./backupMfa");
+const cloudBackupTransfer_1 = require("../services/cloudBackupTransfer");
 const upload = (0, multer_1.default)({ storage: multer_1.default.memoryStorage(), limits: { fileSize: 512 * 1024 * 1024 } });
 const ownerId = (res) => Number(res.locals.userId || 1);
 const allowedProviders = new Set(['webdav', 'google-drive', 'onedrive', 'dropbox']);
 const oauthStates = new Map();
-const oauthConfig = {
-    'google-drive': { authorize: 'https://accounts.google.com/o/oauth2/v2/auth', token: 'https://oauth2.googleapis.com/token', scope: 'https://www.googleapis.com/auth/drive.file', clientId: process.env.GOOGLE_CLIENT_ID, clientSecret: process.env.GOOGLE_CLIENT_SECRET },
-    dropbox: { authorize: 'https://www.dropbox.com/oauth2/authorize', token: 'https://api.dropboxapi.com/oauth2/token', scope: 'files.content.write files.content.read', clientId: process.env.DROPBOX_CLIENT_ID, clientSecret: process.env.DROPBOX_CLIENT_SECRET },
-    onedrive: { authorize: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize', token: 'https://login.microsoftonline.com/common/oauth2/v2.0/token', scope: 'Files.ReadWrite.AppFolder offline_access', clientId: process.env.ONEDRIVE_CLIENT_ID, clientSecret: process.env.ONEDRIVE_CLIENT_SECRET },
-};
-const oauthCallbackUrl = () => process.env.ETECZKA_OAUTH_CALLBACK_URL || 'http://localhost:3000/api/backup/oauth/callback';
-function backupFiles(documents) {
-    return documents.map(document => ({ source: path_1.default.join(paths_1.uploadsDir, document.filePath), archiveName: `files/${document.id}-${path_1.default.basename(document.filePath)}` }));
-}
-function requireBackupFiles(files) {
-    const missing = files.find(file => !fs_1.default.existsSync(file.source));
-    if (missing)
-        throw new Error('Brak pliku dokumentu na dysku. Kopia nie została utworzona.');
-}
-function refreshOAuthCredentials(prisma, destination) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const credentials = destination.encryptedCredentials ? JSON.parse((0, backupCrypto_1.decrypt)(destination.encryptedCredentials)) : {};
-        if (!credentials.refreshToken || !credentials.expiresAt || credentials.expiresAt > Date.now() + 60000)
-            return credentials;
-        const config = oauthConfig[destination.provider];
-        if (!(config === null || config === void 0 ? void 0 : config.clientId) || !config.clientSecret)
-            return credentials;
-        const body = new URLSearchParams({ grant_type: 'refresh_token', refresh_token: credentials.refreshToken, client_id: config.clientId, client_secret: config.clientSecret });
-        const response = yield fetch(config.token, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
-        const tokens = yield response.json();
-        if (!response.ok || !tokens.access_token)
-            throw new Error('Nie udało się odświeżyć tokenu OAuth.');
-        const updated = { accessToken: tokens.access_token, refreshToken: tokens.refresh_token || credentials.refreshToken, expiresAt: Date.now() + Number(tokens.expires_in || 3600) * 1000 };
-        yield prisma.backupDestination.update({ where: { id: destination.id }, data: { encryptedCredentials: (0, backupCrypto_1.encrypt)(JSON.stringify(updated)) } });
-        return updated;
-    });
-}
 function isPremium(prisma, res) {
-    return __awaiter(this, void 0, void 0, function* () { const req = res.req; const start = req.method !== 'GET' || req.path.startsWith('/oauth/'); return (yield (0, planLedger_1.featureTrial)(prisma, (0, ocrPremium_1.ocrOwnerKey)(res), 'cloudBackup', start)).allowed; });
+    return __awaiter(this, void 0, void 0, function* () {
+        const req = res.req;
+        const start = req.method !== 'GET' || req.path.startsWith('/oauth/');
+        return (yield (0, planLedger_1.featureTrial)(prisma, (0, ocrPremium_1.ocrOwnerKey)(res), 'cloudBackup', start)).allowed;
+    });
 }
 /** Executes a scheduled backup for an owner. ownerId is the document owner id. */
 function runScheduledCloudBackup(prisma, ownerKey, ownerIdValue) {
@@ -121,48 +80,14 @@ function runScheduledCloudBackup(prisma, ownerKey, ownerIdValue) {
         const destination = yield prisma.backupDestination.findUnique({ where: { ownerKey } });
         if (!(destination === null || destination === void 0 ? void 0 : destination.enabled) || !destination.schedule || destination.schedule === 'manual')
             return false;
-        const folders = yield prisma.folder.findMany({ where: { ownerId: ownerIdValue }, orderBy: { id: 'asc' } });
-        const documents = yield prisma.document.findMany({ where: { folder: { ownerId: ownerIdValue } }, include: { tags: { include: { tag: true } } }, orderBy: { id: 'asc' } });
-        const files = backupFiles(documents);
-        requireBackupFiles(files);
-        const manifest = { version: 1, exportedAt: new Date().toISOString(), planState: yield (0, planLedger_1.exportPlanState)(prisma, ownerKey), folders, documents: documents.map((_a) => {
-                var { tags } = _a, document = __rest(_a, ["tags"]);
-                return (Object.assign(Object.assign({}, document), { tags: tags.map(({ tag }) => tag) }));
-            }) };
-        const pass = new stream_1.PassThrough();
-        const chunks = [];
-        pass.on('data', chunk => chunks.push(Buffer.from(chunk)));
-        const archive = new archiver.ZipArchive({ zlib: { level: 6 } });
-        archive.on('error', (error) => pass.destroy(error));
-        archive.pipe(pass);
-        archive.append(JSON.stringify(manifest), { name: 'manifest.json' });
-        for (const file of files)
-            archive.file(file.source, { name: file.archiveName });
-        const complete = new Promise((resolve, reject) => { pass.on('end', () => resolve()); pass.on('error', reject); });
-        yield archive.finalize();
-        yield complete;
-        const credentials = destination.provider === 'webdav' ? (destination.encryptedCredentials ? JSON.parse((0, backupCrypto_1.decrypt)(destination.encryptedCredentials)) : {}) : yield refreshOAuthCredentials(prisma, destination);
-        if (destination.provider === 'webdav' && (credentials.purpose !== 'backup-only' || !credentials.username || !credentials.password))
+        const credentials = destination.provider === 'webdav'
+            ? (destination.encryptedCredentials ? JSON.parse((0, backupCrypto_1.decrypt)(destination.encryptedCredentials)) : {})
+            : yield (0, cloudBackupTransfer_1.refreshOAuthCredentials)(prisma, destination);
+        if (destination.provider === 'webdav' && (credentials.purpose !== 'backup-only' || !credentials.username || !credentials.password)) {
             throw new Error('Skonfiguruj osobne konto NAS przeznaczone do automatycznej kopii.');
-        const data = (0, backupCrypto_1.encryptBackup)(Buffer.concat(chunks));
-        const filename = `eteczka-${new Date().toISOString().slice(0, 10)}.zip.enc`;
-        let response;
-        if (destination.provider === 'webdav') {
-            const target = (0, webdavFolders_1.webDavFileUrl)(destination.endpoint, destination.remoteFolder || '', filename);
-            response = yield fetch(target, { method: 'PUT', headers: { Authorization: `Basic ${Buffer.from(`${credentials.username || ''}:${credentials.password || ''}`).toString('base64')}`, 'Content-Type': 'application/zip' }, body: data });
         }
-        else if (destination.provider === 'dropbox') {
-            response = yield fetch('https://content.dropboxapi.com/2/files/upload', { method: 'POST', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Dropbox-API-Arg': JSON.stringify({ path: `/${destination.remoteFolder ? `${destination.remoteFolder.replace(/^\/+|\/+$/g, '')}/` : ''}${filename}`, mode: 'overwrite', autorename: false }), 'Content-Type': 'application/octet-stream' }, body: data });
-        }
-        else if (destination.provider === 'onedrive') {
-            response = yield fetch(`https://graph.microsoft.com/v1.0/me/drive/special/approot:/${destination.remoteFolder ? `${destination.remoteFolder.replace(/^\/+|\/+$/g, '')}/` : ''}${filename}:/content`, { method: 'PUT', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Content-Type': 'application/zip' }, body: data });
-        }
-        else {
-            const metadata = JSON.stringify(Object.assign({ name: filename, mimeType: 'application/zip' }, (destination.remoteFolder ? { parents: [destination.remoteFolder] } : {})));
-            const multipart = `----EtecZkaBoundary${Date.now()}`;
-            const body = Buffer.concat([Buffer.from(`--${multipart}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${multipart}\r\nContent-Type: application/zip\r\n\r\n`), data, Buffer.from(`\r\n--${multipart}--`)]);
-            response = yield fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', { method: 'POST', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Content-Type': `multipart/related; boundary=${multipart}` }, body });
-        }
+        const data = yield (0, cloudBackupTransfer_1.buildEncryptedBackupBuffer)(prisma, ownerIdValue, ownerKey);
+        const response = yield (0, cloudBackupTransfer_1.uploadEncryptedBackupToCloud)(destination, credentials, data);
         if (!response.ok)
             throw new Error(`Cloud upload failed (${response.status}).`);
         return true;
@@ -210,17 +135,20 @@ function createBackupRouter(prisma) {
         if (!(yield isPremium(prisma, res)))
             return res.status(402).json({ code: 'PREMIUM_REQUIRED', error: 'Okres próbny kopii do chmury zakończył się. Wybierz Premium.' });
         const provider = String(req.params.provider);
-        const config = oauthConfig[provider];
+        const config = cloudBackupTransfer_1.oauthConfig[provider];
         if (!config || !config.clientId || !config.clientSecret)
             return res.status(503).json({ error: `Brak konfiguracji OAuth dla ${provider}.` });
-        const state = crypto_1.default.randomBytes(24).toString('base64url');
+        const state = node_crypto_1.default.randomBytes(24).toString('base64url');
         oauthStates.set(state, { ownerKey: (0, premium_1.billingOwnerKey)(res), provider, expiresAt: Date.now() + 10 * 60000 });
-        const params = new URLSearchParams({ client_id: config.clientId, redirect_uri: oauthCallbackUrl(), response_type: 'code', state, scope: config.scope });
+        const params = new URLSearchParams({ client_id: config.clientId, redirect_uri: (0, cloudBackupTransfer_1.oauthCallbackUrl)(), response_type: 'code', state, scope: config.scope });
         if (provider === 'google-drive')
             params.set('access_type', 'offline');
         if (provider === 'dropbox')
             params.set('token_access_type', 'offline');
-        res.redirect(`${config.authorize}?${params.toString()}`);
+        const url = `${config.authorize}?${params.toString()}`;
+        if (req.query.mode === 'json')
+            return res.json({ url });
+        res.redirect(url);
     }));
     router.get('/destination', (_req, res) => __awaiter(this, void 0, void 0, function* () {
         if (!(yield isPremium(prisma, res)))
@@ -251,19 +179,19 @@ function createBackupRouter(prisma) {
         res.json(yield prisma.backupRun.findMany({ where: { destinationId: destination.id }, orderBy: { startedAt: 'desc' }, take: 50 }));
     }));
     router.put('/destination', (0, backupMfa_1.requireBackupMfa)('destination'), (req, res) => __awaiter(this, void 0, void 0, function* () {
-        var _a, _b, _c, _d, _e, _f, _g;
+        var _a, _b, _c, _d, _e, _f, _g, _h;
         if (!(yield isPremium(prisma, res)))
             return res.status(402).json({ code: 'PREMIUM_REQUIRED', error: 'Okres próbny kopii do chmury jest niedostępny lub zakończył się. Wybierz Premium.' });
         const provider = String(((_a = req.body) === null || _a === void 0 ? void 0 : _a.provider) || '');
         let endpoint = typeof ((_b = req.body) === null || _b === void 0 ? void 0 : _b.endpoint) === 'string' ? req.body.endpoint.trim().slice(0, 2000) : '';
         const remoteFolder = typeof ((_c = req.body) === null || _c === void 0 ? void 0 : _c.remoteFolder) === 'string' ? req.body.remoteFolder.trim().slice(0, 500) : '';
-        const scheduleValue = String(((_d = req.body) === null || _d === void 0 ? void 0 : _d.schedule) || 'manual');
-        if (!/^(manual|(?:daily|weekly)(?:@(?:[01]\d|2[0-3]):[0-5]\d)?)$/.test(scheduleValue))
+        const schedule = String(((_d = req.body) === null || _d === void 0 ? void 0 : _d.schedule) || 'manual');
+        if (!/^(manual|on_login|on_logout|(?:daily|weekly)(?:@(?:[01]\d|2[0-3]):[0-5]\d)?)$/.test(schedule))
             return res.status(400).json({ error: 'Nieprawidłowy harmonogram kopii.' });
-        const schedule = scheduleValue;
         const username = typeof ((_e = req.body) === null || _e === void 0 ? void 0 : _e.username) === 'string' ? req.body.username.trim() : '';
-        const backupUsername = typeof ((_f = req.body) === null || _f === void 0 ? void 0 : _f.backupUsername) === 'string' ? req.body.backupUsername.trim() : '';
-        const backupPassword = typeof ((_g = req.body) === null || _g === void 0 ? void 0 : _g.backupPassword) === 'string' ? req.body.backupPassword : '';
+        const nasPassword = typeof ((_f = req.body) === null || _f === void 0 ? void 0 : _f.password) === 'string' ? req.body.password : '';
+        const backupUsername = typeof ((_g = req.body) === null || _g === void 0 ? void 0 : _g.backupUsername) === 'string' ? req.body.backupUsername.trim() : '';
+        const backupPassword = typeof ((_h = req.body) === null || _h === void 0 ? void 0 : _h.backupPassword) === 'string' ? req.body.backupPassword : '';
         if (!allowedProviders.has(provider))
             return res.status(400).json({ error: 'Nieobsługiwany dostawca chmury.' });
         if (provider === 'webdav') {
@@ -280,16 +208,18 @@ function createBackupRouter(prisma) {
             if (!username)
                 return res.status(400).json({ error: 'Podaj nazwę swojego konta NAS.' });
             if (schedule !== 'manual') {
-                if (!backupUsername || backupUsername.toLowerCase() === username.toLowerCase())
-                    return res.status(400).json({ error: 'Dla automatycznej kopii użyj osobnego konta NAS przeznaczonego wyłącznie do kopii.' });
-                if (backupPassword)
-                    credentials = (0, backupCrypto_1.encrypt)(JSON.stringify({ username: backupUsername, password: backupPassword, purpose: 'backup-only' }));
+                const effectiveUser = backupUsername || username;
+                const effectivePass = backupPassword || nasPassword;
+                if (effectivePass) {
+                    const purpose = backupUsername && backupUsername.toLowerCase() !== username.toLowerCase() ? 'backup-only' : 'nas-auto';
+                    credentials = (0, backupCrypto_1.encrypt)(JSON.stringify({ username: effectiveUser, password: effectivePass, purpose }));
+                }
                 else {
                     if (!existing || existing.provider !== 'webdav' || !existing.encryptedCredentials || !existing.endpoint || (0, webdavFolders_1.normalizeWebDavEndpoint)(existing.endpoint) !== endpoint)
-                        return res.status(400).json({ error: 'Podaj hasło osobnego konta kopii.' });
+                        return res.status(400).json({ error: 'Podaj hasło NAS, aby zapisać automatyczną kopię.' });
                     const saved = JSON.parse((0, backupCrypto_1.decrypt)(existing.encryptedCredentials));
-                    if (saved.purpose !== 'backup-only' || saved.username !== backupUsername || !saved.password)
-                        return res.status(400).json({ error: 'Podaj hasło osobnego konta kopii.' });
+                    if (saved.username !== effectiveUser || !saved.password)
+                        return res.status(400).json({ error: 'Podaj hasło NAS, aby zapisać automatyczną kopię.' });
                     credentials = existing.encryptedCredentials;
                 }
             }
@@ -300,55 +230,23 @@ function createBackupRouter(prisma) {
         res.json({ provider: destination.provider, endpoint: destination.endpoint, remoteFolder: destination.remoteFolder, schedule: destination.schedule, enabled: destination.enabled, configured: true });
     }));
     router.post('/cloud', (0, backupMfa_1.requireBackupMfa)('cloud'), (req, res) => __awaiter(this, void 0, void 0, function* () {
-        var _a, _b;
+        var _a, _b, _c;
         if (!(yield isPremium(prisma, res)))
             return res.status(402).json({ code: 'PREMIUM_REQUIRED', error: 'Okres próbny kopii do chmury zakończył się. Wybierz Premium.' });
         const destination = yield prisma.backupDestination.findUnique({ where: { ownerKey: (0, premium_1.billingOwnerKey)(res) } });
         if (!(destination === null || destination === void 0 ? void 0 : destination.enabled))
             return res.status(400).json({ error: 'Najpierw skonfiguruj miejsce kopii zapasowej.' });
-        if (destination.provider === 'webdav' && (!((_a = req.body) === null || _a === void 0 ? void 0 : _a.username) || !((_b = req.body) === null || _b === void 0 ? void 0 : _b.password)))
+        const isAuto = ((_a = req.body) === null || _a === void 0 ? void 0 : _a.auto) === true;
+        if (destination.provider === 'webdav' && !isAuto && (!((_b = req.body) === null || _b === void 0 ? void 0 : _b.username) || !((_c = req.body) === null || _c === void 0 ? void 0 : _c.password)))
             return res.status(400).json({ error: 'Podaj swoje dane logowania NAS do ręcznej kopii.' });
+        if (destination.provider === 'webdav' && isAuto && !destination.encryptedCredentials)
+            return res.status(400).json({ error: 'Brak zapisanego konta NAS do automatycznej kopii.' });
         try {
-            const folders = yield prisma.folder.findMany({ where: { ownerId: ownerId(res) }, orderBy: { id: 'asc' } });
-            const documents = yield prisma.document.findMany({ where: { folder: { ownerId: ownerId(res) } }, include: { tags: { include: { tag: true } } }, orderBy: { id: 'asc' } });
-            const files = backupFiles(documents);
-            requireBackupFiles(files);
-            const manifest = { version: 1, exportedAt: new Date().toISOString(), planState: yield (0, planLedger_1.exportPlanState)(prisma, (0, ocrPremium_1.ocrOwnerKey)(res)), folders, documents: documents.map((_a) => {
-                    var { tags } = _a, document = __rest(_a, ["tags"]);
-                    return (Object.assign(Object.assign({}, document), { tags: tags.map(({ tag }) => tag) }));
-                }) };
-            const pass = new stream_1.PassThrough();
-            const chunks = [];
-            pass.on('data', chunk => chunks.push(Buffer.from(chunk)));
-            const archive = new archiver.ZipArchive({ zlib: { level: 6 } });
-            archive.on('error', (error) => pass.destroy(error));
-            archive.pipe(pass);
-            archive.append(JSON.stringify(manifest), { name: 'manifest.json' });
-            for (const file of files)
-                archive.file(file.source, { name: file.archiveName });
-            const complete = new Promise((resolve, reject) => { pass.on('end', () => resolve()); pass.on('error', reject); });
-            yield archive.finalize();
-            yield complete;
-            const credentials = destination.provider === 'webdav' ? { username: String(req.body.username), password: String(req.body.password) } : yield refreshOAuthCredentials(prisma, destination);
-            const data = (0, backupCrypto_1.encryptBackup)(Buffer.concat(chunks));
-            const filename = `eteczka-${new Date().toISOString().slice(0, 10)}.zip.enc`;
-            let response;
-            if (destination.provider === 'webdav') {
-                const target = (0, webdavFolders_1.webDavFileUrl)(destination.endpoint, destination.remoteFolder || '', filename);
-                response = yield fetch(target, { method: 'PUT', headers: { Authorization: `Basic ${Buffer.from(`${credentials.username || ''}:${credentials.password || ''}`).toString('base64')}`, 'Content-Type': 'application/zip' }, body: data });
-            }
-            else if (destination.provider === 'dropbox') {
-                response = yield fetch('https://content.dropboxapi.com/2/files/upload', { method: 'POST', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Dropbox-API-Arg': JSON.stringify({ path: `/${destination.remoteFolder ? `${destination.remoteFolder.replace(/^\/+|\/+$/g, '')}/` : ''}${filename}`, mode: 'overwrite', autorename: false }), 'Content-Type': 'application/octet-stream' }, body: data });
-            }
-            else if (destination.provider === 'onedrive') {
-                response = yield fetch(`https://graph.microsoft.com/v1.0/me/drive/special/approot:/${destination.remoteFolder ? `${destination.remoteFolder.replace(/^\/+|\/+$/g, '')}/` : ''}${filename}:/content`, { method: 'PUT', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Content-Type': 'application/zip' }, body: data });
-            }
-            else {
-                const metadata = JSON.stringify(Object.assign({ name: filename, mimeType: 'application/zip' }, (destination.remoteFolder ? { parents: [destination.remoteFolder] } : {})));
-                const multipart = `----EtecZkaBoundary${Date.now()}`;
-                const body = Buffer.concat([Buffer.from(`--${multipart}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${multipart}\r\nContent-Type: application/zip\r\n\r\n`), data, Buffer.from(`\r\n--${multipart}--`)]);
-                response = yield fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', { method: 'POST', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Content-Type': `multipart/related; boundary=${multipart}` }, body });
-            }
+            const credentials = destination.provider === 'webdav'
+                ? (isAuto && destination.encryptedCredentials ? JSON.parse((0, backupCrypto_1.decrypt)(destination.encryptedCredentials)) : { username: String(req.body.username), password: String(req.body.password) })
+                : yield (0, cloudBackupTransfer_1.refreshOAuthCredentials)(prisma, destination);
+            const data = yield (0, cloudBackupTransfer_1.buildEncryptedBackupBuffer)(prisma, ownerId(res), (0, ocrPremium_1.ocrOwnerKey)(res));
+            const response = yield (0, cloudBackupTransfer_1.uploadEncryptedBackupToCloud)(destination, credentials, data);
             if (!response.ok)
                 return res.status(502).json({ error: response.status === 507 ? 'NAS zgłosił brak dostępnego miejsca (HTTP 507). Sprawdź wolne miejsce, limit konta oraz czy wybrano właściwy folder z prawem zapisu.' : `Serwer ${destination.provider === 'webdav' ? 'NAS/WebDAV' : destination.provider} odrzucił kopię (HTTP ${response.status}). Sprawdź folder i uprawnienia do zapisu.` });
             res.json({ success: true, provider: destination.provider, uploadedAt: new Date().toISOString() });
@@ -358,8 +256,29 @@ function createBackupRouter(prisma) {
             res.status(502).json({ error: error instanceof Error && error.message.startsWith('Brak pliku dokumentu') ? error.message : 'Nie udało się utworzyć lub wysłać kopii. Sprawdź log serwera.' });
         }
     }));
+    router.post('/cloud/list', (0, backupMfa_1.requireBackupMfa)('cloud/latest'), (req, res) => __awaiter(this, void 0, void 0, function* () {
+        var _a, _b;
+        if (!(yield isPremium(prisma, res)))
+            return res.status(402).json({ code: 'PREMIUM_REQUIRED', error: 'Okres próbny kopii do chmury jest niedostępny lub zakończył się. Wybierz Premium.' });
+        const destination = yield prisma.backupDestination.findUnique({ where: { ownerKey: (0, premium_1.billingOwnerKey)(res) } });
+        if (!(destination === null || destination === void 0 ? void 0 : destination.enabled))
+            return res.status(400).json({ error: 'Najpierw skonfiguruj miejsce kopii zapasowej.' });
+        if (destination.provider === 'webdav' && (!((_a = req.body) === null || _a === void 0 ? void 0 : _a.username) || !((_b = req.body) === null || _b === void 0 ? void 0 : _b.password)))
+            return res.status(400).json({ error: 'Podaj swoje dane logowania NAS, aby wyświetlić kopie.' });
+        try {
+            const credentials = destination.provider === 'webdav' ? { username: String(req.body.username), password: String(req.body.password) } : yield (0, cloudBackupTransfer_1.refreshOAuthCredentials)(prisma, destination);
+            const result = yield (0, cloudBackupTransfer_1.listCloudBackups)(destination, credentials);
+            if (!result.ok)
+                return res.status(result.status).json({ error: result.error });
+            res.json({ backups: result.backups });
+        }
+        catch (error) {
+            console.error('[backup] cloud list:', error);
+            res.status(502).json({ error: 'Nie udało się pobrać listy kopii.' });
+        }
+    }));
     router.post('/cloud/latest', (0, backupMfa_1.requireBackupMfa)('cloud/latest'), (req, res) => __awaiter(this, void 0, void 0, function* () {
-        var _a, _b, _c, _d, _e, _f, _g, _h;
+        var _a, _b, _c;
         if (!(yield isPremium(prisma, res)))
             return res.status(402).json({ code: 'PREMIUM_REQUIRED', error: 'Okres próbny kopii do chmury jest niedostępny lub zakończył się. Wybierz Premium.' });
         const destination = yield prisma.backupDestination.findUnique({ where: { ownerKey: (0, premium_1.billingOwnerKey)(res) } });
@@ -368,97 +287,41 @@ function createBackupRouter(prisma) {
         if (destination.provider === 'webdav' && (!((_a = req.body) === null || _a === void 0 ? void 0 : _a.username) || !((_b = req.body) === null || _b === void 0 ? void 0 : _b.password)))
             return res.status(400).json({ error: 'Podaj swoje dane logowania NAS, aby pobrać kopię.' });
         try {
-            const credentials = destination.provider === 'webdav' ? { username: String(req.body.username), password: String(req.body.password) } : yield refreshOAuthCredentials(prisma, destination);
-            let filename = '';
-            if (destination.provider === 'dropbox') {
-                const response = yield fetch('https://api.dropboxapi.com/2/files/list_folder', { method: 'POST', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ path: destination.remoteFolder ? `/${destination.remoteFolder.replace(/^\/+|\/+$/g, '')}` : '', recursive: false }) });
-                const payload = yield response.json();
-                if (!response.ok)
-                    throw new Error('Dropbox list failed');
-                filename = ((_c = (payload.entries || []).filter(entry => { var _a; return (_a = entry.name) === null || _a === void 0 ? void 0 : _a.endsWith('.zip.enc'); }).sort((a, b) => String(b.server_modified).localeCompare(String(a.server_modified)))[0]) === null || _c === void 0 ? void 0 : _c.name) || '';
+            const requested = typeof ((_c = req.body) === null || _c === void 0 ? void 0 : _c.filename) === 'string' ? req.body.filename.trim() : '';
+            if (requested && (!requested.toLowerCase().endsWith('.zip.enc') || requested.includes('/') || requested.includes('\\') || requested === '..')) {
+                return res.status(400).json({ error: 'Nieprawidłowa nazwa kopii.' });
             }
-            else if (destination.provider === 'onedrive') {
-                const folder = destination.remoteFolder ? `/${destination.remoteFolder.replace(/^\/+|\/+$/g, '')}` : '';
-                const response = yield fetch(`https://graph.microsoft.com/v1.0/me/drive/special/approot:${folder}:/children`, { headers: { Authorization: `Bearer ${credentials.accessToken}` } });
-                const payload = yield response.json();
-                if (!response.ok)
-                    throw new Error('OneDrive list failed');
-                filename = ((_d = (payload.value || []).filter(entry => { var _a; return (_a = entry.name) === null || _a === void 0 ? void 0 : _a.endsWith('.zip.enc'); }).sort((a, b) => String(b.lastModifiedDateTime).localeCompare(String(a.lastModifiedDateTime)))[0]) === null || _d === void 0 ? void 0 : _d.name) || '';
-            }
-            else if (destination.provider === 'google-drive') {
-                const q = `name contains '.zip.enc' and trashed = false${destination.remoteFolder ? ` and '${destination.remoteFolder}' in parents` : ''}`;
-                const response = yield fetch(`https://www.googleapis.com/drive/v3/files?orderBy=modifiedTime%20desc&pageSize=1&fields=files(name)&q=${encodeURIComponent(q)}`, { headers: { Authorization: `Bearer ${credentials.accessToken}` } });
-                const payload = yield response.json();
-                if (!response.ok)
-                    throw new Error('Google Drive list failed');
-                filename = ((_f = (_e = payload.files) === null || _e === void 0 ? void 0 : _e[0]) === null || _f === void 0 ? void 0 : _f.name) || '';
-            }
-            else {
-                const base = (0, webdavFolders_1.webDavFolderUrl)(destination.endpoint, destination.remoteFolder || '');
-                const response = yield fetch(base, { method: 'PROPFIND', redirect: 'error', headers: { Depth: '1', 'Content-Type': 'application/xml', Authorization: `Basic ${Buffer.from(`${credentials.username || ''}:${credentials.password || ''}`).toString('base64')}` }, body: '<?xml version="1.0"?><propfind xmlns="DAV:"><prop><resourcetype/><getlastmodified/></prop></propfind>' });
-                if (!response.ok)
-                    return res.status(502).json({ error: `NAS nie udostępnił listy kopii (HTTP ${response.status}). Sprawdź dane logowania i dostęp do folderu.` });
-                filename = (0, webdavFolders_1.findLatestWebDavBackup)(yield response.text(), base) || '';
-            }
-            if (!filename)
-                return res.status(404).json({ error: 'Nie znaleziono zaszyfrowanej kopii.' });
-            let response;
-            if (destination.provider === 'dropbox')
-                response = yield fetch('https://content.dropboxapi.com/2/files/download', { method: 'POST', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Dropbox-API-Arg': JSON.stringify({ path: `/${destination.remoteFolder ? `${destination.remoteFolder.replace(/^\/+|\/+$/g, '')}/` : ''}${filename}` }) } });
-            else if (destination.provider === 'onedrive')
-                response = yield fetch(`https://graph.microsoft.com/v1.0/me/drive/special/approot:/${destination.remoteFolder ? `${destination.remoteFolder.replace(/^\/+|\/+$/g, '')}/` : ''}${filename}:/content`, { headers: { Authorization: `Bearer ${credentials.accessToken}` } });
-            else if (destination.provider === 'google-drive') {
-                const search = yield fetch(`https://www.googleapis.com/drive/v3/files?fields=files(id)&pageSize=1&q=${encodeURIComponent(`name = '${filename.replace(/'/g, "\\'")}' and trashed = false`)}`, { headers: { Authorization: `Bearer ${credentials.accessToken}` } });
-                const found = yield search.json();
-                if (!search.ok || !((_h = (_g = found.files) === null || _g === void 0 ? void 0 : _g[0]) === null || _h === void 0 ? void 0 : _h.id))
-                    throw new Error('Google Drive file not found');
-                response = yield fetch(`https://www.googleapis.com/drive/v3/files/${found.files[0].id}?alt=media`, { headers: { Authorization: `Bearer ${credentials.accessToken}` } });
-            }
-            else
-                response = yield fetch((0, webdavFolders_1.webDavFileUrl)(destination.endpoint, destination.remoteFolder || '', filename), { redirect: 'error', headers: { Authorization: `Basic ${Buffer.from(`${credentials.username || ''}:${credentials.password || ''}`).toString('base64')}` } });
-            if (!response.ok)
-                return res.status(502).json({ error: `Nie udało się pobrać kopii (HTTP ${response.status}).` });
+            const credentials = destination.provider === 'webdav' ? { username: String(req.body.username), password: String(req.body.password) } : yield (0, cloudBackupTransfer_1.refreshOAuthCredentials)(prisma, destination);
+            const result = yield (0, cloudBackupTransfer_1.downloadCloudBackup)(destination, credentials, requested);
+            if (!result.ok)
+                return res.status(result.status).json({ error: result.error });
             res.setHeader('Content-Type', 'application/octet-stream');
             res.setHeader('Content-Disposition', 'attachment; filename="eteczka-cloud-backup.zip.enc"');
-            res.send(Buffer.from(yield response.arrayBuffer()));
+            res.send(result.buffer);
         }
         catch (error) {
             console.error('[backup] cloud download:', error);
             res.status(502).json({ error: 'Nie udało się pobrać kopii z chmury.' });
         }
     }));
-    router.get('/export', (0, backupMfa_1.requireBackupMfa)('export'), (req, res) => __awaiter(this, void 0, void 0, function* () {
-        const currentOwner = ownerId(res);
-        const folders = yield prisma.folder.findMany({ where: { ownerId: currentOwner }, orderBy: { id: 'asc' } });
-        const documents = yield prisma.document.findMany({ where: { folder: { ownerId: currentOwner } }, include: { tags: { include: { tag: true } } }, orderBy: { id: 'asc' } });
-        const files = backupFiles(documents);
+    router.get('/export', (0, backupMfa_1.requireBackupMfa)('export'), (_req, res) => __awaiter(this, void 0, void 0, function* () {
         try {
-            requireBackupFiles(files);
+            const { manifest, files } = yield (0, cloudBackupTransfer_1.buildBackupArchive)(prisma, ownerId(res), (0, ocrPremium_1.ocrOwnerKey)(res));
+            res.statusCode = 200;
+            res.setHeader('Content-Type', 'application/zip');
+            res.setHeader('Content-Disposition', `attachment; filename="eteczka-backup-${new Date().toISOString().slice(0, 10)}.zip"`);
+            const archive = new archiver.ZipArchive({ zlib: { level: 6 } });
+            archive.on('error', (error) => { if (!res.headersSent)
+                res.status(500); res.end(); console.error('[backup] export:', error); });
+            archive.pipe(res);
+            archive.append(JSON.stringify(manifest), { name: 'manifest.json' });
+            for (const file of files)
+                archive.file(file.source, { name: file.archiveName });
+            yield archive.finalize();
         }
         catch (error) {
             return res.status(409).json({ error: error instanceof Error ? error.message : 'Brak pliku dokumentu.' });
         }
-        const manifest = {
-            version: 1,
-            exportedAt: new Date().toISOString(),
-            planState: yield (0, planLedger_1.exportPlanState)(prisma, (0, ocrPremium_1.ocrOwnerKey)(res)),
-            folders,
-            documents: documents.map((_a) => {
-                var { tags } = _a, document = __rest(_a, ["tags"]);
-                return (Object.assign(Object.assign({}, document), { tags: tags.map(({ tag }) => tag) }));
-            }),
-        };
-        res.statusCode = 200;
-        res.setHeader('Content-Type', 'application/zip');
-        res.setHeader('Content-Disposition', `attachment; filename="eteczka-backup-${new Date().toISOString().slice(0, 10)}.zip"`);
-        const archive = new archiver.ZipArchive({ zlib: { level: 6 } });
-        archive.on('error', (error) => { if (!res.headersSent)
-            res.status(500); res.end(); console.error('[backup] export:', error); });
-        archive.pipe(res);
-        archive.append(JSON.stringify(manifest), { name: 'manifest.json' });
-        for (const file of files)
-            archive.file(file.source, { name: file.archiveName });
-        yield archive.finalize();
     }));
     router.post('/restore', (0, backupMfa_1.requireBackupMfa)('restore'), upload.single('backup'), (req, res) => __awaiter(this, void 0, void 0, function* () {
         var _a, _b;
@@ -482,6 +345,18 @@ function createBackupRouter(prisma) {
             res.status(400).json({ error: error instanceof Error ? error.message : 'Nie udało się przywrócić kopii zapasowej.' });
         }
     }));
+    router.post('/import-external', upload.single('archive'), (req, res) => __awaiter(this, void 0, void 0, function* () {
+        if (!req.file)
+            return res.status(400).json({ error: 'Wybierz plik archiwum ZIP do zaimportowania.' });
+        try {
+            const result = yield (0, externalImport_1.importExternalArchive)(prisma, req.file.buffer, ownerId(res), res.locals.userId ? ownerId(res) : null, undefined, (0, ocrPremium_1.ocrOwnerKey)(res));
+            res.json(Object.assign({ success: true }, result));
+        }
+        catch (error) {
+            console.error('[backup] import-external:', error);
+            res.status(400).json({ error: error instanceof Error ? error.message : 'Nie udało się zaimportować archiwum.' });
+        }
+    }));
     return router;
 }
 /** Public OAuth callback. Ownership is recovered from the short-lived state token. */
@@ -493,12 +368,12 @@ function createBackupOAuthCallbackRouter(prisma) {
         oauthStates.delete(state);
         if (!context || context.expiresAt < Date.now())
             return res.status(400).send('Sesja OAuth wygasła. Wróć do E‑Teczki i spróbuj ponownie.');
-        const config = oauthConfig[context.provider];
+        const config = cloudBackupTransfer_1.oauthConfig[context.provider];
         const code = String(req.query.code || '');
         if (!config || !code)
             return res.status(400).send('Brak kodu autoryzacji OAuth.');
         try {
-            const body = new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: oauthCallbackUrl(), client_id: config.clientId, client_secret: config.clientSecret });
+            const body = new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: (0, cloudBackupTransfer_1.oauthCallbackUrl)(), client_id: config.clientId, client_secret: config.clientSecret });
             const tokenResponse = yield fetch(config.token, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
             const tokens = yield tokenResponse.json();
             if (!tokenResponse.ok || !tokens.access_token)
@@ -507,7 +382,7 @@ function createBackupOAuthCallbackRouter(prisma) {
             res.type('html').send('<!doctype html><meta charset="utf-8"><title>E‑Teczka</title><h2>Chmura została połączona.</h2><p>Możesz zamknąć tę kartę i wrócić do E‑Teczki.</p>');
         }
         catch (_a) {
-            res.status(502).send('Nie udało się zapisać połączenia z chmurą.');
+            res.status(502).send('Nie udało się zapisać połączenia chmury.');
         }
     }));
     return router;

@@ -26,8 +26,22 @@ function createMariaGoogleAccounts({ pool, verifyGoogle, getSession, now = Date.
       if (!account) {
         const email = emailKey(identity.email);
         if (!emailValid(email)) throw new Error('INVALID_INPUT');
-        if (await first(pool, 'SELECT id FROM accounts WHERE email = ?', [email])) throw new Error('ACCOUNT_LINK_REQUIRED');
         account = await transaction(pool, async db => {
+          const existing = await first(db, 'SELECT * FROM accounts WHERE email = ? FOR UPDATE', [email]);
+          if (existing) {
+            // Only Gmail is authoritative here. Third-party addresses still require explicit linking.
+            if (!email.endsWith('@gmail.com')) throw new Error('ACCOUNT_LINK_REQUIRED');
+            if (!existing.verified) {
+              // A pre-registration must not leave its unproven password or recovery links usable.
+              await execute(db, 'UPDATE accounts SET verified = 1, password_hash = NULL WHERE id = ?', [existing.id]);
+              await execute(db, 'DELETE FROM verifications WHERE account_id = ?', [existing.id]);
+              await execute(db, 'DELETE FROM password_resets WHERE account_id = ?', [existing.id]);
+              await execute(db, 'DELETE FROM sessions WHERE account_id = ?', [existing.id]);
+              existing.verified = 1; existing.password_hash = null;
+            }
+            await execute(db, 'INSERT INTO identities (provider, subject, account_id) VALUES (?, ?, ?)', ['google', identity.subject, existing.id]);
+            return existing;
+          }
           const result = await execute(
             db,
             'INSERT INTO accounts (public_id, email, name, verified, created_at) VALUES (?, ?, ?, 1, ?)',

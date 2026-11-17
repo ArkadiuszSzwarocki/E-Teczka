@@ -37,10 +37,13 @@ function createPrinterScanRouter(prisma) {
     }));
     router.post('/', (req, res) => __awaiter(this, void 0, void 0, function* () {
         var _a, _b;
-        const folderId = Number((_a = req.body) === null || _a === void 0 ? void 0 : _a.folderId);
+        const rawFolderId = (_a = req.body) === null || _a === void 0 ? void 0 : _a.folderId;
+        if (rawFolderId !== undefined && rawFolderId !== null && rawFolderId !== '') {
+            const folderId = Number(rawFolderId);
+            if (!(yield prisma.folder.findFirst({ where: { id: folderId, ownerId: Number(res.locals.userId || 1), parentId: { not: null } }, select: { id: true } })))
+                return res.status(400).json({ error: 'Wybierz własną podkartotekę docelową.' });
+        }
         const requestedDeviceId = String(((_b = req.body) === null || _b === void 0 ? void 0 : _b.deviceId) || '');
-        if (!(yield prisma.folder.findFirst({ where: { id: folderId, ownerId: Number(res.locals.userId || 1), parentId: { not: null } }, select: { id: true } })))
-            return res.status(400).json({ error: 'Wybierz własną podkartotekę docelową.' });
         if (activeJobId)
             return res.status(409).json({ error: 'Na komputerze trwa już inne skanowanie.' });
         let deviceNumber;

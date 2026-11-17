@@ -59,8 +59,19 @@ frontend/dev-launch.err
 # Local sign-in MFA secret store
 backend/security/account-login-mfa.enc
 backend/security/account-login-mfa.enc.*.tmp
+backend/security/hello-credentials.enc
+backend/security/hello-credentials.enc.tmp
+backend/security/central-entitlements.enc
+backend/security/central-entitlements.enc.tmp
+backend/security/central-plan-journal.enc
+backend/security/central-plan-journal.enc.tmp
 
 # Local runtime state and deployment artifacts
 /security/
 backend/security/developer-plan-catalog.json
+backend/security/central-plan-catalog.cache.json
 /share-service-test.tar
+
+backend/security/central-plan-snapshots.enc
+backend/security/central-plan-snapshots.enc.tmp
+

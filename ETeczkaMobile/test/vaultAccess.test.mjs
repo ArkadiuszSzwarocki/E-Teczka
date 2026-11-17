@@ -9,7 +9,7 @@ function vault(){
  const values=new Map();let clock=Date.now();
  const secure={getItemAsync:async key=>values.get(key)||null,setItemAsync:async(key,value)=>values.set(key,value),deleteItemAsync:async key=>values.delete(key)};
  const filesystem={documentDirectory:'test/',makeDirectoryAsync:async()=>{},writeAsStringAsync:async()=>{}};
- const mocks={'expo-secure-store':secure,'expo-file-system/legacy':filesystem,'expo-crypto':{CryptoDigestAlgorithm:{SHA256:'sha256'},digestStringAsync:async(_,value)=>crypto.createHash('sha256').update(value).digest('hex'),getRandomBytesAsync:async size=>crypto.randomBytes(size)},'./offlineChunks':{createOfflineChunkStore:()=>({})},'./offlineChunkCodec':{createOfflineChunkCodec:()=>({})}};
+ const mocks={'./mobileProfile':{profileKey:key=>key,profileDirectory:value=>value,profileCacheDirectory:()=> 'cache/',profileOperation:fn=>fn},'expo-secure-store':secure,'expo-file-system/legacy':filesystem,'expo-crypto':{CryptoDigestAlgorithm:{SHA256:'sha256'},digestStringAsync:async(_,value)=>crypto.createHash('sha256').update(value).digest('hex'),getRandomBytesAsync:async size=>crypto.randomBytes(size)},'./offlineChunks':{createOfflineChunkStore:()=>({})},'./offlineChunkCodec':{createOfflineChunkCodec:()=>({})}};
  const source=fs.readFileSync(new URL('../src/services/offlineVault.ts',import.meta.url),'utf8');
  const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,esModuleInterop:true,target:ts.ScriptTarget.ES2022}}).outputText;
  const module={exports:{}};

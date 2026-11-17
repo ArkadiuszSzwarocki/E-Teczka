@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Alert, FlatList, Platform, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, DeviceEventEmitter, FlatList, Platform, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useIsFocused, useNavigation } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
@@ -12,11 +12,15 @@ import RestoreDestinationPicker, { type RestoreUnit } from "../components/Restor
 import EmptyTrashConfirmation from "../components/EmptyTrashConfirmation";
 
 type Mode = "archive" | "trash";
+type ArchiveFolder = { id: string; name: string; parentId: string | null; icon: string; order: number };
+type ArchiveWorkspace = { folders: ArchiveFolder[]; docFolderMap: Record<string, string | null> };
 export default function DocumentListScreen({ mode }: { mode: Mode }) {
   const isFocused = useIsFocused();
   const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList>>();
   const rootNavigation = navigation.getParent<NativeStackNavigationProp<RootStackParamList>>();
   const [documents, setDocuments] = useState<RetentionDocument[]>([]);
+  const [archiveWs, setArchiveWs] = useState<ArchiveWorkspace>({ folders: [], docFolderMap: {} });
+  const [currentArchiveFolderId, setCurrentArchiveFolderId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [customValue, setCustomValue] = useState("");
@@ -32,16 +36,30 @@ export default function DocumentListScreen({ mode }: { mode: Mode }) {
 
   const load = useCallback(async () => {
     try {
-      const response = await fetchWithTimeout(await getApiUrl("/api/documents"), { headers: await getAuthHeaders() }, 10000, "Pobieranie dokumentów");
+      const headers = await getAuthHeaders();
+      const [response, wsResponse] = await Promise.all([
+        fetchWithTimeout(await getApiUrl("/api/documents"), { headers }, 10000, "Pobieranie dokumentów"),
+        mode === "archive"
+          ? fetchWithTimeout(await getApiUrl("/api/archive-workspace"), { headers }, 10000, "Pobieranie archiwum").catch(() => null)
+          : Promise.resolve(null),
+      ]);
       if (!response.ok) throw new Error("Komputer nie udostępnił listy dokumentów.");
       const payload: unknown = await response.json();
       if (!Array.isArray(payload)) throw new Error("Nieprawidłowa lista dokumentów.");
       const all = payload.filter(isRetentionDocument);
       setDocuments(all.filter(document => mode === "archive" ? document.isArchived && !document.isDeleted : document.isDeleted));
+      if (wsResponse && wsResponse.ok) {
+        const wsPayload = (await wsResponse.json().catch(() => null)) as ArchiveWorkspace | null;
+        if (wsPayload && Array.isArray(wsPayload.folders)) setArchiveWs(wsPayload);
+      }
     } finally { setLoading(false); }
   }, [mode]);
   const refresh = useCallback(() => { setLoading(true); void load().catch(error => Alert.alert("Nie udało się pobrać dokumentów", error instanceof Error ? error.message : "Sprawdź połączenie z komputerem.")); }, [load]);
   useEffect(() => { if (isFocused) refresh(); }, [isFocused, refresh]);
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener("eteczka-sync-completed", () => { void load().catch(() => undefined); });
+    return () => sub.remove();
+  }, [load]);
   useEffect(() => { setSelectedIds([]); }, [mode]);
   const patch = async (id: number, data: Record<string, unknown>) => {
     const response = await fetchWithTimeout(await getApiUrl(`/api/documents/${id}`), { method: "PATCH", headers: { "Content-Type": "application/json", ...await getAuthHeaders() }, body: JSON.stringify(data) }, 15000, "Zapisywanie dokumentu");
@@ -88,12 +106,21 @@ export default function DocumentListScreen({ mode }: { mode: Mode }) {
   };
   const toggleSelected = (id: number) => setSelectedIds(current => current.includes(id) ? current.filter(value => value !== id) : [...current, id]);
   const openDocument = (document: RetentionDocument) => rootNavigation?.navigate("DocumentViewer", { document });
+  const archiveFolderIds = new Set(archiveWs.folders.map(f => f.id));
+  const currentArchiveFolders = isArchive ? archiveWs.folders.filter(f => f.parentId === currentArchiveFolderId).sort((a, b) => a.order - b.order) : [];
+  const visibleDocuments = isArchive ? documents.filter(doc => {
+    const mapped = archiveWs.docFolderMap?.[String(doc.id)];
+    const effective = mapped && archiveFolderIds.has(mapped) ? mapped : null;
+    return effective === currentArchiveFolderId;
+  }) : documents;
+  const activeArchiveFolder = currentArchiveFolderId ? archiveWs.folders.find(f => f.id === currentArchiveFolderId) : null;
   return <View style={styles.container}>
     <RestoreDestinationPicker visible={restoreIds !== null} count={restoreIds?.length || 0} folders={restoreFolders} selected={destinationId} busy={restoring} retentionEnabled={restoreRetentionEnabled} retentionValue={customValue} retentionUnit={customUnit} onEnabledChange={setRestoreRetentionEnabled} onValueChange={setCustomValue} onUnitChange={setCustomUnit} onSelect={setDestinationId} onCancel={() => { if (!restoring) setRestoreIds(null); }} onConfirm={() => void confirmDestination()} />
     <EmptyTrashConfirmation visible={emptyVisible} count={documents.length} busy={emptying} onCancel={() => { if (!emptying) setEmptyVisible(false); }} onConfirm={() => void emptyTrash()} />
-    <View style={styles.header}><View><Text style={styles.title}>{isArchive ? "Archiwum dokumentów" : "Kosz"}</Text><Text style={styles.subtitle}>{isArchive ? "Dokumenty odłożone do archiwum" : "Dokumenty oczekujące na usunięcie"}</Text></View><Ionicons name={isArchive ? "archive-outline" : "trash-outline"} size={30} color={isArchive ? "#f59e0b" : "#ef4444"} /></View>
-    {documents.length > 0 && <View style={styles.toolbar}><TouchableOpacity onPress={() => setSelectedIds(selectedIds.length === documents.length ? [] : documents.map(doc => doc.id))} style={styles.toolbarButton}><Text style={styles.actionText}>{selectedIds.length === documents.length ? 'Odznacz wszystkie' : 'Zaznacz wszystkie'}</Text></TouchableOpacity>{selectedIds.length > 0 && <TouchableOpacity onPress={() => void chooseDestination(selectedIds)} style={styles.restore}><Text style={styles.actionText}>Przywróć ({selectedIds.length})</Text></TouchableOpacity>}{!isArchive && <TouchableOpacity onPress={() => setEmptyVisible(true)} style={styles.delete}><Text style={styles.actionText}>Opróżnij kosz</Text></TouchableOpacity>}</View>}
-    <FlatList data={documents} keyExtractor={item => String(item.id)} contentContainerStyle={styles.list} refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} tintColor="#3b82f6" />} ListEmptyComponent={<View style={styles.empty}><Ionicons name={isArchive ? "archive-outline" : "trash-outline"} size={42} color="#475569" /><Text style={styles.emptyText}>{isArchive ? "Archiwum jest puste" : "Kosz jest pusty"}</Text></View>} renderItem={({ item }) => <View style={styles.card}><TouchableOpacity accessibilityRole="checkbox" accessibilityState={{ checked: selectedIds.includes(item.id) }} accessibilityLabel={`Zaznacz ${item.title}`} onPress={() => toggleSelected(item.id)} style={styles.checkbox}><Ionicons name={selectedIds.includes(item.id) ? 'checkbox' : 'square-outline'} size={23} color="#60a5fa" /></TouchableOpacity><TouchableOpacity activeOpacity={0.8} onPress={() => openDocument(item)} style={styles.details}><Text style={styles.documentTitle} numberOfLines={1}>{item.title}</Text><Text style={styles.date}>Data życia od: {new Date(item.createdAt).toLocaleDateString("pl-PL")}</Text></TouchableOpacity><View style={styles.actions}><TouchableOpacity onPress={() => void chooseDestination([item.id])} style={styles.restore}><Text style={styles.actionText}>Przywróć</Text></TouchableOpacity>{isArchive ? <TouchableOpacity onPress={() => void patch(item.id, { isDeleted: true }).then(load).catch(() => Alert.alert('Nie udało się przenieść do kosza', 'Sprawdź połączenie z komputerem.'))} style={styles.trash}><Ionicons name="trash-outline" size={15} color="white" /></TouchableOpacity> : <TouchableOpacity onPress={() => deletePermanently(item.id)} style={styles.delete}><Text style={styles.actionText}>Usuń</Text></TouchableOpacity>}</View></View>} />
+    <View style={styles.header}><View><Text style={styles.title}>{isArchive ? (activeArchiveFolder ? `${activeArchiveFolder.icon} ${activeArchiveFolder.name}` : "Archiwum dokumentów") : "Kosz"}</Text><Text style={styles.subtitle}>{isArchive ? "Kartoteki i dokumenty odłożone do archiwum" : "Dokumenty oczekujące na usunięcie"}</Text></View><Ionicons name={isArchive ? "archive-outline" : "trash-outline"} size={30} color={isArchive ? "#f59e0b" : "#ef4444"} /></View>
+    {isArchive && currentArchiveFolderId && <View style={styles.toolbar}><TouchableOpacity onPress={() => setCurrentArchiveFolderId(activeArchiveFolder?.parentId ?? null)} style={styles.toolbarButton}><Text style={styles.actionText}>← Wyżej</Text></TouchableOpacity><TouchableOpacity onPress={() => setCurrentArchiveFolderId(null)} style={styles.toolbarButton}><Text style={styles.actionText}>Archiwum główne</Text></TouchableOpacity></View>}
+    {visibleDocuments.length > 0 && <View style={styles.toolbar}><TouchableOpacity onPress={() => setSelectedIds(selectedIds.length === visibleDocuments.length ? [] : visibleDocuments.map(doc => doc.id))} style={styles.toolbarButton}><Text style={styles.actionText}>{selectedIds.length === visibleDocuments.length ? 'Odznacz wszystkie' : 'Zaznacz wszystkie'}</Text></TouchableOpacity>{selectedIds.length > 0 && <TouchableOpacity onPress={() => void chooseDestination(selectedIds)} style={styles.restore}><Text style={styles.actionText}>Przywróć ({selectedIds.length})</Text></TouchableOpacity>}{!isArchive && <TouchableOpacity onPress={() => setEmptyVisible(true)} style={styles.delete}><Text style={styles.actionText}>Opróżnij kosz</Text></TouchableOpacity>}</View>}
+    <FlatList data={visibleDocuments} keyExtractor={item => String(item.id)} contentContainerStyle={styles.list} refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} tintColor="#3b82f6" />} ListHeaderComponent={currentArchiveFolders.length > 0 ? <View style={{ gap: 8, marginBottom: 8 }}>{currentArchiveFolders.map(folder => <TouchableOpacity key={folder.id} onPress={() => { setSelectedIds([]); setCurrentArchiveFolderId(folder.id); }} style={styles.card}><Text style={{ fontSize: 22 }}>{folder.icon}</Text><View style={styles.details}><Text style={styles.documentTitle} numberOfLines={1}>{folder.name}</Text><Text style={styles.date}>Kartoteka archiwum</Text></View><Ionicons name="chevron-forward" size={18} color="#94a3b8" /></TouchableOpacity>)}</View> : null} ListEmptyComponent={currentArchiveFolders.length === 0 ? <View style={styles.empty}><Ionicons name={isArchive ? "archive-outline" : "trash-outline"} size={42} color="#475569" /><Text style={styles.emptyText}>{isArchive ? "Archiwum jest puste" : "Kosz jest pusty"}</Text></View> : null} renderItem={({ item }) => <View style={styles.card}><TouchableOpacity accessibilityRole="checkbox" accessibilityState={{ checked: selectedIds.includes(item.id) }} accessibilityLabel={`Zaznacz ${item.title}`} onPress={() => toggleSelected(item.id)} style={styles.checkbox}><Ionicons name={selectedIds.includes(item.id) ? 'checkbox' : 'square-outline'} size={23} color="#60a5fa" /></TouchableOpacity><TouchableOpacity activeOpacity={0.8} onPress={() => openDocument(item)} style={styles.details}><Text style={styles.documentTitle} numberOfLines={1}>{item.title}</Text><Text style={styles.date}>{isArchive ? "Archiwum (bez terminu)" : `Data życia od: ${new Date(item.createdAt).toLocaleDateString("pl-PL")}`}</Text></TouchableOpacity><View style={styles.actions}><TouchableOpacity onPress={() => void chooseDestination([item.id])} style={styles.restore}><Text style={styles.actionText}>Przywróć</Text></TouchableOpacity>{isArchive ? <TouchableOpacity onPress={() => void patch(item.id, { isDeleted: true }).then(load).catch(() => Alert.alert('Nie udało się przenieść do kosza', 'Sprawdź połączenie z komputerem.'))} style={styles.trash}><Ionicons name="trash-outline" size={15} color="white" /></TouchableOpacity> : <TouchableOpacity onPress={() => deletePermanently(item.id)} style={styles.delete}><Text style={styles.actionText}>Usuń</Text></TouchableOpacity>}</View></View>} />
   </View>;
 }
 
