@@ -31,12 +31,35 @@ const backend = createBackendLifecycle({
   ipcMain, BrowserWindow, ownRenderer: windowCtrl.ownRenderer, rootDir: __dirname, resolveEnv: trustedDb.resolveEnv,
 });
 
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    const win = BrowserWindow.getAllWindows()[0];
+    if (win) {
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+    } else {
+      windowCtrl.createWindow();
+    }
+  });
+}
+
 app.whenReady().then(async () => {
+  if (!gotSingleInstanceLock) return;
   await windowCtrl.createTray();
   if (process.env.ETECZKA_EXTERNAL_BACKEND !== '1' && !(await backend.backendAvailable())) {
     backend.startBackend();
   }
   setTimeout(() => backend.waitForServer(windowCtrl.createWindow), 1000);
+});
+
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) {
+    windowCtrl.createWindow();
+  }
 });
 
 app.on('before-quit', () => {

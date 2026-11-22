@@ -7,6 +7,7 @@ import DocumentScanner, { ResponseType, ScanDocumentResponseStatus } from "react
 import { useRoute, useNavigation, type RouteProp } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import { getApiUrl, getAuthHeaders } from "../services/localConnection";
+import { loadCachedFolders } from "../services/offlineCatalog";
 import { clearScanDraft, loadScanDraft, saveScanDraft } from "../services/scanDraft";
 import { fetchPrinterDevices, scanPrinterPage, type PrinterDevice } from "../services/printerScan";
 import { uploadScanDocument } from "../services/mobileScanUpload";
@@ -65,7 +66,14 @@ export default function ScannerScreen() {
         const response = await fetch(await getApiUrl("/api/folders"), { headers: await getAuthHeaders() });
         const data: unknown = await response.json();
         setFolderChoices(Array.isArray(data) ? data.filter((folder): folder is FolderSummary => Boolean(folder) && typeof folder === "object" && typeof (folder as FolderSummary).id === "number" && typeof (folder as FolderSummary).name === "string") : []);
-      } catch { Alert.alert("Nie udało się pobrać kartotek", "Sprawdź połączenie z komputerem E‑Teczka."); }
+      } catch {
+        const cached = await loadCachedFolders().catch(() => [] as FolderSummary[]);
+        if (cached.length > 0) {
+          setFolderChoices(cached);
+        } else {
+          Alert.alert("Nie udało się pobrać kartotek", "Sprawdź połączenie z komputerem MojaTeczka lub zsynchronizuj kartoteki offline.");
+        }
+      }
     })();
   }, [targetFolderId]);
 
@@ -78,25 +86,30 @@ export default function ScannerScreen() {
       setIsProcessing(true);
       setProcessingLabel("Otwieranie aparatu…");
       const result = await DocumentScanner.scanDocument({
-        maxNumDocuments: 1,
+        maxNumDocuments: 20,
         croppedImageQuality: 70,
         responseType: ResponseType.ImageFilePath,
       });
-      if (result.status !== ScanDocumentResponseStatus.Success || !result.scannedImages?.[0]) return;
-      setProcessingLabel("Optymalizowanie skanu (WebP 1200px)…");
-      let localUri = `${FileSystem.documentDirectory}scan_draft_${Date.now()}.webp`;
-      try {
-        const manipulated = await ImageManipulator.manipulateAsync(
-          result.scannedImages[0],
-          [{ resize: { width: 1200 } }],
-          { compress: 0.7, format: ImageManipulator.SaveFormat.WEBP },
-        );
-        await FileSystem.copyAsync({ from: manipulated.uri, to: localUri });
-      } catch {
-        localUri = `${FileSystem.documentDirectory}scan_draft_${Date.now()}.jpg`;
-        await FileSystem.copyAsync({ from: result.scannedImages[0], to: localUri });
+      if (result.status !== ScanDocumentResponseStatus.Success || !result.scannedImages?.length) return;
+      setProcessingLabel(`Optymalizowanie skanu (${result.scannedImages.length} str.)…`);
+      const addedUris: string[] = [];
+      for (let idx = 0; idx < result.scannedImages.length; idx += 1) {
+        const rawImg = result.scannedImages[idx];
+        let localUri = `${FileSystem.documentDirectory}scan_draft_${Date.now()}_${idx}.webp`;
+        try {
+          const manipulated = await ImageManipulator.manipulateAsync(
+            rawImg,
+            [{ resize: { width: 1200 } }],
+            { compress: 0.7, format: ImageManipulator.SaveFormat.WEBP },
+          );
+          await FileSystem.copyAsync({ from: manipulated.uri, to: localUri });
+        } catch {
+          localUri = `${FileSystem.documentDirectory}scan_draft_${Date.now()}_${idx}.jpg`;
+          await FileSystem.copyAsync({ from: rawImg, to: localUri });
+        }
+        addedUris.push(localUri);
       }
-      const nextPages = [...pages, localUri];
+      const nextPages = [...pages, ...addedUris];
       setPages(nextPages);
       const nextTitle = title || `Skan ${new Date().toLocaleDateString("pl-PL")}`;
       if (!title) setTitle(nextTitle);
@@ -147,7 +160,7 @@ export default function ScannerScreen() {
       Alert.alert("Dokument zapisany", `Scalono ${pages.length} ${pages.length === 1 ? "stronę" : "stron"} do jednego PDF i zapisano w kartotece. ${result.pdfa ? "Zgodność PDF/A‑2b potwierdzona." : result.pdfaWarning || ""}`, [
         { text: "OK", onPress: () => navigation.navigate("Kartoteki") },
       ]);
-      setPages([]); uploadId.current = null;
+      setPages([]); setTitle(""); setRetentionEnabled(false); uploadId.current = null;
     } catch (error: unknown) {
       Alert.alert("Nie udało się zapisać", errorMessage(error, "Spróbuj ponownie."));
     } finally {

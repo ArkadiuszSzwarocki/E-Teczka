@@ -151,7 +151,15 @@ export function createDocumentRouter(prisma: PrismaClient, ocrQueue?: ReturnType
       const records = await prisma.document.findMany({
         where,
         orderBy: { createdAt: 'desc' },
-        include: { tags: { include: { tag: true } }, user: { select: { name: true, email: true } } },
+        select: {
+          id: true, title: true, filePath: true, mimeType: true, folderId: true, userId: true,
+          thumbnail: true, retentionEnabled: true, retentionValue: true, retentionUnit: true,
+          isArchived: true, isDeleted: true, deletedAt: true, physicalLocation: true,
+          merchantName: true, amountCents: true, currency: true, dueDate: true, paymentStatus: true,
+          createdAt: true, updatedAt: true,
+          tags: { include: { tag: true } },
+          user: { select: { name: true, email: true } },
+        },
       });
       const plan = await getPlan(prisma, ocrOwnerKey(res));
       const active = await activeDocumentIds(prisma, ownerId(res), plan);
@@ -159,8 +167,7 @@ export function createDocumentRouter(prisma: PrismaClient, ocrQueue?: ReturnType
       res.json(records.map((document) => {
         let fileSize = 0;
         try { fileSize = fs.statSync(path.join(uploadsDir, document.filePath)).size; } catch {}
-        const { ocrText: _ocrText, ...metadata } = document;
-        return { ...metadata, fileSize, readOnly: active !== null && !active.has(document.id), tags: metadata.tags.map(entry => ({ ...entry, tag: { ...entry.tag, inactive: activeTags !== null && !activeTags.has(entry.tagId) } })) };
+        return { ...document, fileSize, readOnly: active !== null && !active.has(document.id), tags: document.tags.map(entry => ({ ...entry, tag: { ...entry.tag, inactive: activeTags !== null && !activeTags.has(entry.tagId) } })) };
       }));
     } catch (error: unknown) {
       const details = errorMessage(error);

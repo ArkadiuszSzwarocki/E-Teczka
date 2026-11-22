@@ -109,7 +109,7 @@ export async function applyCheckoutSession(prisma: PrismaClient, stripe: Stripe,
   const planLabels: Record<string, string> = { standard: 'Standard', premium: 'Premium', family: 'Rodzinny', business: 'Firmowy' };
   await prisma.subscription.upsert({
     where: { ownerKey: currentOwner },
-    create: { ownerKey: currentOwner, providerCustomerId: customerId, providerSubscriptionId: subscriptionId, plan, status: stripeSubscription.status },
+    create: { ownerKey: currentOwner, providerCustomerId: customerId, providerSubscriptionId: subscriptionId, plan, status: stripeSubscription.status, currentPeriodEnd: periodEnd(stripeSubscription.items.data[0]?.current_period_end) },
     update: { providerCustomerId: customerId, providerSubscriptionId: subscriptionId, plan, status: stripeSubscription.status, cancelAtPeriodEnd: false, currentPeriodEnd: periodEnd(stripeSubscription.items.data[0]?.current_period_end) },
   });
   await recordBillingTransaction(prisma, {
@@ -269,7 +269,7 @@ export async function processStripeWebhookEvent(prisma: PrismaClient, stripe: St
     if (!subscriptionId) return;
     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
     const key = subscription.metadata?.ownerKey;
-    if (!key || !['past_due', 'unpaid', 'incomplete'].includes(subscription.status)) return;
+    if (!key || !['unpaid', 'incomplete_expired'].includes(subscription.status)) return;
     const current = await prisma.subscription.findUnique({ where: { ownerKey: key } });
     if (current?.providerSubscriptionId && current.providerSubscriptionId !== subscription.id) return;
     await prisma.subscription.upsert({

@@ -56,7 +56,7 @@ function createBackendLifecycle({ ipcMain, BrowserWindow, ownRenderer, rootDir, 
         response.on('end', () => {
           try {
             const info = JSON.parse(body);
-            resolve(response.statusCode === 200 && info.port === 3000 && Array.isArray(info.addresses));
+            resolve(response.statusCode === 200 && (info.port === 3000 || info.port === 3443) && Array.isArray(info.addresses));
           } catch { resolve(false); }
         });
       });

@@ -46,6 +46,10 @@ async function queueOfflineChangeImpl(change: Omit<PendingChange, "queuedAt">) {
   return exclusive(async () => {
     const state = await readState();
     const id = Number(change.value.id);
+    const existingIdx = state.queue.findIndex(item => item.entity === change.entity && Number(item.value.id) === id && item.operation === 'updated');
+    const mergedValue = change.operation === 'updated' && existingIdx >= 0
+      ? { ...state.queue[existingIdx].value, ...change.value }
+      : change.value;
     state.queue = state.queue.filter(item => !(item.entity === change.entity && Number(item.value.id) === id && item.operation !== "created"));
     if (change.entity === 'documents' && (change.operation === 'deleted' || change.value.isDeleted === true)) {
       const fileName = typeof change.value.title === 'string' ? change.value.title : undefined;
@@ -59,7 +63,7 @@ async function queueOfflineChangeImpl(change: Omit<PendingChange, "queuedAt">) {
       }
       state.pendingUploads = keptUploads;
     }
-    state.queue.push({ ...change, queuedAt: new Date().toISOString() });
+    state.queue.push({ ...change, value: mergedValue, queuedAt: new Date().toISOString() });
     await writeState(state);
   });
 }
@@ -222,9 +226,45 @@ async function moveChangeToConflicts(state: SyncState, change: PendingChange, re
 function newer(remote: Record<string, unknown>, local?: Record<string, unknown>) { if (!local) return true; const r = Date.parse(String(remote.updatedAt || remote.createdAt || 0)); const l = Date.parse(String(local.updatedAt || local.createdAt || 0)); return Number.isFinite(r) && Number.isFinite(l) ? r >= l : true; }
 async function mergeRemote(changes: any, state: SyncState) {
   const folders = [...(changes?.folders?.created || []), ...(changes?.folders?.updated || [])] as FolderSummary[];
-  if (folders.length) { const current = await loadCachedFolders(); const map = new Map(current.map(item => [item.id, item])); for (const folder of folders) { const pending = state.queue.find(item => item.entity === "folders" && Number(item.value.id) === folder.id); if (!pending || newer(folder, pending.value)) map.set(folder.id, folder); else state.conflicts++; } await saveCachedFolders([...map.values()]); }
+  const deletedFolderIds = new Set<number>(
+    ((changes?.folders?.deleted || []) as Array<{ id?: number } | number>)
+      .map(entry => (typeof entry === 'number' ? entry : Number(entry?.id)))
+      .filter(id => Number.isInteger(id) && id > 0),
+  );
+  const currentFolders = await loadCachedFolders();
+  if (folders.length || deletedFolderIds.size > 0) {
+    const map = new Map(currentFolders.map(item => [item.id, item]));
+    for (const delId of deletedFolderIds) map.delete(delId);
+    for (const folder of folders) {
+      const pending = state.queue.find(item => item.entity === "folders" && Number(item.value.id) === folder.id);
+      if (!pending || newer(folder, pending.value)) map.set(folder.id, folder);
+      else state.conflicts++;
+    }
+    await saveCachedFolders([...map.values()]);
+  }
+  const knownFolderIds = Array.from(new Set([...currentFolders.map(f => f.id), ...folders.map(f => f.id)]));
   const docs = [...(changes?.documents?.created || []), ...(changes?.documents?.updated || [])] as RetentionDocument[];
-  for (const doc of docs) { const folderId = Number(doc.folderId); if (!folderId) continue; const current = await loadCachedDocuments(folderId); const map = new Map(current.map(item => [item.id, item])); const pending = state.queue.find(item => item.entity === "documents" && Number(item.value.id) === doc.id); if (!pending || newer(doc as any, pending.value)) { if (doc.isDeleted) map.delete(doc.id); else map.set(doc.id, doc); } else state.conflicts++; await saveCachedDocuments(folderId, [...map.values()]); }
+  for (const doc of docs) {
+    const folderId = Number(doc.folderId);
+    if (!folderId) continue;
+    const pending = state.queue.find(item => item.entity === "documents" && Number(item.value.id) === doc.id);
+    if (pending && !newer(doc as any, pending.value)) {
+      state.conflicts++;
+      continue;
+    }
+    for (const otherId of knownFolderIds) {
+      if (otherId === folderId) continue;
+      const otherDocs = await loadCachedDocuments(otherId);
+      if (otherDocs.some(d => d.id === doc.id)) {
+        await saveCachedDocuments(otherId, otherDocs.filter(d => d.id !== doc.id));
+      }
+    }
+    const current = await loadCachedDocuments(folderId);
+    const map = new Map(current.map(item => [item.id, item]));
+    if (doc.isDeleted || doc.isArchived) map.delete(doc.id);
+    else map.set(doc.id, doc);
+    await saveCachedDocuments(folderId, [...map.values()]);
+  }
 }
 async function syncNowImpl() { return exclusive(syncNowLocked); }
 async function syncOfflineCatalogImpl(folderIds: number[]) {

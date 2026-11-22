@@ -20,9 +20,13 @@ export function createOcrQueue(prisma: PrismaClient, options: Options) {
   function read(): Job[] {
     let value: string;
     try { value = fs.readFileSync(options.file, 'utf8'); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []; throw error; }
-    const result = JSON.parse(decrypt(value)) as unknown;
-    if (!Array.isArray(result)) throw new Error('Nie można odczytać kolejki OCR.');
-    return result as Job[];
+    try {
+      const result = JSON.parse(decrypt(value)) as unknown;
+      return Array.isArray(result) ? (result as Job[]) : [];
+    } catch {
+      console.error('[ocr] Uszkodzony plik kolejki OCR — zresetowano stan kolejki.');
+      return [];
+    }
   }
   function write(jobs: Job[]) {
     fs.mkdirSync(path.dirname(options.file), { recursive: true });
@@ -50,9 +54,14 @@ export function createOcrQueue(prisma: PrismaClient, options: Options) {
     if (running) return;
     running = true;
     try {
-      // Interrupted work can be retried after the process restarts.
+      // Interrupted work and previously paused jobs (e.g. after upgrading to Premium) can resume.
       const jobs = read(); let changed = false;
-      for (const job of jobs) if (job.state === 'processing') { job.state = 'queued'; changed = true; }
+      for (const job of jobs) {
+        if (job.state === 'processing') { job.state = 'queued'; changed = true; }
+        else if (job.state === 'paused' && (await featureTrial(prisma, job.ownerKey, 'ocr', false)).allowed) {
+          job.state = 'queued'; job.error = undefined; changed = true;
+        }
+      }
       if (changed) write(jobs);
       for (;;) {
         const next = read().find(job => job.state === 'queued'); if (!next) break;
