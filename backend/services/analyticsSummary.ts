@@ -7,6 +7,7 @@ import { parseReceiptFromOcr } from './receiptOcrParser';
 import { getAccessibleFolderIds } from './familyAccess';
 
 const MONTH_LABELS_PL = ['STY', 'LUT', 'MAR', 'KWI', 'MAJ', 'CZE', 'LIP', 'SIE', 'WRZ', 'PAŹ', 'LIS', 'GRU'];
+const checkedNonReceiptBackfillIds = new Set<number>();
 
 function computeRetentionExpiry(createdAt: Date, value: number, unit: string): Date | null {
   const expiry = new Date(createdAt);
@@ -30,6 +31,7 @@ export async function buildAnalyticsSummary(
   const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const targetMonth = selectedMonth && /^\d{4}-\d{2}$/.test(selectedMonth) ? selectedMonth : currentMonthKey;
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
   const sixMonthsStart = new Date(now.getFullYear(), now.getMonth() - 5, 1);
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 86_400_000);
   const vaultStore = createFolderVaultStore(path.join(securityDir, 'folder-vaults.enc'));
@@ -52,10 +54,14 @@ export async function buildAnalyticsSummary(
 
   // Backfill existing OCR-processed receipts that were uploaded before line-item parsing was added.
   const documents = await Promise.all(rawDocuments.map(async doc => {
-    if (!allowReceiptInvoiceReading || !doc.ocrText || doc.lineItems.length > 0) return doc;
+    if (!allowReceiptInvoiceReading || !doc.ocrText || doc.lineItems.length > 0 || checkedNonReceiptBackfillIds.has(doc.id)) return doc;
     try {
       const parsed = parseReceiptFromOcr(readOcrText(doc.ocrText));
-      if (!parsed.isReceipt) return doc;
+      if (!parsed.isReceipt) {
+        if (checkedNonReceiptBackfillIds.size > 5000) checkedNonReceiptBackfillIds.clear();
+        checkedNonReceiptBackfillIds.add(doc.id);
+        return doc;
+      }
       await prisma.document.update({
         where: { id: doc.id },
         data: {
@@ -139,14 +145,15 @@ export async function buildAnalyticsSummary(
       categoryCounts.set(root.name, entry);
     }
 
-    if (typeof doc.amountCents === 'number' && doc.amountCents > 0) {
+    const docCurrency = (doc.currency || 'PLN').toUpperCase();
+    if (typeof doc.amountCents === 'number' && doc.amountCents !== 0 && docCurrency === 'PLN') {
       const refDate = doc.dueDate || doc.createdAt;
-      if (refDate >= monthStart) {
+      if (refDate >= monthStart && refDate < monthEnd) {
         totalCents += doc.amountCents;
         if (doc.paymentStatus === 'paid') paidCents += doc.amountCents;
         else unpaidCents += doc.amountCents;
       }
-      if (refDate >= sixMonthsStart) {
+      if (refDate >= sixMonthsStart && refDate < monthEnd) {
         const key = `${refDate.getFullYear()}-${String(refDate.getMonth() + 1).padStart(2, '0')}`;
         if (monthlyTotals.has(key)) monthlyTotals.set(key, (monthlyTotals.get(key) || 0) + doc.amountCents);
       }

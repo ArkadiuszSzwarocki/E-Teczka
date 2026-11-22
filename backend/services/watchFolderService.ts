@@ -81,13 +81,14 @@ async function ingestWatchBuffer(
   sourceLabel: string,
   receivedAt: Date,
   uidOffset: number,
+  allowKsef = false,
 ): Promise<boolean> {
   if (!buffer.length || buffer.length > MAX_BYTES) return false;
   const ext = path.extname(name).toLowerCase();
   if (!ALLOWED_EXT.has(ext)) return false;
 
   const pdfText = ext === '.pdf' ? await extractQuickPdfText(buffer) : '';
-  const ksefText = ext === '.xml' ? (parseKsefXml(buffer.toString('utf8'))?.summaryText || '') : '';
+  const ksefText = ext === '.xml' && allowKsef ? (parseKsefXml(buffer.toString('utf8'))?.summaryText || '') : '';
   const eReceiptText = ext === '.json' ? (parseEReceiptPayload(buffer.toString('utf8'))?.summaryText || '') : '';
   const extractedText = [name, pdfText, ksefText, eReceiptText].filter(Boolean).join('\n');
   const learnedBoosts = getLearnedFolderBoosts(ownerId, extractedText);
@@ -117,7 +118,7 @@ async function ingestWatchBuffer(
 }
 
 /** Scans the configured local Watch Folder, classifies files offline, and moves them to staging. */
-export async function scanWatchFolder(prisma: PrismaClient, ownerId: number): Promise<{ added: number; items: MailInboxItem[] }> {
+export async function scanWatchFolder(prisma: PrismaClient, ownerId: number, options?: { allowKsef?: boolean }): Promise<{ added: number; items: MailInboxItem[] }> {
   const cfg = getWatchFolderConfig(ownerId);
   if (!cfg.folderPath) throw new Error('Najpierw wskaż ścieżkę gorącego folderu.');
   if (!fs.existsSync(cfg.folderPath)) throw new Error('Wskazany gorący folder nie istnieje.');
@@ -137,7 +138,7 @@ export async function scanWatchFolder(prisma: PrismaClient, ownerId: number): Pr
     if (!ALLOWED_EXT.has(ext)) continue;
 
     const buffer = fs.readFileSync(fullPath);
-    const saved = await ingestWatchBuffer(ownerId, folders, name, buffer, cfg.folderPath, stat.mtime, added);
+    const saved = await ingestWatchBuffer(ownerId, folders, name, buffer, cfg.folderPath, stat.mtime, added, Boolean(options?.allowKsef));
     if (!saved) continue;
     fs.unlinkSync(fullPath);
     added++;
@@ -152,12 +153,13 @@ export async function ingestWatchUploadBatch(
   ownerId: number,
   sourceLabel: string,
   files: Array<{ name: string; buffer: Buffer; modifiedAt?: Date }>,
+  options?: { allowKsef?: boolean },
 ): Promise<{ added: number; items: MailInboxItem[] }> {
   const folders = await loadOwnerFolders(prisma, ownerId);
   const label = sourceLabel.trim().slice(0, 160) || 'Folder na telefonie';
   let added = 0;
   for (const file of files) {
-    const saved = await ingestWatchBuffer(ownerId, folders, file.name, file.buffer, label, file.modifiedAt || new Date(), added);
+    const saved = await ingestWatchBuffer(ownerId, folders, file.name, file.buffer, label, file.modifiedAt || new Date(), added, Boolean(options?.allowKsef));
     if (saved) added++;
   }
   return { added, items: listMailItems(ownerId) };

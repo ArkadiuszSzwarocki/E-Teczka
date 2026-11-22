@@ -81,8 +81,14 @@ services:
       - >
         while true; do
           TS=$$(date +%Y-%m-%d_%H-%M);
-          mariadb-dump -h mariadb -u "$${CENTRAL_MARIADB_USER}" -p"$${CENTRAL_MARIADB_PASSWORD}" --single-transaction "$${CENTRAL_MARIADB_DATABASE:-E-Teczka}" | gzip -9 > "/backups/accounts_$${TS}.sql.gz";
-          find /backups -name 'accounts_*.sql.gz' -mtime +14 -delete;
+          TMP="/backups/.accounts_$${TS}.sql";
+          if mariadb-dump -h mariadb -u "$${CENTRAL_MARIADB_USER}" -p"$${CENTRAL_MARIADB_PASSWORD}" --single-transaction "$${CENTRAL_MARIADB_DATABASE:-E-Teczka}" > "$${TMP}" && [ -s "$${TMP}" ]; then
+            gzip -9 "$${TMP}" && mv "$${TMP}.gz" "/backups/accounts_$${TS}.sql.gz";
+            find /backups -name 'accounts_*.sql.gz' -mtime +14 -delete;
+          else
+            rm -f "$${TMP}" "$${TMP}.gz";
+            echo "[backup] mariadb-dump failed at $${TS}" >&2;
+          fi;
           sleep 86400;
         done
     logging:

@@ -11,6 +11,7 @@ import { ocrOwnerKey } from '../services/ocrPremium';
 import { checkDocumentCapacity, getPlan } from '../services/planLedger';
 import { getWatchFolderConfig, ingestWatchUploadBatch, saveWatchFolderConfig, scanWatchFolder } from '../services/watchFolderService';
 import { createAccountantZipArchive } from '../services/accountantExport';
+import { assertUniqueDocument, DuplicateDocumentError, hashBuffer } from '../services/duplicateDocuments';
 import { parseEReceiptPayload } from '../services/eReceiptParser';
 import { protectOcrText } from '../services/ocrText';
 
@@ -61,7 +62,8 @@ export function createAutomationRouter(prisma: PrismaClient) {
   router.post('/watch-folder/scan', async (_req, res) => {
     if (!await requirePremium(res)) return;
     try {
-      const result = await scanWatchFolder(prisma, ownerIdOf(res));
+      const plan = await getPlan(prisma, ocrOwnerKey(res));
+      const result = await scanWatchFolder(prisma, ownerIdOf(res), { allowKsef: plan === 'business' });
       res.json(result);
     } catch (error) {
       res.status(400).json({ error: error instanceof Error ? error.message : 'Nie udało się przeskanować gorącego folderu.' });
@@ -76,12 +78,14 @@ export function createAutomationRouter(prisma: PrismaClient) {
         res.status(400).json({ error: 'Wybierz pliki PDF lub zdjęcia z folderu do przeskanowania.' });
         return;
       }
+      const plan = await getPlan(prisma, ocrOwnerKey(res));
       const sourceLabel = typeof req.body?.folderName === 'string' ? req.body.folderName : 'Folder na telefonie';
       const result = await ingestWatchUploadBatch(
         prisma,
         ownerIdOf(res),
         sourceLabel,
         uploaded.map(f => ({ name: f.originalname, buffer: f.buffer })),
+        { allowKsef: plan === 'business' },
       );
       res.json(result);
     } catch (error) {
@@ -112,12 +116,14 @@ export function createAutomationRouter(prisma: PrismaClient) {
       const fileName = `DOC_${Date.now()}_${randomUUID()}.json`;
       const fullPath = path.join(uploadsDir, fileName);
       const serialized = JSON.stringify({ rawPayload, parsed }, null, 2);
+      const digest = hashBuffer(Buffer.from(serialized, 'utf8'));
       fs.writeFileSync(fullPath, serialized, 'utf8');
       try {
         const title = typeof req.body?.title === 'string' && req.body.title.trim()
           ? req.body.title.trim().slice(0, 255)
           : `e-Paragon ${parsed.merchantName} ${(parsed.amountCents / 100).toFixed(2)} ${parsed.currency}`;
         const created = await prisma.$transaction(async tx => {
+          await assertUniqueDocument(tx, owner, folderId, digest);
           await checkDocumentCapacity(tx, owner, plan, 1);
           const doc = await tx.document.create({
             data: {
@@ -155,6 +161,10 @@ export function createAutomationRouter(prisma: PrismaClient) {
         throw err;
       }
     } catch (error) {
+      if (error instanceof DuplicateDocumentError) {
+        res.status(409).json({ code: error.code, error: error.message, existingTitle: error.existingTitle });
+        return;
+      }
       res.status(400).json({ error: error instanceof Error ? error.message : 'Nie udało się zaimportować e-Paragonu.' });
     }
   });

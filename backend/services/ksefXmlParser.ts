@@ -38,7 +38,7 @@ function parseMoneyToCents(raw: unknown): number | null {
   if (raw === undefined || raw === null) return null;
   const normalized = String(raw).replace(/[\s\u00A0]/g, '').replace(',', '.');
   const num = Number.parseFloat(normalized);
-  if (!Number.isFinite(num) || num <= 0 || num > 100_000_000) return null;
+  if (!Number.isFinite(num) || Math.abs(num) > 100_000_000) return null;
   return Math.round(num * 100);
 }
 
@@ -97,8 +97,8 @@ export function parseKsefXml(xmlText: string): ParsedKsefInvoice | null {
     if (!name) continue;
     const qtyNum = Number.parseFloat(String(row.P_8B || '1').replace(',', '.'));
     const quantity = Number.isFinite(qtyNum) && qtyNum > 0 && qtyNum <= 10000 ? qtyNum : 1;
-    const totalCents = parseMoneyToCents(row.P_11A ?? row.P_11) ?? 0;
-    if (totalCents <= 0) continue;
+    const totalCents = parseMoneyToCents(row.P_11A ?? row.P_11);
+    if (totalCents === null) continue;
     items.push({
       name,
       quantity,

@@ -12,9 +12,9 @@ function createHttpApp(accounts, { ledger, catalog, playBilling, entitlements, f
   app.get('/health/live', (req, res) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress) ? res.json({ status: 'ok' }) : res.sendStatus(404));
   if (cloudflareGate) app.use(cloudflareGate);
   if (shareRouter) app.use(shareRouter);
-  if (rateLimit) app.use(['/register', '/login', '/google', '/google-challenge', '/link-google', '/verify-email', '/resend-verification', '/request-password-reset', '/reset-password'], rateLimit);
+  if (rateLimit) app.use(['/register', '/login', '/google', '/google-challenge', '/link-google', '/verify-email', '/resend-verification', '/request-password-reset', '/reset-password', '/desktop-download/email'], rateLimit);
   if (handoffRateLimit) app.use('/handoff', handoffRateLimit);
-  if (handoffRateLimit) app.use(['/entitlements','/devices','/billing'], handoffRateLimit);
+  if (handoffRateLimit) app.use(['/entitlements','/devices','/billing','/feedback','/desktop-download/email'], handoffRateLimit);
   if (handoffRateLimit) app.use('/ledger', handoffRateLimit);
   app.use(['/ledger','/admin','/feedback'],express.json({limit:'4mb'}));
   app.use(express.json({ limit: '20kb' }));

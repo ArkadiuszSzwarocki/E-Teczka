@@ -21,6 +21,7 @@ export type KsefPreviewInvoice = {
   saleDate: string;
   currency: string;
   totalGross: string;
+  valueColumnKind: 'net' | 'gross';
   seller: KsefParty;
   buyer: KsefParty;
   paid: boolean;
@@ -84,7 +85,9 @@ export function parseKsefPreviewXml(xmlText: string): KsefPreviewInvoice | null 
   const dueDate = childText(dueEl, 'Termin') || dueEl?.textContent?.trim() || '';
   const bankEl = firstChild(payment, 'RachunekBankowy');
 
-  const items: KsefLineItem[] = directChildren(fa, 'FaWiersz').map((row, idx) => ({
+  const rawRows = directChildren(fa, 'FaWiersz');
+  const usesGrossRows = rawRows.some(row => Boolean(childText(row, 'P_11A')));
+  const items: KsefLineItem[] = rawRows.map((row, idx) => ({
     index: childText(row, 'NrWierszaFa') || String(idx + 1),
     name: childText(row, 'P_7') || 'Pozycja bez nazwy',
     unit: childText(row, 'P_8A') || 'szt.',
@@ -101,6 +104,7 @@ export function parseKsefPreviewXml(xmlText: string): KsefPreviewInvoice | null 
     saleDate: childText(fa, 'P_6'),
     currency: childText(fa, 'KodWaluty') || 'PLN',
     totalGross: childText(fa, 'P_15') || '0.00',
+    valueColumnKind: usesGrossRows ? 'gross' : 'net',
     seller: parseParty(firstChild(root, 'Podmiot1')),
     buyer: parseParty(firstChild(root, 'Podmiot2')),
     paid: childText(payment, 'Zaplacono') === '1',
@@ -188,7 +192,7 @@ export function buildPrintableKsefHtml(inv: KsefPreviewInvoice): string {
   <table>
     <thead>
       <tr>
-        <th>Lp.</th><th>Nazwa towaru / usługi</th><th class="num">Ilość</th><th class="num">Cena jedn.</th><th class="num">VAT</th><th class="num">Wartość (${escapeHtml(inv.currency)})</th>
+        <th>Lp.</th><th>Nazwa towaru / usługi</th><th class="num">Ilość</th><th class="num">Cena jedn.</th><th class="num">VAT</th><th class="num">Wartość ${inv.valueColumnKind === 'gross' ? 'brutto' : 'netto'} (${escapeHtml(inv.currency)})</th>
       </tr>
     </thead>
     <tbody>${rowsHtml || '<tr><td colspan="6">Brak szczegółowych pozycji w pliku XML.</td></tr>'}</tbody>

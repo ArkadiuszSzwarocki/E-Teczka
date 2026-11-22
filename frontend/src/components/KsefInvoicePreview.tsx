@@ -121,7 +121,7 @@ export default function KsefInvoicePreview({ xmlText, title }: Props) {
                     <th className="px-3 py-2 text-right">Ilość</th>
                     <th className="px-3 py-2 text-right">Cena jedn.</th>
                     <th className="px-3 py-2 text-right">VAT</th>
-                    <th className="px-3 py-2 text-right">Wartość ({invoice.currency})</th>
+                    <th className="px-3 py-2 text-right">Wartość {invoice.valueColumnKind === 'gross' ? 'brutto' : 'netto'} ({invoice.currency})</th>
                   </tr>
                 </thead>
                 <tbody>

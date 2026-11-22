@@ -16,8 +16,17 @@ async function mobileDevice(userId:string) {
   const device={deviceId:Crypto.randomUUID(),credential};await SecureStore.setItemAsync(key,JSON.stringify(device));return device;
 }
 const VALID_PLANS: readonly CentralPlanName[] = ['free', 'standard', 'premium', 'family', 'business'];
+function decodeBase64UrlUtf8(input: string): string {
+  const b64 = input.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = b64.length % 4 === 0 ? b64 : b64 + '='.repeat(4 - (b64.length % 4));
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  if (typeof TextDecoder !== 'undefined') return new TextDecoder('utf-8').decode(bytes);
+  return binary;
+}
 async function savePlan(origin:string,userId:string,signed:{payload:string}) {
-  const lease=JSON.parse(atob(signed.payload.replace(/-/g,'+').replace(/_/g,'/'))) as CentralPlan;
+  const lease=JSON.parse(decodeBase64UrlUtf8(signed.payload)) as CentralPlan;
   const device=await mobileDevice(userId);if(lease.accountId!==userId||lease.deviceId!==device.deviceId||lease.kind!=='mobile'||!VALID_PLANS.includes(lease.plan)||lease.expiresAt<=Date.now()||lease.expiresAt>Date.now()+86460000)throw new Error('Nieprawidłowe uprawnienia konta.');
   // Received over HTTPS and kept in OS-protected SecureStore; never trust purchase fields from the UI.
   await SecureStore.setItemAsync(`${PLAN_KEY}_${userId}`,JSON.stringify({origin:centralAccountOrigin(origin),lease}));return lease;
