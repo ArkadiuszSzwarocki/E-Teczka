@@ -14,6 +14,7 @@ import DeveloperPanel, { type DevSection } from './components/DeveloperPanel';
 import BackupSecurityModal from './components/BackupSecurityModal';
 import SideNotificationsDrawer from './components/SideNotificationsDrawer';
 import UploadPanel from './components/UploadPanel';
+import EReceiptImportModal from './components/EReceiptImportModal';
 import MobileBottomNav from './components/MobileBottomNav';
 import { MainScrollIndicator } from './components/ScrollFadeContainer';
 import { BulkSelectionBar } from './components/app/BulkSelectionBar';
@@ -86,6 +87,7 @@ export default function App() {
   const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState(false);
   const [isBackupSecurityOpen, setIsBackupSecurityOpen] = useState(false);
   const [isSelfHostGuideOpen, setIsSelfHostGuideOpen] = useState(false);
+  const [isEReceiptImportOpen, setIsEReceiptImportOpen] = useState(false);
   const [feedbackDraft, setFeedbackDraft] = useState<{ screenshot: string | null; appVersion?: string; platform?: string } | null>(null);
   const [mailAutoPromptCount, setMailAutoPromptCount] = useState(0);
   const [devPlanNonce, setDevPlanNonce] = useState(0);
@@ -400,6 +402,7 @@ export default function App() {
               mergedRetentionEnabled={batchUpload.mergedRetentionEnabled} setMergedRetentionEnabled={batchUpload.setMergedRetentionEnabled}
               onFileSelect={batchUpload.handleFileSelect} onSubmit={batchUpload.handleBatchUpload}
               onOpenPlans={() => setIsBillingPlansOpen(true)} onRetryFetch={() => void fetchData()}
+              onOpenEReceiptImport={() => setIsEReceiptImportOpen(true)}
             />
           ) : (
             <DocumentsWorkspaceSection
@@ -431,6 +434,17 @@ export default function App() {
         />
       </div>
 
+      {isEReceiptImportOpen && (
+        <EReceiptImportModal
+          apiUrl={API_URL}
+          fetcher={apiFetch}
+          initialFolderId={batchUpload.folderId}
+          folderOptions={folderOptions}
+          onImported={fetchData}
+          onClose={() => setIsEReceiptImportOpen(false)}
+          showToast={showToast}
+        />
+      )}
       {!notificationsInTopBar && (
         <SideNotificationsDrawer
           open={isNotificationsOpen} scannerFileCount={scannerFiles.length} retentionAlerts={retentionAlerts}

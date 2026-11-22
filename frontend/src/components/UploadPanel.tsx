@@ -35,6 +35,7 @@ type Props = {
   onSubmit: (e: React.FormEvent) => void;
   onOpenPlans: () => void;
   onRetryFetch: () => void;
+  onOpenEReceiptImport?: () => void;
 };
 
 /** Presentational panel for batch document upload, physical location, and PDF merging. */
@@ -44,13 +45,22 @@ export default function UploadPanel({
   filesToUpload, setFilesToUpload, isMergeMode, setIsMergeMode, isUploading,
   mergedTitle, setMergedTitle, mergedRetentionVal, setMergedRetentionVal,
   mergedRetentionUnit, setMergedRetentionUnit, mergedRetentionEnabled, setMergedRetentionEnabled,
-  onFileSelect, onSubmit, onOpenPlans, onRetryFetch,
+  onFileSelect, onSubmit, onOpenPlans, onRetryFetch, onOpenEReceiptImport,
 }: Props) {
   const isMobile = isMobileBrowser();
   return (
     <div className="mb-10 h-fit w-full max-w-5xl rounded-lg border border-slate-700 bg-[#1e293b] p-4 shadow-xl sm:p-6">
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 text-xl font-bold text-white">📦 Rejestracja Dokumentów</h2>
+        {onOpenEReceiptImport && (
+          <button
+            type="button"
+            onClick={onOpenEReceiptImport}
+            className="rounded-lg border border-cyan-500/60 bg-cyan-950/40 px-3 py-1.5 text-xs font-semibold text-cyan-200 hover:bg-cyan-900/50"
+          >
+            📲 Importuj e-Paragon (QR / tekst)
+          </button>
+        )}
       </div>
       {uploadUsage && (
         <div className={`mb-5 rounded-lg border px-4 py-3 text-xs leading-5 ${uploadDocsExceeded || uploadMergeExceeded ? 'border-red-500/60 bg-red-950/35 text-red-200' : 'border-slate-600 bg-[#111827]/80 text-slate-300'}`}>
