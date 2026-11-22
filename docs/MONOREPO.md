@@ -21,3 +21,7 @@ Repozytorium utrzymuje wszystkie moduły ekosystemu **MojaTeczka** w jednym miej
 - `npm run check:frontend` — `lint`, `typecheck` oraz `vite build` dla frontendu/PWA
 - `npm run check:all` — pełna weryfikacja wszystkich warstw przed wdrożeniem
 - `npm run build:win` / `npm run build:mac` — budowanie instalatora desktopowego MojaTeczka
+
+## Roadmapy produktowe
+- `docs/IOS_AND_SEO_ROADMAP.md` — Google Play, App Store (iOS), ASO oraz rozdzielenie `DEV` vs `release`
+- `docs/PRODUCT_ROADMAP_2026.md` — plan wdrożenia **e-Paragonów (QR)** oraz **KSeF (XML FA(2)/FA(3) + API)** na rynek PL 2026
