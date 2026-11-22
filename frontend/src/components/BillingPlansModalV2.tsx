@@ -50,6 +50,7 @@ function buildSections(catalog?: CatalogResponse['catalog']): { title: string; i
         { name: 'Odczyt załączników ze skrzynki pocztowej (IMAP)', description: 'Pobieranie załączników do poczekalni z podglądem, odczytem treści PDF, wstępnym przydziałem kartotek i Drag & Drop.', free: 'Tylko odczyt', standard: '1 skrzynka', premium: 'Bez limitu', family: 'Bez limitu', business: 'Bez limitu' },
         { name: 'Gorący folder (Watch Folder)', description: 'Automatyczne przejmowanie nowych skanów/PDF ze wskazanego folderu na komputerze do poczekalni.', free: false, standard: false, premium: true, family: true, business: true },
         { name: 'Paczka dla księgowej (ZIP + CSV)', description: 'Eksport dokumentów z wybranego miesiąca wraz z podsumowaniem kwot w CSV jednym kliknięciem.', free: false, standard: false, premium: true, family: true, business: true },
+        { name: 'Import faktur KSeF (XML FA(2)/FA(3)) + podgląd PDF', description: 'Automatyczny odczyt NIP, kwot, pozycji i terminów płatności z pliku XML KSeF oraz wydruk faktury do PDF.', free: false, standard: false, premium: true, family: true, business: true },
         { name: 'Odczyt paragonów i faktur do dashboardu', description: 'Automatyczne podsumowanie wydatków i terminów płatności w panelu analiz.', free: f?.ocr ? 'Bez limitu' : trialFreeOcr, standard: s?.ocr ? 'Bez limitu' : trialStandardOcr, premium: 'Bez limitu', family: 'Bez limitu', business: 'Bez limitu' },
         { name: 'Opcjonalny własny serwer AI/OCR (bez zapisu)', description: 'Wyłącznie za wyraźną zgodą użytkownika, bez przechowywania plików po stronie serwera.', free: false, standard: false, premium: true, family: true, business: true },
         { name: 'Eksport zaznaczonych dokumentów do jednego PDF', free: false, standard: false, premium: true, family: true, business: true },
@@ -122,6 +123,7 @@ function CheckoutButtons({ plan, busy, onSelect, catalogData }: { plan: PaidPlan
 
 export default function BillingPlansModalV2({ apiUrl, fetcher, busy, currentPlan, developmentOverride, cancellationScheduled, onClose, onSelectFree, onSelect }: Props) {
   const [catalogData, setCatalogData] = useState<CatalogResponse | null>(null);
+  const [audience, setAudience] = useState<'home' | 'business'>(() => (currentPlan === 'business' ? 'business' : 'home'));
 
   useEffect(() => {
     let active = true;
@@ -146,59 +148,157 @@ export default function BillingPlansModalV2({ apiUrl, fetcher, busy, currentPlan
 
   return (
     <div className="fixed inset-0 z-[115] overflow-y-auto bg-black/80 p-3 backdrop-blur-sm">
-      <div role="dialog" aria-modal="true" aria-labelledby="plans-title" className="mx-auto my-3 w-full max-w-7xl rounded-2xl border border-slate-600 bg-[#0f172a] p-5 shadow-2xl md:my-6 md:p-7">
-        <div className="flex items-start justify-between gap-4">
-          <div><h2 id="plans-title" className="text-2xl font-bold text-white">Porównaj plany MojejTeczki</h2><p className="mt-1 text-sm text-slate-400">Zobacz, co jest dostępne w każdym planie, i wybierz sposób rozliczenia.</p></div>
-          <button onClick={onClose} aria-label="Zamknij" className="text-2xl text-slate-400 hover:text-white">×</button>
-        </div>
-        <div className="mt-5 grid gap-3 md:grid-cols-3 lg:grid-cols-5">
-          <div className="rounded-xl border border-slate-700 bg-[#1e293b] p-4">
-            <p className="font-semibold text-slate-300">{catalogData?.catalog.plans.free.name || 'Darmowy'}</p>
-            <p className="mt-2 text-3xl font-bold text-white">0 zł</p>
-            <p className="mt-2 text-sm text-slate-400">Podstawowe zarządzanie dokumentami.</p>
-            <button type="button" disabled={busy || currentPlan === 'free'} onClick={onSelectFree} className="mt-4 w-full rounded-lg border border-slate-500 px-3 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 disabled:cursor-default disabled:opacity-60">{currentPlan === 'free' ? 'Twój obecny plan' : developmentOverride ? 'Testuj plan Darmowy' : cancellationScheduled ? 'Sprawdź przejście na Darmowy' : 'Przejdź na Darmowy'}</button>
-            {currentPlan !== 'free' && !developmentOverride && <p className="mt-2 text-xs text-slate-400">Zmiana nastąpi po zakończeniu opłaconego okresu.</p>}
+      <div role="dialog" aria-modal="true" aria-labelledby="plans-title" className="mx-auto my-3 w-full max-w-6xl rounded-2xl border border-slate-600 bg-[#0f172a] p-5 shadow-2xl md:my-6 md:p-7">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 id="plans-title" className="text-2xl font-bold text-white">Porównaj plany MojejTeczki</h2>
+            <p className="mt-1 text-sm text-slate-400">Wybierz profil korzystania i dopasuj plan do swoich potrzeb.</p>
           </div>
-          <div className="rounded-xl border border-blue-500/70 bg-blue-950/20 p-4">
-            <p className="font-semibold text-blue-300">{catalogData?.catalog.plans.standard.name || 'Standard'}</p>
-            <p className="mt-2 text-3xl font-bold text-white">{money(stdMonthly?.amount ?? 499)} <span className="text-sm font-normal text-slate-400">/ mies.</span></p>
-            {stdMonthly?.promotion && <p className="text-xs text-emerald-300">Promocja −{stdMonthly.promotion.percent}%: {stdMonthly.promotion.name} (z {money(stdMonthly.base)})</p>}
-            <p className="text-sm text-slate-400">lub {money(stdYearly?.amount ?? 4990)} / rok</p>
-            {stdYearly?.promotion && <p className="text-xs text-emerald-300">Promocja roczna −{stdYearly.promotion.percent}%: {stdYearly.promotion.name} (z {money(stdYearly.base)})</p>}
-            <p className="mt-2 text-xs text-slate-300">Wyższe limity dokumentów, skanowania i tagów.</p>
-            <CheckoutButtons plan="standard" busy={busy} onSelect={onSelect} catalogData={catalogData} />
-          </div>
-          <div className="relative rounded-xl border-2 border-emerald-400 bg-emerald-950/30 p-4">
-            <p className="font-semibold text-emerald-300">{catalogData?.catalog.plans.premium.name || 'Premium'}</p>
-            <p className="mt-2 text-3xl font-bold text-white">{money(premMonthly?.amount ?? 999)} <span className="text-sm font-normal text-slate-400">/ mies.</span></p>
-            {premMonthly?.promotion && <p className="text-xs text-emerald-300">Promocja −{premMonthly.promotion.percent}%: {premMonthly.promotion.name} (z {money(premMonthly.base)})</p>}
-            <p className="text-sm text-slate-400">lub {money(premYearly?.amount ?? 9990)} / rok</p>
-            {premYearly?.promotion && <p className="text-xs text-emerald-300">Promocja roczna −{premYearly.promotion.percent}%: {premYearly.promotion.name} (z {money(premYearly.base)})</p>}
-            <p className="mt-2 text-xs text-slate-300">OCR, drukarka, tagi i kopie w chmurze.</p>
-            <CheckoutButtons plan="premium" busy={busy} onSelect={onSelect} catalogData={catalogData} />
-          </div>
-          <div className="rounded-xl border border-amber-500/70 bg-amber-950/20 p-4">
-            <p className="font-semibold text-amber-300">{catalogData?.catalog.plans.family?.name || 'Rodzinny'}</p>
-            <p className="mt-2 text-3xl font-bold text-white">{money(famMonthly?.amount ?? 1499)} <span className="text-sm font-normal text-slate-400">/ mies.</span></p>
-            {famMonthly?.promotion && <p className="text-xs text-emerald-300">Promocja −{famMonthly.promotion.percent}%: {famMonthly.promotion.name} (z {money(famMonthly.base)})</p>}
-            <p className="text-sm text-slate-400">lub {money(famYearly?.amount ?? 14990)} / rok</p>
-            {famYearly?.promotion && <p className="text-xs text-emerald-300">Promocja roczna −{famYearly.promotion.percent}%: {famYearly.promotion.name} (z {money(famYearly.base)})</p>}
-            <p className="mt-2 text-xs text-slate-300">Wszystko z Premium + do {catalogData?.catalog.plans.family?.mobileDevices ?? 4} telefonów.</p>
-            <CheckoutButtons plan="family" busy={busy} onSelect={onSelect} catalogData={catalogData} />
-          </div>
-          <div className="rounded-xl border border-violet-500/70 bg-violet-950/20 p-4">
-            <p className="font-semibold text-violet-300">{catalogData?.catalog.plans.business?.name || 'Firmowy'}</p>
-            <p className="mt-2 text-3xl font-bold text-white">{money(bizMonthly?.amount ?? 2999)} <span className="text-sm font-normal text-slate-400">/ mies.</span></p>
-            {bizMonthly?.promotion && <p className="text-xs text-emerald-300">Promocja −{bizMonthly.promotion.percent}%: {bizMonthly.promotion.name} (z {money(bizMonthly.base)})</p>}
-            <p className="text-sm text-slate-400">lub {money(bizYearly?.amount ?? 29990)} / rok</p>
-            {bizYearly?.promotion && <p className="text-xs text-emerald-300">Promocja roczna −{bizYearly.promotion.percent}%: {bizYearly.promotion.name} (z {money(bizYearly.base)})</p>}
-            <p className="mt-2 text-xs text-slate-300">Wszystko z Premium + do {catalogData?.catalog.plans.business?.mobileDevices ?? 10} telefonów.</p>
-            <CheckoutButtons plan="business" busy={busy} onSelect={onSelect} catalogData={catalogData} />
+          <div className="flex items-center gap-3">
+            <div role="tablist" aria-label="Typ konta" className="inline-flex rounded-xl border border-slate-700 bg-slate-900 p-1">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={audience === 'home'}
+                onClick={() => setAudience('home')}
+                className={`rounded-lg px-3.5 py-1.5 text-xs font-bold transition-colors ${audience === 'home' ? 'bg-emerald-500 text-slate-950' : 'text-slate-300 hover:text-white'}`}
+              >
+                🏠 Dla domu
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={audience === 'business'}
+                onClick={() => setAudience('business')}
+                className={`rounded-lg px-3.5 py-1.5 text-xs font-bold transition-colors ${audience === 'business' ? 'bg-violet-500 text-white' : 'text-slate-300 hover:text-white'}`}
+              >
+                💼 Dla firmy (JDG)
+              </button>
+            </div>
+            <button onClick={onClose} aria-label="Zamknij" className="text-2xl text-slate-400 hover:text-white">×</button>
           </div>
         </div>
+
+        {audience === 'home' ? (
+          <div className="mt-5 grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-xl border border-slate-700 bg-[#1e293b] p-4">
+              <p className="font-semibold text-slate-300">{catalogData?.catalog.plans.free.name || 'Darmowy'}</p>
+              <p className="mt-2 text-3xl font-bold text-white">0 zł</p>
+              <p className="mt-2 text-sm text-slate-400">Podstawowe zarządzanie dokumentami.</p>
+              <button type="button" disabled={busy || currentPlan === 'free'} onClick={onSelectFree} className="mt-4 w-full rounded-lg border border-slate-500 px-3 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 disabled:cursor-default disabled:opacity-60">{currentPlan === 'free' ? 'Twój obecny plan' : developmentOverride ? 'Testuj plan Darmowy' : cancellationScheduled ? 'Sprawdź przejście na Darmowy' : 'Przejdź na Darmowy'}</button>
+              {currentPlan !== 'free' && !developmentOverride && <p className="mt-2 text-xs text-slate-400">Zmiana nastąpi po zakończeniu opłaconego okresu.</p>}
+            </div>
+            <div className="rounded-xl border border-blue-500/70 bg-blue-950/20 p-4">
+              <p className="font-semibold text-blue-300">{catalogData?.catalog.plans.standard.name || 'Standard'}</p>
+              <p className="mt-2 text-3xl font-bold text-white">{money(stdMonthly?.amount ?? 499)} <span className="text-sm font-normal text-slate-400">/ mies.</span></p>
+              {stdMonthly?.promotion && <p className="text-xs text-emerald-300">Promocja −{stdMonthly.promotion.percent}%: {stdMonthly.promotion.name} (z {money(stdMonthly.base)})</p>}
+              <p className="text-sm text-slate-400">lub {money(stdYearly?.amount ?? 4990)} / rok</p>
+              {stdYearly?.promotion && <p className="text-xs text-emerald-300">Promocja roczna −{stdYearly.promotion.percent}%: {stdYearly.promotion.name} (z {money(stdYearly.base)})</p>}
+              <p className="mt-2 text-xs text-slate-300">Wyższe limity dokumentów, skanowania i tagów.</p>
+              <CheckoutButtons plan="standard" busy={busy} onSelect={onSelect} catalogData={catalogData} />
+            </div>
+            <div className="relative rounded-xl border-2 border-emerald-400 bg-emerald-950/30 p-4">
+              <span className="absolute -top-2.5 right-3 rounded-full bg-emerald-400 px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-950">Polecany</span>
+              <p className="font-semibold text-emerald-300">{catalogData?.catalog.plans.premium.name || 'Premium'}</p>
+              <p className="mt-2 text-3xl font-bold text-white">{money(premMonthly?.amount ?? 999)} <span className="text-sm font-normal text-slate-400">/ mies.</span></p>
+              {premMonthly?.promotion && <p className="text-xs text-emerald-300">Promocja −{premMonthly.promotion.percent}%: {premMonthly.promotion.name} (z {money(premMonthly.base)})</p>}
+              <p className="text-sm text-slate-400">lub {money(premYearly?.amount ?? 9990)} / rok</p>
+              {premYearly?.promotion && <p className="text-xs text-emerald-300">Promocja roczna −{premYearly.promotion.percent}%: {premYearly.promotion.name} (z {money(premYearly.base)})</p>}
+              <p className="mt-2 text-xs text-slate-300">Bez limitów: OCR, IMAP, kopie NAS/chmura i eksport PDF.</p>
+              <CheckoutButtons plan="premium" busy={busy} onSelect={onSelect} catalogData={catalogData} />
+            </div>
+            <div className="rounded-xl border border-amber-500/70 bg-amber-950/20 p-4">
+              <p className="font-semibold text-amber-300">{catalogData?.catalog.plans.family?.name || 'Rodzinny'}</p>
+              <p className="mt-2 text-3xl font-bold text-white">{money(famMonthly?.amount ?? 1499)} <span className="text-sm font-normal text-slate-400">/ mies.</span></p>
+              {famMonthly?.promotion && <p className="text-xs text-emerald-300">Promocja −{famMonthly.promotion.percent}%: {famMonthly.promotion.name} (z {money(famMonthly.base)})</p>}
+              <p className="text-sm text-slate-400">lub {money(famYearly?.amount ?? 14990)} / rok</p>
+              {famYearly?.promotion && <p className="text-xs text-emerald-300">Promocja roczna −{famYearly.promotion.percent}%: {famYearly.promotion.name} (z {money(famYearly.base)})</p>}
+              <p className="mt-2 text-xs text-slate-300">Wszystko z Premium + do {catalogData?.catalog.plans.family?.mobileDevices ?? 4} telefonów domowników.</p>
+              <CheckoutButtons plan="family" busy={busy} onSelect={onSelect} catalogData={catalogData} />
+            </div>
+          </div>
+        ) : (
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <div className="rounded-xl border-2 border-violet-400 bg-violet-950/30 p-5">
+              <p className="text-xs font-bold uppercase tracking-wider text-violet-300">Dla JDG i małych zespołów</p>
+              <p className="mt-1 text-xl font-bold text-white">{catalogData?.catalog.plans.business?.name || 'Firmowy'}</p>
+              <p className="mt-2 text-3xl font-bold text-white">{money(bizMonthly?.amount ?? 2999)} <span className="text-sm font-normal text-slate-400">/ mies.</span></p>
+              {bizMonthly?.promotion && <p className="text-xs text-emerald-300">Promocja −{bizMonthly.promotion.percent}%: {bizMonthly.promotion.name} (z {money(bizMonthly.base)})</p>}
+              <p className="text-sm text-slate-400">lub {money(bizYearly?.amount ?? 29990)} / rok</p>
+              {bizYearly?.promotion && <p className="text-xs text-emerald-300">Promocja roczna −{bizYearly.promotion.percent}%: {bizYearly.promotion.name} (z {money(bizYearly.base)})</p>}
+              <p className="mt-2 text-xs text-slate-300">Wszystko z Premium + do {catalogData?.catalog.plans.business?.mobileDevices ?? 10} telefonów firmowych.</p>
+              <CheckoutButtons plan="business" busy={busy} onSelect={onSelect} catalogData={catalogData} />
+            </div>
+            <div className="rounded-xl border border-slate-700 bg-slate-900/70 p-5">
+              <h3 className="text-sm font-bold uppercase tracking-wider text-violet-200">Co zyskujesz w planie Firmowym</h3>
+              <ul className="mt-3 space-y-2 text-sm text-slate-200">
+                <li>✓ <strong>Do {catalogData?.catalog.plans.business?.mobileDevices ?? 10} telefonów</strong> podłączonych do wspólnego archiwum na komputerze / NAS.</li>
+                <li>✓ <strong>Import faktur KSeF (XML FA(2)/FA(3))</strong> z wizualnym podglądem faktury i wydrukiem do PDF.</li>
+                <li>✓ <strong>Paczka dla księgowej (ZIP + CSV)</strong> jednym kliknięciem za wybrany miesiąc.</li>
+                <li>✓ <strong>Gorący folder (Watch Folder)</strong> oraz nieograniczone skrzynki pocztowe IMAP.</li>
+                <li>✓ <strong>Maskowanie RODO, znak wodny i wygasające linki</strong> z opcjonalnym PIN-em.</li>
+              </ul>
+            </div>
+          </div>
+        )}
+
         <div className="mt-6 flex items-center justify-between gap-2"><h3 className="text-lg font-bold text-white">Porównanie funkcji</h3><span className="text-xs text-slate-400">✓ dostępne · ✕ niedostępne</span></div>
-        <p className="mt-1 text-xs text-slate-400 md:hidden">Przesuń tabelę w bok, aby zobaczyć wszystkie plany.</p>
-        <div className="mt-3 overflow-x-auto rounded-xl border border-slate-700"><table className="w-full min-w-[780px] border-collapse text-sm"><thead><tr className="bg-slate-800/70 text-left text-xs uppercase text-slate-300"><th scope="col" className="px-4 py-3">Funkcja</th><th scope="col" className="w-28 px-2 text-center">Darmowy</th><th scope="col" className="w-28 px-2 text-center">Standard</th><th scope="col" className="w-28 px-2 text-center text-emerald-300">Premium</th><th scope="col" className="w-28 px-2 text-center text-amber-300">Rodzinny</th><th scope="col" className="w-28 px-2 text-center text-violet-300">Firmowy</th></tr></thead><tbody>{sections.map(section => <Fragment key={section.title}><tr><th colSpan={6} scope="colgroup" className="border-t border-slate-700 bg-slate-800/40 px-4 py-2 text-left font-bold text-blue-200">{section.title}</th></tr>{section.items.map(item => <tr key={item.name} className="border-t border-slate-800"><th scope="row" className="px-4 py-3 text-left font-medium text-slate-200">{item.name}{item.description && <span className="mt-1 block text-xs font-normal text-slate-400">{item.description}</span>}</th><td className="px-2 text-center"><Cell value={item.free} /></td><td className="px-2 text-center"><Cell value={item.standard} /></td><td className="px-2 text-center"><Cell value={item.premium} /></td><td className="px-2 text-center"><Cell value={item.family} /></td><td className="px-2 text-center"><Cell value={item.business} /></td></tr>)}</Fragment>)}</tbody></table></div>
+        <p className="mt-1 text-xs text-slate-400 md:hidden">Przesuń tabelę w bok, aby zobaczyć wszystkie kolumny.</p>
+        <div className="mt-3 overflow-x-auto rounded-xl border border-slate-700">
+          {audience === 'home' ? (
+            <table className="w-full min-w-[660px] border-collapse text-sm">
+              <thead>
+                <tr className="bg-slate-800/70 text-left text-xs uppercase text-slate-300">
+                  <th scope="col" className="px-4 py-3">Funkcja</th>
+                  <th scope="col" className="w-28 px-2 text-center">Darmowy</th>
+                  <th scope="col" className="w-28 px-2 text-center">Standard</th>
+                  <th scope="col" className="w-28 px-2 text-center text-emerald-300">Premium</th>
+                  <th scope="col" className="w-28 px-2 text-center text-amber-300">Rodzinny</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sections.map(section => (
+                  <Fragment key={section.title}>
+                    <tr><th colSpan={5} scope="colgroup" className="border-t border-slate-700 bg-slate-800/40 px-4 py-2 text-left font-bold text-blue-200">{section.title}</th></tr>
+                    {section.items.map(item => (
+                      <tr key={item.name} className="border-t border-slate-800">
+                        <th scope="row" className="px-4 py-3 text-left font-medium text-slate-200">{item.name}{item.description && <span className="mt-1 block text-xs font-normal text-slate-400">{item.description}</span>}</th>
+                        <td className="px-2 text-center"><Cell value={item.free} /></td>
+                        <td className="px-2 text-center"><Cell value={item.standard} /></td>
+                        <td className="px-2 text-center"><Cell value={item.premium} /></td>
+                        <td className="px-2 text-center"><Cell value={item.family} /></td>
+                      </tr>
+                    ))}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <table className="w-full min-w-[520px] border-collapse text-sm">
+              <thead>
+                <tr className="bg-slate-800/70 text-left text-xs uppercase text-slate-300">
+                  <th scope="col" className="px-4 py-3">Funkcja</th>
+                  <th scope="col" className="w-32 px-2 text-center text-emerald-300">Premium</th>
+                  <th scope="col" className="w-32 px-2 text-center text-violet-300">Firmowy (JDG)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sections.map(section => (
+                  <Fragment key={section.title}>
+                    <tr><th colSpan={3} scope="colgroup" className="border-t border-slate-700 bg-slate-800/40 px-4 py-2 text-left font-bold text-blue-200">{section.title}</th></tr>
+                    {section.items.map(item => (
+                      <tr key={item.name} className="border-t border-slate-800">
+                        <th scope="row" className="px-4 py-3 text-left font-medium text-slate-200">{item.name}{item.description && <span className="mt-1 block text-xs font-normal text-slate-400">{item.description}</span>}</th>
+                        <td className="px-2 text-center"><Cell value={item.premium} /></td>
+                        <td className="px-2 text-center"><Cell value={item.business} /></td>
+                      </tr>
+                    ))}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
         <div className="mt-5 rounded-xl border border-amber-700/50 bg-amber-950/20 p-4 text-sm text-amber-100">Funkcje oznaczone „W przygotowaniu” są przypisane do planu Premium i nie są jeszcze dostępne.</div>
         <p className="mt-4 text-center text-xs text-slate-400">Zakupy przez Google Play będą dostępne po zakończeniu konfiguracji.</p>
       </div>

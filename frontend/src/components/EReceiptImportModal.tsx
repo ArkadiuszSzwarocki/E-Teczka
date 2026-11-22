@@ -1,4 +1,5 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { createQrFrameDecoder } from '../services/qrFrameDecoder';
 
 type Props = {
   apiUrl: string;
@@ -8,10 +9,6 @@ type Props = {
   onImported: () => Promise<void>;
   onClose: () => void;
   showToast: (message: string, type?: string) => void;
-};
-
-type BarcodeDetectorCtor = new (opts?: { formats?: string[] }) => {
-  detect: (source: ImageBitmapSource) => Promise<Array<{ rawValue?: string }>>;
 };
 
 /** Modal for importing an e-Receipt from a QR code, link, or JSON payload. */
@@ -33,11 +30,15 @@ export default function EReceiptImportModal({
     setScanningQr(false);
   };
 
+  useEffect(() => () => {
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    streamRef.current = null;
+  }, []);
+
   const startQrScan = async () => {
     setError('');
-    const Detector = (window as unknown as { BarcodeDetector?: BarcodeDetectorCtor }).BarcodeDetector;
-    if (!Detector || !navigator.mediaDevices?.getUserMedia) {
-      setError('Skanowanie QR na żywo nie jest wspierane w tej przeglądarce. Zeskanuj kod aparatem telefonu i wklej wynik poniżej.');
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setError('Brak dostępu do aparatu w tej przeglądarce (wymagane HTTPS lub localhost). Wklej kod QR albo JSON poniżej.');
       return;
     }
     try {
@@ -50,12 +51,11 @@ export default function EReceiptImportModal({
           void videoRef.current.play().catch(() => undefined);
         }
       });
-      const detector = new Detector({ formats: ['qr_code'] });
+      const decoder = createQrFrameDecoder();
       const tick = async () => {
         if (!streamRef.current || !videoRef.current) return;
         try {
-          const hits = await detector.detect(videoRef.current);
-          const value = hits[0]?.rawValue?.trim();
+          const value = await decoder.decode(videoRef.current);
           if (value) {
             setPayload(value);
             stopCamera();

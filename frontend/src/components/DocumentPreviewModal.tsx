@@ -13,6 +13,7 @@ import {
 } from '../services/rodoRegions';
 import { downloadRedactedImage, downloadRedactedPdf } from '../services/rodoExport';
 import { buildDocumentFileUrl } from '../utils/documentUrl';
+import KsefInvoicePreview from './KsefInvoicePreview';
 import PannablePdf from './PannablePdf';
 import RodoRegionOverlay from './RodoRegionOverlay';
 import SensitiveUnmaskPrompt from './SensitiveUnmaskPrompt';
@@ -95,11 +96,12 @@ export default function DocumentPreviewModal({ apiUrl, fetcher, document, zoom, 
   }, [document.id]);
   const source = buildDocumentFileUrl(apiUrl, document.filePath);
   const isPdf = document.mimeType?.includes('pdf') || document.filePath?.toLowerCase().endsWith('.pdf');
-  const [preview,setPreview]=useState<{source:string;url:string;error:string}>({source:'',url:'',error:''});
+  const isXml = document.mimeType?.includes('xml') || document.filePath?.toLowerCase().endsWith('.xml');
+  const [preview,setPreview]=useState<{source:string;url:string;xmlText:string;error:string}>({source:'',url:'',xmlText:'',error:''});
   const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null);
   useEffect(()=>{
     let active=true,objectUrl='';const controller=new AbortController();
-    setPreview({source,url:'',error:''});
+    setPreview({source,url:'',xmlText:'',error:''});
     setNaturalSize(null);
     void (async()=>{
       if(new URL(source).origin!==new URL(apiUrl).origin)throw new Error('Nieprawidłowy adres dokumentu.');
@@ -107,12 +109,14 @@ export default function DocumentPreviewModal({ apiUrl, fetcher, document, zoom, 
       const response=await fetcher(source,{signal:controller.signal});
       if(!response.ok)throw new Error(response.status===401?'Sesja wygasła. Zaloguj się ponownie.':'Nie udało się otworzyć dokumentu.');
       const blob=await response.blob();if(!active)return;
+      const xmlText=isXml?await blob.text():'';if(!active)return;
       objectUrl=URL.createObjectURL(isPdf?new Blob([blob],{type:'application/pdf'}):blob);
-      setPreview({source,url:objectUrl,error:''});
-    })().catch(error=>{if(active&&!controller.signal.aborted){const raw=error instanceof Error?error.message:'';setPreview({source,url:'',error:raw==='Failed to fetch'?'Brak połączenia z lokalnym serwerem MojejTeczki (port 3000). Kliknij „Odśwież DEV” lub uruchom ponownie backend.':raw||'Nie udało się pobrać dokumentu.'});}});
+      setPreview({source,url:objectUrl,xmlText,error:''});
+    })().catch(error=>{if(active&&!controller.signal.aborted){const raw=error instanceof Error?error.message:'';setPreview({source,url:'',xmlText:'',error:raw==='Failed to fetch'?'Brak połączenia z lokalnym serwerem MojejTeczki (port 3000). Kliknij „Odśwież DEV” lub uruchom ponownie backend.':raw||'Nie udało się pobrać dokumentu.'});}});
     return()=>{active=false;controller.abort();if(objectUrl)URL.revokeObjectURL(objectUrl);};
-  },[apiUrl,source,isPdf,fetcher]);
+  },[apiUrl,source,isPdf,isXml,fetcher]);
   const previewUrl=preview.source===source?preview.url:'';
+  const xmlText=preview.source===source?preview.xmlText:'';
   const error=preview.source===source?preview.error:'';
 
   useEffect(() => {
@@ -125,7 +129,7 @@ export default function DocumentPreviewModal({ apiUrl, fetcher, document, zoom, 
     <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-700 bg-[#0f172a] px-4 py-2">
       <h3 className="min-w-0 truncate text-base font-bold text-white" title={document.title}>{document.title}</h3>
       <div className="flex shrink-0 items-center gap-2">
-        {document.id && (!protection.protect || unmasked) && previewUrl && (
+        {document.id && !isXml && (!protection.protect || unmasked) && previewUrl && (
           <>
             <button
               type="button"
@@ -189,7 +193,11 @@ export default function DocumentPreviewModal({ apiUrl, fetcher, document, zoom, 
           ) : (
             <a href={previewUrl} download={document.title.toLowerCase().endsWith('.pdf') ? document.title : `${document.title}.pdf`} className="rounded bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-500">Pobierz</a>
           )
-        )}{!isPdf && <>
+        )}
+        {isXml && previewUrl && (
+          <a href={previewUrl} download={document.title.toLowerCase().endsWith('.xml') ? document.title : `${document.title}.xml`} className="rounded bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-500">Pobierz XML</a>
+        )}
+        {!isPdf && !isXml && <>
         <button type="button" aria-label="Pomniejsz obraz" onClick={() => onZoomChange(current => Math.max(current - 0.25, 0.5))} className="rounded bg-slate-700 px-3 py-1 text-white hover:bg-slate-600">−</button>
         <button type="button" onClick={() => onZoomChange(1)} title="Przywróć 100% powiększenia" className="rounded bg-slate-700 px-3 py-1 text-sm text-white hover:bg-slate-600">{Math.round(zoom * 100)}%</button>
         <button type="button" aria-label="Powiększ obraz" onClick={() => onZoomChange(current => Math.min(current + 0.25, 3))} className="rounded bg-slate-700 px-3 py-1 text-white hover:bg-slate-600">+</button>
@@ -219,7 +227,9 @@ export default function DocumentPreviewModal({ apiUrl, fetcher, document, zoom, 
           </div>
         )}
       </div>
-    ) : error?<p role="alert" className="m-auto p-6 text-red-300">{error}</p>:!previewUrl?<p role="status" className="m-auto p-6 text-slate-300">Wczytywanie dokumentu…</p>:isPdf ? (
+    ) : error?<p role="alert" className="m-auto p-6 text-red-300">{error}</p>:!previewUrl?<p role="status" className="m-auto p-6 text-slate-300">Wczytywanie dokumentu…</p>:isXml ? (
+      <KsefInvoicePreview xmlText={xmlText} title={document.title} />
+    ) : isPdf ? (
       (isMobileBrowser() || drawMode || regions.length > 0) ? (
         <div className="min-h-0 w-full flex-1">
           <PannablePdf
