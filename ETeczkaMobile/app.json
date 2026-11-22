@@ -24,7 +24,7 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.eteczkamobile"
+      "package": "pl.arecki.mojateczka"
     },
     "web": {
       "favicon": "./assets/favicon.png"
