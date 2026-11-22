@@ -17,6 +17,7 @@ import ustawieniaIcon from '../assets/sidebar-icons/ustawienia.png';
 type Props = {
   activeView: string;
   documents: DocumentRecord[];
+  billingPlan?: 'free' | 'standard' | 'premium' | 'family' | 'business';
   mobileOpen?: boolean;
   onCloseMobile?: () => void;
   onViewChange: (view: string) => void;
@@ -30,7 +31,7 @@ type Props = {
 
 /** Persistent desktop navigation. Kept independent from document-table rendering. */
 export default function DesktopSidebar({
-  activeView, documents, mobileOpen = false, onCloseMobile, onViewChange, onOpenScanner, onOpenPairing,
+  activeView, documents, billingPlan = 'free', mobileOpen = false, onCloseMobile, onViewChange, onOpenScanner, onOpenPairing,
   onToggleSettings, onOpenBackup, onOpenFeedback, userFeedbackReplyCount = 0,
 }: Props) {
   const closeIfMobile = (action: () => void) => () => { onCloseMobile?.(); action(); };
@@ -66,7 +67,9 @@ export default function DesktopSidebar({
         <button onClick={closeIfMobile(() => onViewChange('dashboard'))} className={navClass('dashboard')}>{icon(kartotekiIcon, '📁')}<span>Kartoteki</span></button>
         <button onClick={closeIfMobile(() => onViewChange('upload'))} className={navClass('upload')}>{icon(dodajDokumentIcon, '⬆️')}<span>Dodaj dokument</span></button>
         <button onClick={closeIfMobile(() => onViewChange('mail-inbox'))} className={navClass('mail-inbox')}><span aria-hidden="true" className="inline-flex h-5 w-5 shrink-0 items-center justify-center text-base leading-none">📧</span><span>Poczta (Załączniki)</span></button>
-        <button onClick={closeIfMobile(() => onViewChange('ksef-sync'))} className={navClass('ksef-sync')}><span aria-hidden="true" className="inline-flex h-5 w-5 shrink-0 items-center justify-center text-base leading-none">🏛️</span><span>KSeF (API MF)</span></button>
+        {billingPlan === 'business' && (
+          <button onClick={closeIfMobile(() => onViewChange('ksef-sync'))} className={navClass('ksef-sync')}><span aria-hidden="true" className="inline-flex h-5 w-5 shrink-0 items-center justify-center text-base leading-none">🏛️</span><span>KSeF (API MF)</span></button>
+        )}
         <button onClick={closeIfMobile(onOpenScanner)} className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-slate-400 hover:bg-white/5 hover:text-white">{icon(skanujIcon, isMobile ? '📷' : '🖨️')}<span>{isMobile ? 'Skanuj aparatem telefonu' : 'Skanuj z drukarki'}</span></button>
       </div>
       <p className="mb-3 mt-7 px-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">Urządzenia</p>

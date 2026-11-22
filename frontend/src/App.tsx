@@ -317,7 +317,7 @@ export default function App() {
       />
 
       <DesktopSidebar
-        activeView={activeView} documents={documents} mobileOpen={mobileSidebarOpen} onCloseMobile={() => setMobileSidebarOpen(false)}
+        activeView={activeView} documents={documents} billingPlan={billing.billingPlan} mobileOpen={mobileSidebarOpen} onCloseMobile={() => setMobileSidebarOpen(false)}
         onViewChange={view => { setIsSettingsMenuOpen(false); setBackupSection(null); setIsBackupSecurityOpen(false); if (view === 'developer') setDevSection(null); setActiveView(view); setSearchQuery(''); if (view === 'dashboard') setSelectedFolderId(null); }}
         onOpenScanner={() => { setIsSettingsMenuOpen(false); setBackupSection(null); setIsBackupSecurityOpen(false); void scanner.openWiaScanner(); }}
         onOpenPairing={() => pairing.setIsPairingGuideOpen(true)}
@@ -389,7 +389,7 @@ export default function App() {
             <AppOptionsPage onClose={() => setActiveView('dashboard')} onOpenSecurity={() => setIsAccessSettingsOpen(true)} onOpenBackup={() => setBackupSection('settings')} onOpenTags={() => setIsTagManagerOpen(true)} onOpenPairing={() => pairing.setIsPairingGuideOpen(true)} />
           ) : activeView === 'mail-inbox' ? (
             <MailInboxView apiUrl={API_URL} fetcher={effectiveFetch} folders={folders} billingPlan={`${billing.billingPlan}:${devPlanNonce}`} onAssigned={fetchData} showToast={showToast} mailSyncing={mailSync.mailSyncing} mailSyncPaused={mailSync.mailSyncPaused} onStartSync={mailSync.startMailSync} onStopSync={mailSync.stopMailSync} onResetSync={mailSync.resetMailSync} />
-          ) : activeView === 'ksef-sync' ? (
+          ) : activeView === 'ksef-sync' && billing.billingPlan === 'business' ? (
             <KsefSyncPanel apiUrl={API_URL} fetcher={fetch} folders={folders} billingPlan={billing.billingPlan} onSynced={fetchData} showToast={showToast} />
           ) : activeView === 'expiry-calendar' ? (
             <ExpiryCalendarView apiUrl={API_URL} fetcher={fetch} documents={documents} onOpenDocument={openPreview} />
