@@ -8,9 +8,10 @@ import { uploadsDir, securityDir } from './config/paths';
 import path from 'node:path';
 import https from 'node:https';
 import { makeLocalTls } from './services/localTls';
+import { attachRealtimeServer, closeRealtimeServer } from './services/realtimeBus';
 import { requireSecureRemote } from './middleware/requireSecureRemote';
 import { applyRetentionPolicy } from './services/retention';
-import { configureAccountSessionValidator, registerPairingRoutes, requireAccess, requireLocalDesktop } from './middleware/accessControl';
+import { configureAccountSessionValidator, registerPairingRoutes, requireAccess, requireLocalDesktop, resolvePairedDeviceOwner } from './middleware/accessControl';
 import { createHash } from 'node:crypto';
 import { createTagRouter } from './routes/tags';
 import { createFolderRouter } from './routes/folders';
@@ -68,13 +69,14 @@ const extraCorsOrigins = new Set(
     .map(origin => origin.trim())
     .filter(Boolean),
 );
+const isAllowedCorsOrigin = (origin?: string) =>
+  !origin ||
+  origin === 'null' ||
+  /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin) ||
+  extraCorsOrigins.has(origin);
 app.use(cors({
   origin(origin, callback) {
-    if (!origin) return callback(null, true);
-    const allowed =
-      /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin) ||
-      extraCorsOrigins.has(origin);
-    callback(null, allowed);
+    callback(null, isAllowedCorsOrigin(origin));
   },
 }));
 app.use((_req, res, next) => {
@@ -83,7 +85,7 @@ app.use((_req, res, next) => {
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader(
     'Content-Security-Policy',
-    "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; script-src 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; frame-src 'self' blob:; connect-src 'self' http://127.0.0.1:* http://localhost:* https:;",
+    "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; script-src 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; frame-src 'self' blob:; connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* https: wss:;",
   );
   next();
 });
@@ -280,9 +282,11 @@ httpsServer.on('error', (err: NodeJS.ErrnoException) => {
   throw err;
 });
 httpsServer.listen(3443, '0.0.0.0', () => console.log(`${logStamp()} Bezpieczne połączenia HTTPS: port 3443.`));
+attachRealtimeServer([httpServer, httpsServer], prisma, isAllowedCorsOrigin, resolvePairedDeviceOwner);
 
 const shutdownBackend = (signal: string) => {
   console.log(`${logStamp()} Otrzymano sygnał ${signal}, zamykanie serwerów…`);
+  closeRealtimeServer();
   httpServer.close(() => undefined);
   httpsServer.close(() => undefined);
   void prisma.$disconnect().finally(() => process.exit(0));

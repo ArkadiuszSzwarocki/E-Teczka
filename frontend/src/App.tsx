@@ -30,6 +30,7 @@ import { useTesterConsent } from './hooks/useTesterConsent';
 import { useAppUpdateCheck } from './hooks/useAppUpdateCheck';
 import { useFeedbackNotifications } from './hooks/useFeedbackNotifications';
 import { useHoverPreview } from './hooks/useHoverPreview';
+import { useRealtimeEvents } from './hooks/useRealtimeEvents';
 import { createLocalTesterFetcher, isLocalTesterFetcher, LOCAL_TESTER_FETCH_FLAG } from './services/localTesterStore';
 import { useDocumentAndFolderActions } from './hooks/useDocumentAndFolderActions';
 import { createApiFetch } from './services/apiFetch';
@@ -201,6 +202,13 @@ export default function App() {
       void fetchData();
     }
   }, [session.currentUser, testerConsent.checking, testerConsent.needsConsent, testerConsent.diskReconnect.needed, isLocalTesterMode, fetchData]);
+
+  useRealtimeEvents({
+    apiUrl: API_URL,
+    enabled: Boolean(session.currentUser && !testerConsent.checking && !testerConsent.needsConsent && !testerConsent.diskReconnect.needed),
+    onRefresh: fetchData,
+    onToast: showToast,
+  });
 
   const closeUserMenu = useCallback(() => session.setIsUserMenuOpen(false), [session]);
   const billing = useBillingFlow({ apiUrl: API_URL, fetcher: fetch, fetchData, showToast, closeUserMenu });

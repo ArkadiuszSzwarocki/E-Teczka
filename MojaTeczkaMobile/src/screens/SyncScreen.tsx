@@ -9,6 +9,7 @@ import { getApiUrl, getAuthHeaders, getLocalConnection, pairLocalComputer } from
 import { changeVaultAccess, clearOfflineCopies, createVault, getOfflineFolderIds, getVaultStorageBytes, getViewerCacheBytes, hasVault, setOfflineFolderIds, syncOfflineVault, unlockWithPin, vaultMode as readVaultMode, SecretMode, VaultMode } from "../services/offlineVault";
 import { getCatalogStorageBytes } from "../services/offlineCatalog";
 import { getSyncInfo, syncNow, syncOfflineCatalog } from "../services/offlineSync";
+import { syncStandaloneScans } from "../services/standaloneFolders";
 import * as LocalAuthentication from "expo-local-authentication";
 import { isRetentionDocument, retentionExpiresAt, scheduleRetentionNotifications, type RetentionDocument } from "../services/retentionNotifications";
 import { getAutoLockMinutes, setAutoLockMinutes } from "../services/appLock";
@@ -178,6 +179,7 @@ export default function SyncScreen({ navigation, computerOnline, onPaired, onLoc
       setStatus("Połączono (Online)");
       setStatusColor("#22c55e");
       await loadLifeAlerts();
+      void syncStandaloneScans().catch(() => undefined);
       onPaired?.();
       navigation.navigate("Kartoteki");
     } catch (error: unknown) {

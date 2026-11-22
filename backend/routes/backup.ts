@@ -9,6 +9,7 @@ import { ocrOwnerKey } from '../services/ocrPremium';
 import { encrypt, decrypt, exportRecoveryKey, importRecoveryKey } from '../services/backupCrypto';
 import { requireLocalDesktop } from '../middleware/accessControl';
 import { restoreBackup } from '../services/restoreBackup';
+import { emitRealtimeEvent } from '../services/realtimeBus';
 import { exportSystemSettings, restoreSystemSettings } from '../services/settingsBackup';
 import { importExternalArchive } from '../services/externalImport';
 import { listWebDavFolders, createWebDavFolder, normalizeWebDavEndpoint } from '../services/webdavFolders';
@@ -51,6 +52,7 @@ export async function runScheduledCloudBackup(prisma: PrismaClient, ownerKey: st
   try {
     const response = await uploadEncryptedBackupFileToCloud(destination, credentials, backup.filePath, backup.size);
     if (!response.ok) throw new Error(`Cloud upload failed (${response.status}).`);
+    emitRealtimeEvent('backup:done', { provider: destination.provider }, ownerIdValue);
     return true;
   } finally {
     backup.cleanup();
@@ -177,6 +179,7 @@ export function createBackupRouter(prisma: PrismaClient) {
       try {
         const response = await uploadEncryptedBackupFileToCloud(destination, credentials, backup.filePath, backup.size);
         if (!response.ok) return res.status(502).json({ error: response.status === 507 ? 'NAS zgłosił brak dostępnego miejsca (HTTP 507). Sprawdź wolne miejsce, limit konta oraz czy wybrano właściwy folder z prawem zapisu.' : `Serwer ${destination.provider === 'webdav' ? 'NAS/WebDAV' : destination.provider} odrzucił kopię (HTTP ${response.status}). Sprawdź folder i uprawnienia do zapisu.` });
+        emitRealtimeEvent('backup:done', { provider: destination.provider }, ownerId(res));
         res.json({ success: true, provider: destination.provider, uploadedAt: new Date().toISOString() });
       } finally {
         backup.cleanup();

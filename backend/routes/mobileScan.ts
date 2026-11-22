@@ -8,6 +8,7 @@ import { scanDraftsDir, uploadsDir } from '../config/paths';
 import { errorMessage } from '../utils/errors';
 import { enqueuePremiumOcr } from '../services/ocrEnqueue';
 import { ocrOwnerKey } from '../services/ocrPremium';
+import { emitRealtimeEvent } from '../services/realtimeBus';
 import { getPlan, ensurePlanLedger, checkDocumentCapacity, consumeUsage, claimPrinterPages, PlanLimitError } from '../services/planLedger';
 import { createHash, randomUUID } from 'node:crypto';
 import { assertUniqueDocument, DuplicateDocumentError, hashFile } from '../services/duplicateDocuments';
@@ -98,6 +99,7 @@ export function createMobileScanRouter(prisma: PrismaClient, ocrQueue?: ReturnTy
       } }); });
       outputPath = '';
       void enqueuePremiumOcr(prisma, ocrQueue, res, document.id);
+      emitRealtimeEvent('document:created', { documentId: document.id, folderId: document.folderId, title: document.title }, Number(res.locals.userId || 1));
       res.status(201).json({ ...document, pdfa: archive.pdfa, pdfaWarning: archive.warning });
     } catch (error: unknown) {
       removeTemporaryFiles();
@@ -178,6 +180,7 @@ export function createMobileScanRouter(prisma: PrismaClient, ocrQueue?: ReturnTy
       } }); await tx.$executeRaw`INSERT INTO PlanScanReceipt(ownerKey,draftId,documentId,fingerprint) VALUES (${key},${String(draftId)},${saved.id},${fingerprint})`; return saved; });
       outputPath = '';
       void enqueuePremiumOcr(prisma, ocrQueue, res, document.id);
+      emitRealtimeEvent('document:created', { documentId: document.id, folderId: document.folderId, title: document.title }, Number(res.locals.userId || 1));
       try { fs.rmSync(draftDir, { recursive: true, force: true }); } catch (error) { console.error('[scan] Nie udało się usunąć szkicu:', errorMessage(error)); }
       res.status(201).json({ ...document, pdfa: archive.pdfa, pdfaWarning: archive.warning });
     } catch (error: unknown) {

@@ -13,6 +13,8 @@ import { getApiUrl, getAuthHeaders } from "../services/localConnection";
 import { offlineFile } from "../services/offlineVault";
 import { downloadSecureFile } from "../services/secureFileTransfer";
 import OcrViewer from "../components/OcrViewer";
+import StructuredDocCard from "../components/StructuredDocCard";
+import { parseStructuredDocument, type StructuredDocView } from "../services/structuredDocumentParser";
 import type { RootStackParamList } from "../types/navigation";
 
 export default function DocumentViewerScreen() {
@@ -20,6 +22,7 @@ export default function DocumentViewerScreen() {
   const { document } = useRoute<RouteProp<RootStackParamList, "DocumentViewer">>().params;
   const [fileUri, setFileUri] = useState<string | null>(null);
   const [textPreview, setTextPreview] = useState<string | null>(null);
+  const [structuredDoc, setStructuredDoc] = useState<StructuredDocView | null>(null);
   const [loading, setLoading] = useState(true);
   const [showOcr, setShowOcr] = useState(false);
 
@@ -34,6 +37,10 @@ export default function DocumentViewerScreen() {
   };
 
   const downloadDocument = profileOperation(async () => {
+    if (document.filePath?.startsWith("file://")) {
+      const localInfo = await FileSystem.getInfoAsync(document.filePath);
+      if (localInfo.exists) return { uri: document.filePath };
+    }
     const target = `${profileCacheDirectory()}mojateczka_v2_${document.id}.${extension}`;
     const cached = await FileSystem.getInfoAsync(target);
     const updatedMs = document.updatedAt ? Date.parse(document.updatedAt) : NaN;
@@ -83,6 +90,7 @@ export default function DocumentViewerScreen() {
         try {
           const raw = await FileSystem.readAsStringAsync(resolvedUri);
           if (!active) return;
+          setStructuredDoc(parseStructuredDocument(raw, extension, document.mimeType));
           if (extension === "json" || document.mimeType?.includes("json")) {
             try { setTextPreview(JSON.stringify(JSON.parse(raw), null, 2)); }
             catch { setTextPreview(raw); }
@@ -110,9 +118,13 @@ export default function DocumentViewerScreen() {
         isImage ? (
           <Image source={{ uri: fileUri }} style={styles.image} resizeMode="contain" onLoadEnd={() => setLoading(false)} onError={() => { setLoading(false); Alert.alert("Nie udało się wyświetlić obrazu", "Możesz nadal użyć udostępniania lub e-maila."); }} />
         ) : isStructuredText ? (
-          <ScrollView style={styles.textScroll} contentContainerStyle={styles.textContent}>
-            <Text selectable style={styles.codeText}>{textPreview ?? ""}</Text>
-          </ScrollView>
+          structuredDoc ? (
+            <StructuredDocCard doc={structuredDoc} rawText={textPreview ?? ""} />
+          ) : (
+            <ScrollView style={styles.textScroll} contentContainerStyle={styles.textContent}>
+              <Text selectable style={styles.codeText}>{textPreview ?? ""}</Text>
+            </ScrollView>
+          )
         ) : (
           <Pdf source={{ uri: fileUri, cache: true }} style={styles.pdf} onLoadComplete={() => setLoading(false)} onError={() => { setLoading(false); Alert.alert("Nie udało się wyświetlić PDF", "Możesz nadal użyć udostępniania lub e-maila."); }} />
         )

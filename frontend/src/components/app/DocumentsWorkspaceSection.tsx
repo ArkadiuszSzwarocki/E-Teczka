@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import AnalyticsDashboard from '../AnalyticsDashboard';
 import ArchiveDesktop from '../ArchiveDesktop';
 import DocumentTableView from '../DocumentTableView';
 import { AppFolderIcon } from '../FolderIconPicker';
+import FolderTemplateOnboardingModal from '../FolderTemplateOnboardingModal';
 import FoldersDesktop from '../FoldersDesktop';
 import TrashDesktop from '../TrashDesktop';
 import { createFolder, moveFolderToParent, renameFolder, reorderFolders } from '../../services/folderApi';
@@ -67,6 +69,12 @@ export function DocumentsWorkspaceSection(props: Props) {
     onFetchData, showToast, actions,
   } = props;
 
+  const [templateDismissed, setTemplateDismissed] = useState(() => localStorage.getItem('mojateczka_template_onboarding_dismissed') === '1');
+  const dismissTemplateOnboarding = () => {
+    localStorage.setItem('mojateczka_template_onboarding_dismissed', '1');
+    setTemplateDismissed(true);
+  };
+
   const shareClassic = (doc: DocumentRecord) => {
     void shareDocumentClassic(apiUrl, apiFetch, doc)
       .then(mode => showToast(mode === 'shared' ? 'Udostępniono dokument.' : 'Pobrano dokument na dysk do wysłania.', 'success'))
@@ -129,7 +137,20 @@ export function DocumentsWorkspaceSection(props: Props) {
           </button>
         </div>
       ) : activeView === 'dashboard' && !searchQuery.trim() ? (
-        <FoldersDesktop
+        <>
+          {folders.length === 0 && !templateDismissed && (
+            <FolderTemplateOnboardingModal
+              apiUrl={apiUrl}
+              fetcher={fetcher}
+              onDismiss={dismissTemplateOnboarding}
+              onApplied={async (createdCount, label) => {
+                dismissTemplateOnboarding();
+                await onFetchData();
+                showToast(`Utworzono szablon „${label}” (${createdCount} kartotek).`, 'success');
+              }}
+            />
+          )}
+          <FoldersDesktop
           apiUrl={apiUrl} fetcher={fetcher} plan={billingPlan} folders={folders} documents={documents}
           accountEmail={accountEmail} selectedDocs={selectedDocs}
           onToggleSelect={actions.toggleDocSelection} onSelectAllVisible={setSelectedDocs} onClearSelected={actions.clearSelectedDocs}
@@ -151,6 +172,7 @@ export function DocumentsWorkspaceSection(props: Props) {
           onPropertiesDoc={onPropertiesDoc}
           onEditRetention={doc => actions.setRetentionModal({ isOpen: true, docId: doc.id, value: doc.retentionValue || 5, unit: doc.retentionUnit || 'years', enabled: doc.retentionEnabled !== false })}
         />
+        </>
       ) : activeView === 'archive' && !searchQuery.trim() ? (
         <ArchiveDesktop
           apiUrl={apiUrl} fetcher={fetcher} plan={billingPlan} documents={displayedDocs} selectedDocs={selectedDocs}

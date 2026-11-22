@@ -2,6 +2,7 @@ import express from 'express';
 import { requireLocalDesktop, verifyAccountToken } from '../middleware/accessControl';
 import { billingOwnerKey } from '../middleware/premium';
 import { devPlansEnabled, devPlan, setDevPlan } from '../services/devPlans';
+import { emitRealtimeEvent } from '../services/realtimeBus';
 import type { Plan } from '../services/planPolicy';
 export function createDevPlanRouter() {
   const router = express.Router();
@@ -27,6 +28,7 @@ export function createDevPlanRouter() {
     const value: unknown = req.body?.plan;
     if (value !== null && value !== 'free' && value !== 'standard' && value !== 'premium' && value !== 'family' && value !== 'business') return res.status(400).json({ error: 'Nieznany plan testowy.' });
     setDevPlan(billingOwnerKey(res), value as Plan | null);
+    emitRealtimeEvent('plan:updated', { plan: String(value || 'free') }, Number(res.locals.userId || 1));
     res.json({ override: value });
   });
   return router;

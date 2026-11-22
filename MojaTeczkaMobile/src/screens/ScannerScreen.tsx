@@ -6,8 +6,9 @@ import { Ionicons } from "@expo/vector-icons";
 import DocumentScanner, { ResponseType, ScanDocumentResponseStatus } from "react-native-document-scanner-plugin";
 import { useRoute, useNavigation, type RouteProp } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
-import { getApiUrl, getAuthHeaders } from "../services/localConnection";
+import { getApiUrl, getAuthHeaders, getLocalConnection } from "../services/localConnection";
 import { loadCachedFolders } from "../services/offlineCatalog";
+import { ensureStandaloneFolders, saveStandaloneScan } from "../services/standaloneFolders";
 import { clearScanDraft, loadScanDraft, saveScanDraft } from "../services/scanDraft";
 import { fetchPrinterDevices, scanPrinterPage, type PrinterDevice } from "../services/printerScan";
 import { uploadScanDocument } from "../services/mobileScanUpload";
@@ -72,16 +73,17 @@ export default function ScannerScreen() {
     if (targetFolderId) return;
     void (async () => {
       try {
+        const connection = await getLocalConnection();
+        if (!connection) {
+          setFolderChoices(await ensureStandaloneFolders());
+          return;
+        }
         const response = await fetch(await getApiUrl("/api/folders"), { headers: await getAuthHeaders() });
         const data: unknown = await response.json();
         setFolderChoices(Array.isArray(data) ? data.filter((folder): folder is FolderSummary => Boolean(folder) && typeof folder === "object" && typeof (folder as FolderSummary).id === "number" && typeof (folder as FolderSummary).name === "string") : []);
       } catch {
         const cached = await loadCachedFolders().catch(() => [] as FolderSummary[]);
-        if (cached.length > 0) {
-          setFolderChoices(cached);
-        } else {
-          Alert.alert("Nie udało się pobrać kartotek", "Sprawdź połączenie z komputerem MojaTeczka lub zsynchronizuj kartoteki offline.");
-        }
+        setFolderChoices(cached.length > 0 ? cached : await ensureStandaloneFolders());
       }
     })();
   }, [targetFolderId]);
@@ -145,7 +147,7 @@ export default function ScannerScreen() {
     setPrinterPickerOpen(true); setIsLoadingPrinters(true); setPrinterDevices([]);
     try {
       setPrinterDevices(await fetchPrinterDevices());
-    } catch (error: unknown) { Alert.alert("Brak skanerów", errorMessage(error, "Sprawdź komputer E‑Teczka i drukarkę.")); setPrinterPickerOpen(false); }
+    } catch (error: unknown) { Alert.alert("Brak skanerów", errorMessage(error, "Sprawdź komputer MojaTeczka i drukarkę.")); setPrinterPickerOpen(false); }
     finally { setIsLoadingPrinters(false); }
   };
 
@@ -172,6 +174,27 @@ export default function ScannerScreen() {
     try {
       setIsProcessing(true);
       if (!uploadId.current) { uploadId.current = 'draft_' + Date.now() + '_' + Math.random().toString(36).slice(2, 14); await persistDraft(pages); }
+      const connection = await getLocalConnection();
+      if (!connection || targetFolderId < 0) {
+        setProcessingLabel("Zapisywanie w lokalnym sejfie telefonu…");
+        await saveStandaloneScan({
+          uploadId: uploadId.current,
+          folderId: targetFolderId,
+          title: title.trim(),
+          pages,
+          retentionEnabled,
+          retentionValue,
+          retentionUnit,
+          grayscale: bwMode,
+        });
+        await Promise.all(pages.map((uri) => FileSystem.deleteAsync(uri, { idempotent: true })));
+        await clearScanDraft();
+        Alert.alert("Zapisano na telefonie", "Dokument jest bezpiecznie zapisany w lokalnej kartotece. Zostanie automatycznie wysłany na komputer po sparowaniu.", [
+          { text: "OK", onPress: () => navigation.navigate("Kartoteki") },
+        ]);
+        setPages([]); setTitle(""); setRetentionEnabled(false); uploadId.current = null;
+        return;
+      }
       const result = await uploadScanDocument({ uploadId: uploadId.current, pages, folderId: targetFolderId, title: title.trim(), retentionEnabled, retentionValue, retentionUnit, grayscale: bwMode, onStage: setProcessingLabel });
       await Promise.all(pages.map((uri) => FileSystem.deleteAsync(uri, { idempotent: true })));
       await clearScanDraft();

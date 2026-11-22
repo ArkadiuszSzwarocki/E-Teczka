@@ -1,6 +1,7 @@
 import express from 'express';
 import type { PrismaClient } from '@prisma/client';
 import { collectFolderBranch } from '../services/folders';
+import { applyFolderTemplate, isFolderTemplateId } from '../services/folderTemplates';
 import { canAccessFolder, getAccessibleFolderIds } from '../services/familyAccess';
 import { errorMessage } from '../utils/errors';
 
@@ -35,6 +36,18 @@ export function createFolderRouter(prisma: PrismaClient) {
       await prisma.$transaction(allowedIds.map((id: number, idx: number) => prisma.folder.updateMany({ where: { id }, data: { order: idx } })));
       res.json({ success: true });
     } catch (error: unknown) { res.status(500).json({ error: 'Błąd zapisu kolejności kartotek.', details: errorMessage(error) }); }
+  });
+  router.post('/apply-template', async (req, res) => {
+    try {
+      const templateId = req.body?.templateId;
+      if (!isFolderTemplateId(templateId)) {
+        return res.status(400).json({ error: 'Wybierz poprawny szablon kartotek (home lub business).' });
+      }
+      const result = await applyFolderTemplate(prisma, ownerId(res), templateId);
+      res.status(201).json({ success: true, ...result });
+    } catch (error: unknown) {
+      res.status(500).json({ error: 'Nie udało się utworzyć szablonu kartotek.', details: errorMessage(error) });
+    }
   });
   router.use('/:id', async (req, res, next) => {
     const id = Number(req.params.id);

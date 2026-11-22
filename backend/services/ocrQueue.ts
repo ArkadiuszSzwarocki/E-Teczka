@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
 import { encrypt, decrypt } from './backupCrypto';
 import { protectOcrText } from './ocrText';
+import { emitRealtimeEvent } from './realtimeBus';
 import { extractDocumentText } from './ocrEngine';
 import { extractFinanceFromOcr } from './financeOcrParser';
 import { parseReceiptFromOcr } from './receiptOcrParser';
@@ -122,6 +123,8 @@ export function createOcrQueue(prisma: PrismaClient, options: Options) {
             }
           });
           update(next.documentId, next.ownerKey, { state: 'done' });
+          const ownerMatch = /^user:(\d+)$/.exec(next.ownerKey);
+          emitRealtimeEvent('ocr:done', { documentId: document.id, title: document.title }, ownerMatch ? Number(ownerMatch[1]) : 1);
         } catch (error) {
           const rawMsg = error instanceof Error ? error.message : '';
           const message = /password|encrypted|has[łl]/i.test(rawMsg)

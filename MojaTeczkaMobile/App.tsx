@@ -20,6 +20,7 @@ import { hasVault } from "./src/services/offlineVault";
 import { getApiUrl, getAuthHeaders, getLocalConnection } from "./src/services/localConnection";
 import { getAutoLockMinutes } from "./src/services/appLock";
 import { pruneOfflineCache } from "./src/services/offlineCleanup";
+import { connectMobileRealtime, disconnectMobileRealtime, subscribeMobileConnection } from "./src/services/realtimeClient";
 import type { FolderStackParamList, MainTabParamList, MobileDocument, RootStackParamList } from "./src/types/navigation";
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -59,38 +60,37 @@ function AppTabs({ initialTab = "Ustawienia", onLock }: { initialTab?: keyof Mai
   useEffect(() => {
     let active = true;
     let foreground = AppState.currentState !== 'background' && AppState.currentState !== 'inactive';
-    let generation = 0;
-    let controller: AbortController | null = null;
-    const checkComputer = async () => {
+    const unsubscribeConn = subscribeMobileConnection(connected => {
+      if (active) setComputerOnline(connected);
+    });
+    const ensureConnected = async () => {
       if (!foreground) return;
-      const attempt = ++generation;
-      controller?.abort();
-      const request = new AbortController(); controller = request;
-      const timeout = setTimeout(() => { if (active && attempt === generation) setComputerOnline(false); request.abort(); }, 3000);
-      try {
-        const connection = await getLocalConnection();
-        if (!connection) { if (active && attempt === generation) { setIsPaired(false); setComputerOnline(false); } return; }
-        if (active) setIsPaired(true);
-        const response = await fetch(`${connection.serverUrl}/api/health`, { headers: await getAuthHeaders(), signal: request.signal });
-        if (active && attempt === generation) setComputerOnline(response.ok);
-      } catch { if (active && attempt === generation) setComputerOnline(false); }
-      finally { clearTimeout(timeout); }
+      const connection = await getLocalConnection().catch(() => null);
+      if (!active) return;
+      if (!connection) {
+        setIsPaired(false);
+        setComputerOnline(false);
+        disconnectMobileRealtime();
+        return;
+      }
+      setIsPaired(true);
+      await connectMobileRealtime().catch(() => undefined);
     };
-    void checkComputer();
-    const timer = setInterval(() => void checkComputer(), 20_000);
+    void ensureConnected();
+    const timer = setInterval(() => void ensureConnected(), 60_000);
     const subscription = AppState.addEventListener('change', state => {
       foreground = state === 'active';
-      if (state === 'active') { setComputerOnline(false); void checkComputer(); }
-      else { generation++; controller?.abort(); setComputerOnline(false); }
+      if (state === 'active') void ensureConnected();
+      else { disconnectMobileRealtime(); setComputerOnline(false); }
     });
-    return () => { active = false; generation++; controller?.abort(); clearInterval(timer); subscription.remove(); };
+    return () => { active = false; clearInterval(timer); unsubscribeConn(); subscription.remove(); disconnectMobileRealtime(); };
   }, []);
 
   return (
     <View style={appTabsStyles.container}><ConnectionStatusBar computerOnline={computerOnline} /><Tab.Navigator
       initialRouteName={initialTab}
       screenOptions={({ route }) => {
-        const isLocked = !isPaired && route.name !== "Ustawienia";
+        const isLocked = !isPaired && route.name !== "Ustawienia" && route.name !== "Kartoteki" && route.name !== "Skaner";
         return ({
         headerShown: false,
         tabBarLabel: route.name === 'Ustawienia' ? 'Więcej' : route.name,
@@ -200,9 +200,8 @@ function AppContent({ initiallyUnlocked = false }: { initiallyUnlocked?: boolean
     void (async () => {
       try {
         const active = await hasVault();
-        const paired = Boolean(await getLocalConnection().catch(() => null));
         if (!mounted) return;
-        setInitialTab(paired ? "Kartoteki" : "Ustawienia");
+        setInitialTab("Kartoteki");
         setVaultUnlocked(!active || initiallyUnlocked);
       } catch {
         if (!mounted) return;

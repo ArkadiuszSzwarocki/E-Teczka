@@ -3,12 +3,13 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useIsFocused, type NavigationProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { io } from "socket.io-client";
 import { getApiUrl, getAuthHeaders, getLocalConnection } from "../services/localConnection";
+import { subscribeMobileRealtime } from "../services/realtimeClient";
 import type { FolderStackParamList, FolderSummary, MainTabParamList } from "../types/navigation";
 import { errorMessage } from "../utils/errors";
 import { loadCachedDocuments, loadCachedFolders, saveCachedFolders } from "../services/offlineCatalog";
 import { cancelPendingFolderCreation, queueOfflineChange, syncNow } from "../services/offlineSync";
+import { ensureStandaloneFolders, syncStandaloneScans } from "../services/standaloneFolders";
 
 function isFolderSummary(value: unknown): value is FolderSummary {
   if (!value || typeof value !== "object") return false;
@@ -37,7 +38,10 @@ export default function HomeScreen() {
     setLoadError(null);
     try {
       if (!await getLocalConnection()) {
-        setNeedsSetup(true);
+        const localFolders = await ensureStandaloneFolders();
+        setFolders(localFolders);
+        setNeedsSetup(false);
+        setLoadError("Tryb lokalny — możesz skanować od razu. Sparuj komputer w zakładce Więcej, aby zsynchronizować.");
         return;
       }
       setNeedsSetup(false);
@@ -48,7 +52,7 @@ export default function HomeScreen() {
         res = await fetch(await getApiUrl("/api/folders"), { headers: await getAuthHeaders(), signal: controller.signal });
       } catch (error: unknown) {
         if (error instanceof Error && error.name === "AbortError") {
-          throw new Error("Komputer nie odpowiedział w ciągu 8 sekund. Sprawdź, czy E‑Teczka działa i telefon jest w tej samej sieci Wi‑Fi.");
+          throw new Error("Komputer nie odpowiedział w ciągu 8 sekund. Sprawdź, czy MojaTeczka działa i telefon jest w tej samej sieci Wi‑Fi.");
         }
         throw error;
       } finally {
@@ -60,6 +64,7 @@ export default function HomeScreen() {
       setFolders(nextFolders);
       await saveCachedFolders(nextFolders);
       void syncNow().catch(() => undefined);
+      void syncStandaloneScans().catch(() => undefined);
     } catch (error: unknown) {
       const cached = await loadCachedFolders();
       if (cached.length) { setFolders(cached); setNeedsSetup(false); setLoadError("Tryb offline — pokazano ostatnio zapisaną listę kartotek."); }
@@ -77,13 +82,9 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (!isFocused) return;
-    let socket: ReturnType<typeof io> | undefined;
-    getLocalConnection().then((connection) => {
-      if (!connection) return;
-      socket = io(connection.serverUrl);
-      socket.on("db_update", () => { fetchFolders(); });
+    return subscribeMobileRealtime(() => {
+      void fetchFolders();
     });
-    return () => { socket?.disconnect(); };
   }, [isFocused]);
   
   const onRefresh = () => { setRefreshing(true); fetchFolders(); };

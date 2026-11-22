@@ -88,6 +88,13 @@ export async function requireAccess(request: express.Request, response: express.
   next();
 }
 
+export function resolvePairedDeviceOwner(token: string): number | null {
+  if (!token) return null;
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  const device = pairedDevices.find(item => item.tokenHash === tokenHash);
+  return device ? (device.ownerId || 1) : null;
+}
+
 export function verifyAccountToken(token: string) {
   if (!AUTH_SECRET) return null;
   const [encoded, signature] = token.split('.');
