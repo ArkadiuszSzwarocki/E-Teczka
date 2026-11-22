@@ -8,6 +8,12 @@ function createPlayBilling({pool,getSession,env=process.env,request=fetch,now=Da
  const PLAN_LABELS={standard:'Standard',premium:'Premium',family:'Rodzinny',business:'Firmowy'};
  const rank=p=>({business:4,family:3,premium:2,standard:1}[p]||0);
  const encryptionKey=()=>crypto.createHash('sha256').update(String(env.CENTRAL_BILLING_ENCRYPTION_KEY||env.CENTRAL_ENTITLEMENT_PRIVATE_KEY)).digest();
+ let cachedGoogleAuth=null;
+ const resolveAccessToken=async()=>{
+  if(getAccessToken)return getAccessToken();
+  if(!cachedGoogleAuth)cachedGoogleAuth=new GoogleAuth({credentials:JSON.parse(Buffer.from(env.CENTRAL_GOOGLE_PLAY_SERVICE_ACCOUNT,'base64').toString()),scopes:['https://www.googleapis.com/auth/androidpublisher']});
+  return cachedGoogleAuth.getAccessToken();
+ };
  function encrypt(value){const iv=crypto.randomBytes(12),cipher=crypto.createCipheriv('aes-256-gcm',encryptionKey(),iv);const data=Buffer.concat([cipher.update(value,'utf8'),cipher.final()]);return [iv,cipher.getAuthTag(),data].map(v=>v.toString('base64url')).join('.');}
  function decrypt(value){const [iv,tag,data]=value.split('.').map(v=>Buffer.from(v,'base64url'));const cipher=crypto.createDecipheriv('aes-256-gcm',encryptionKey(),iv,{authTagLength:16});cipher.setAuthTag(tag);return Buffer.concat([cipher.update(data),cipher.final()]).toString('utf8');}
  async function account(raw){
@@ -20,7 +26,7 @@ function createPlayBilling({pool,getSession,env=process.env,request=fetch,now=Da
   const map=JSON.parse(env.CENTRAL_GOOGLE_PLAY_PRODUCTS||'{}');
   if(!env.CENTRAL_GOOGLE_PLAY_SERVICE_ACCOUNT||!env.CENTRAL_GOOGLE_PLAY_PACKAGE||!Object.keys(map).length)throw new Error('BILLING_NOT_CONFIGURED');
   if(input?.packageName!==env.CENTRAL_GOOGLE_PLAY_PACKAGE||!PAID_PLANS.includes(map[input.subscriptionId])||typeof input.purchaseToken!=='string'||input.purchaseToken.length<1||input.purchaseToken.length>4000)throw new Error('INVALID_PURCHASE');
-  const token=getAccessToken?await getAccessToken():await new GoogleAuth({credentials:JSON.parse(Buffer.from(env.CENTRAL_GOOGLE_PLAY_SERVICE_ACCOUNT,'base64').toString()),scopes:['https://www.googleapis.com/auth/androidpublisher']}).getAccessToken();const response=await request(`https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(input.packageName)}/purchases/subscriptionsv2/tokens/${encodeURIComponent(input.purchaseToken)}`,{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(10000)});
+  const token=await resolveAccessToken();const response=await request(`https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(input.packageName)}/purchases/subscriptionsv2/tokens/${encodeURIComponent(input.purchaseToken)}`,{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(10000)});
   if(!response.ok)throw new Error('PURCHASE_NOT_VERIFIED');const data=await response.json();
   if(data.externalAccountIdentifiers?.obfuscatedExternalAccountId!==hash(user.id))throw new Error('PURCHASE_ACCOUNT_MISMATCH');
   const line=data.lineItems?.find(item=>item.productId===input.subscriptionId);const expiry=Date.parse(line?.expiryTime);if(!Number.isFinite(expiry))throw new Error('INVALID_PURCHASE');
@@ -43,4 +49,4 @@ function createPlayBilling({pool,getSession,env=process.env,request=fetch,now=Da
  verify.refreshDue=async()=>{if(!env.CENTRAL_GOOGLE_PLAY_SERVICE_ACCOUNT||!env.CENTRAL_GOOGLE_PLAY_PRODUCTS||refreshing)return;refreshing=true;try{const rows=await execute(pool,'SELECT p.*,a.public_id FROM account_purchases p JOIN accounts a ON a.id=p.account_id WHERE p.active=1 AND p.checked_at<? AND p.valid_until>? AND (? IS NULL OR p.account_id=?) ORDER BY p.checked_at LIMIT 20',[now()-900000,now()-7*86400000,refreshAccountId??null,refreshAccountId??null]);for(const row of rows){try{await verifyFor({internal_id:row.account_id,id:row.public_id},{packageName:row.package_name,subscriptionId:row.product_id,purchaseToken:decrypt(row.token_encrypted)});}catch{await execute(pool,'UPDATE account_purchases SET checked_at=? WHERE token_hash=?',[now(),row.token_hash]);}}}finally{refreshing=false;}};
  return verify;
 }
-module.exports={createPlayBilling,ensureBillingSchema};
+module.exports = { createPlayBilling, ensureBillingSchema };

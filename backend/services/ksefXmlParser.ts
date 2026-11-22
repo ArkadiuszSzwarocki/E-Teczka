@@ -38,7 +38,8 @@ function parseMoneyToCents(raw: unknown): number | null {
   if (raw === undefined || raw === null) return null;
   const normalized = String(raw).replace(/[\s\u00A0]/g, '').replace(',', '.');
   const num = Number.parseFloat(normalized);
-  if (!Number.isFinite(num) || Math.abs(num) > 100_000_000) return null;
+  // Keep cents safely within signed 32-bit Int bounds (max ~21.47M PLN) for SQLite/Prisma Int columns.
+  if (!Number.isFinite(num) || Math.abs(num) > 20_000_000) return null;
   return Math.round(num * 100);
 }
 

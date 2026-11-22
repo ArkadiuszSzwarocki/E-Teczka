@@ -7,7 +7,7 @@ const ALLOWED_EVENTS = new Set([
   'eteczka-prepare-quit',
 ]);
 
-const listenerMap = new WeakMap();
+const listenerMapByChannel = new Map();
 
 contextBridge.exposeInMainWorld('eteczkaElectron', {
   ipcRenderer: {
@@ -19,16 +19,22 @@ contextBridge.exposeInMainWorld('eteczkaElectron', {
     },
     on: (channel, listener) => {
       if (!ALLOWED_EVENTS.has(channel) || typeof listener !== 'function') return;
+      let channelMap = listenerMapByChannel.get(channel);
+      if (!channelMap) {
+        channelMap = new WeakMap();
+        listenerMapByChannel.set(channel, channelMap);
+      }
       const wrapped = (_event, ...args) => listener(undefined, ...args);
-      listenerMap.set(listener, wrapped);
+      channelMap.set(listener, wrapped);
       ipcRenderer.on(channel, wrapped);
     },
     removeListener: (channel, listener) => {
       if (!ALLOWED_EVENTS.has(channel) || typeof listener !== 'function') return;
-      const wrapped = listenerMap.get(listener);
+      const channelMap = listenerMapByChannel.get(channel);
+      const wrapped = channelMap?.get(listener);
       if (wrapped) {
         ipcRenderer.removeListener(channel, wrapped);
-        listenerMap.delete(listener);
+        channelMap.delete(listener);
       }
     },
   },

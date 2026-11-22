@@ -15,8 +15,8 @@ function loadPairedDevices(): PairedDevice[] {
 }
 
 let pairedDevices = loadPairedDevices();
-let pairingCode = createPairingCode();
-let pairingExpiresAt = Date.now() + 10 * 60 * 1000;
+let pairingCode = '';
+let pairingExpiresAt = 0;
 let pairingOwner: { ownerId?: number; ownerKey: string; mobileLimit: number; replaceDeviceId?:string } = { ownerKey: 'desktop-local', mobileLimit: 1 };
 const pairingAttempts = new Map<string, number>();
 let accountSessionIsActive: ((token: string, userId: number) => Promise<boolean>) | null = null;

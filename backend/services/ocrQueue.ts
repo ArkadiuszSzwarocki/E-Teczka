@@ -10,7 +10,7 @@ import { parseReceiptFromOcr } from './receiptOcrParser';
 import { featureTrial } from './planLedger';
 
 type State = 'queued' | 'processing' | 'done' | 'error' | 'paused';
-type Job = { documentId: number; ownerKey: string; state: State; error?: string; updatedAt: number };
+type Job = { documentId: number; ownerKey: string; state: State; error?: string; attempts?: number; updatedAt: number };
 type Options = { file: string; uploadsDirectory: string; extract?: typeof extractDocumentText };
 
 /** Durable, serialized local queue. The state and recognized text are encrypted on disk. */
@@ -54,11 +54,20 @@ export function createOcrQueue(prisma: PrismaClient, options: Options) {
     if (running) return;
     running = true;
     try {
-      // Interrupted work and previously paused jobs (e.g. after upgrading to Premium) can resume.
+      // Interrupted work (up to 3 crash retries) and previously paused jobs (e.g. after upgrading to Premium) can resume.
       const jobs = read(); let changed = false;
       for (const job of jobs) {
-        if (job.state === 'processing') { job.state = 'queued'; changed = true; }
-        else if (job.state === 'paused' && (await featureTrial(prisma, job.ownerKey, 'ocr', false)).allowed) {
+        if (job.state === 'processing') {
+          const nextAttempts = (job.attempts || 0) + 1;
+          job.attempts = nextAttempts;
+          if (nextAttempts > 3) {
+            job.state = 'error';
+            job.error = 'Plik wielokrotnie przerwał rozpoznawanie OCR (uszkodzony lub zbyt duży dokument).';
+          } else {
+            job.state = 'queued';
+          }
+          changed = true;
+        } else if (job.state === 'paused' && (await featureTrial(prisma, job.ownerKey, 'ocr', false)).allowed) {
           job.state = 'queued'; job.error = undefined; changed = true;
         }
       }
@@ -106,7 +115,12 @@ export function createOcrQueue(prisma: PrismaClient, options: Options) {
           }
           update(next.documentId, next.ownerKey, { state: 'done' });
         } catch (error) {
-          const message = error instanceof Error && /Brak lokalnego pliku językowego|przekracza limit|format dokumentu|nie jest dostępny|Dokument zmienił/.test(error.message) ? error.message : 'Nie udało się rozpoznać dokumentu. Sprawdź plik i spróbuj ponownie.';
+          const rawMsg = error instanceof Error ? error.message : '';
+          const message = /password|encrypted|has[łl]/i.test(rawMsg)
+            ? 'Plik PDF jest zabezpieczony hasłem — nie można uruchomić OCR.'
+            : /Brak lokalnego pliku językowego|przekracza limit|format dokumentu|nie jest dostępny|Dokument zmienił/.test(rawMsg)
+              ? rawMsg
+              : 'Nie udało się rozpoznać dokumentu. Sprawdź plik i spróbuj ponownie.';
           update(next.documentId, next.ownerKey, { state: 'error', error: message });
         }
       }

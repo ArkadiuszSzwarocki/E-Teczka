@@ -182,6 +182,7 @@ async function syncOfflineVaultLocked(onProgress?: (done: number, total: number,
   if (!selectedFolders.length) throw new Error('Zaznacz przynajmniej jedną podkartotekę do pobrania offline.');
   const docs = payload.filter(isOfflineDocument).filter((document) => !document.isDeleted && typeof document.folderId === "number" && selectedFolders.includes(document.folderId));
   const current = await index(); const map = new Map(current.map((doc) => [doc.id, doc]));
+  let ocrBlocked = false;
   for (let i = 0; i < docs.length; i++) {
     const doc = docs[i]; const target = `${ROOT()}${doc.id}.enc`;
     const previous = map.get(doc.id);
@@ -194,20 +195,35 @@ async function syncOfflineVaultLocked(onProgress?: (done: number, total: number,
       const path = normalizedPath.toLowerCase().startsWith('uploads/') ? `/${normalizedPath}` : `/uploads/${normalizedPath}`;
       onProgress?.(i, docs.length, `Pobieranie: ${doc.title}`);
       let result: { status: number; uri: string };
-      try { result = await downloadSecureFile(await getApiUrl(path), temporary, await getAuthHeaders(), (done, total) => { const amount = total > 0 ? ` ${Math.round(100 * done / total)}%` : ''; onProgress?.(i, docs.length, `Pobieranie: ${doc.title}${amount}`); }); }
-      catch { throw new Error(`Nie udało się bezpiecznie pobrać dokumentu „${doc.title}”. Sprawdź połączenie z komputerem.`); }
       try {
-        if (!result || result.status !== 200) throw new Error(`Komputer nie udostępnił dokumentu (HTTP ${result?.status ?? 'brak odpowiedzi'}).`);
+        result = await downloadSecureFile(await getApiUrl(path), temporary, await getAuthHeaders(), (done, total) => { const amount = total > 0 ? ` ${Math.round(100 * done / total)}%` : ''; onProgress?.(i, docs.length, `Pobieranie: ${doc.title}${amount}`); });
+        if (!result || result.status !== 200) throw new Error(`HTTP ${result?.status ?? 'brak odpowiedzi'}`);
         onProgress?.(i, docs.length, `Szyfrowanie: ${doc.title}`);
         await encryptFileInChunks(ROOT(), doc.id, doc.filePath, temporary, chunkCodec, (done, total) => onProgress?.(i, docs.length, `Szyfrowanie: ${doc.title} ${Math.round(100 * done / total)}%`));
-      } finally { await FileSystem.deleteAsync(temporary, { idempotent: true }).catch(() => undefined); }
+      } catch {
+        onProgress?.(i + 1, docs.length);
+        continue;
+      } finally {
+        await FileSystem.deleteAsync(temporary, { idempotent: true }).catch(() => undefined);
+      }
     }
     // OCR is optional: a missing Premium subscription or unfinished job must not block the document download.
-    try {
-      const ocrResponse = await fetchWithTimeout(await getApiUrl(`/api/ocr/${doc.id}`), { headers: await getAuthHeaders() }, 10_000, 'Pobieranie tekstu OCR');
-      if (ocrResponse.status === 402 || ocrResponse.status === 403 || ocrResponse.status === 404) await removeOfflineOcr(doc.id);
-      else if (ocrResponse.ok) { const result: unknown = await ocrResponse.json(); const text = result && typeof result === 'object' ? (result as { text?: unknown }).text : null; if (typeof text === 'string' && text.length) await saveOfflineOcr(doc.id, text); else await removeOfflineOcr(doc.id); }
-    } catch { /* Keep the previous encrypted copy when the connection is interrupted. */ }
+    if (!ocrBlocked) {
+      try {
+        const ocrResponse = await fetchWithTimeout(await getApiUrl(`/api/ocr/${doc.id}`), { headers: await getAuthHeaders() }, 10_000, 'Pobieranie tekstu OCR');
+        if (ocrResponse.status === 402 || ocrResponse.status === 403) {
+          ocrBlocked = true;
+          await removeOfflineOcr(doc.id);
+        } else if (ocrResponse.status === 404) {
+          await removeOfflineOcr(doc.id);
+        } else if (ocrResponse.ok) {
+          const result: unknown = await ocrResponse.json();
+          const text = result && typeof result === 'object' ? (result as { text?: unknown }).text : null;
+          if (typeof text === 'string' && text.length) await saveOfflineOcr(doc.id, text);
+          else await removeOfflineOcr(doc.id);
+        }
+      } catch { /* Keep the previous encrypted copy when the connection is interrupted. */ }
+    }
     map.set(doc.id, doc); await saveIndex([...map.values()]); onProgress?.(i + 1, docs.length);
     await new Promise<void>((resolve) => setTimeout(resolve, 80));
   }

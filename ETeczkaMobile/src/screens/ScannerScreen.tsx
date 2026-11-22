@@ -96,16 +96,25 @@ export default function ScannerScreen() {
       for (let idx = 0; idx < result.scannedImages.length; idx += 1) {
         const rawImg = result.scannedImages[idx];
         let localUri = `${FileSystem.documentDirectory}scan_draft_${Date.now()}_${idx}.webp`;
+        let manipulatedUri: string | null = null;
         try {
           const manipulated = await ImageManipulator.manipulateAsync(
             rawImg,
             [{ resize: { width: 1200 } }],
             { compress: 0.7, format: ImageManipulator.SaveFormat.WEBP },
           );
+          manipulatedUri = manipulated.uri;
           await FileSystem.copyAsync({ from: manipulated.uri, to: localUri });
         } catch {
           localUri = `${FileSystem.documentDirectory}scan_draft_${Date.now()}_${idx}.jpg`;
           await FileSystem.copyAsync({ from: rawImg, to: localUri });
+        } finally {
+          if (manipulatedUri && manipulatedUri !== localUri) {
+            void FileSystem.deleteAsync(manipulatedUri, { idempotent: true }).catch(() => undefined);
+          }
+          if (rawImg && rawImg !== localUri) {
+            void FileSystem.deleteAsync(rawImg, { idempotent: true }).catch(() => undefined);
+          }
         }
         addedUris.push(localUri);
       }

@@ -91,18 +91,11 @@ function createBackendLifecycle({ ipcMain, BrowserWindow, ownRenderer, rootDir, 
   }
 
   function waitForServer(onReady, retries = 20) {
-    http.get('http://127.0.0.1:3000/api/documents', (res) => {
-      if (res.statusCode >= 0) {
+    backendAvailable().then((ready) => {
+      if (ready) {
         console.log('Backend jest gotowy! Otwieram okno...');
         onReady();
       } else if (retries <= 0) {
-        console.error('Nie udało się połączyć z lokalnym backendem.');
-        onReady();
-      } else {
-        setTimeout(() => waitForServer(onReady, retries - 1), 500);
-      }
-    }).on('error', () => {
-      if (retries <= 0) {
         console.error('Nie udało się połączyć z lokalnym backendem.');
         onReady();
       } else {

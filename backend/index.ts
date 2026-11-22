@@ -260,6 +260,15 @@ app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
 
 const httpBindHost = process.env.ETECZKA_PUBLIC_TEST_MODE === '1' ? '0.0.0.0' : '127.0.0.1';
 void prisma.$executeRawUnsafe("UPDATE Document SET filePath = substr(filePath, 9) WHERE filePath LIKE 'uploads/%'").catch(() => undefined);
+const pruneTechnicalTables = async () => {
+  const now = new Date();
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 86_400_000);
+  await prisma.authSession.deleteMany({ where: { expiresAt: { lt: now } } }).catch(() => undefined);
+  await prisma.syncOperation.deleteMany({ where: { createdAt: { lt: thirtyDaysAgo } } }).catch(() => undefined);
+};
+void pruneTechnicalTables();
+setInterval(() => { void pruneTechnicalTables(); }, 6 * 3_600_000).unref();
+
 const httpServer = app.listen(3000, httpBindHost, () => { console.log(`${logStamp()} Serwer lokalny HTTP: port 3000 (${httpBindHost}).`); void ocrQueue.process().catch(() => console.error(`${logStamp()} [ocr] Nie udało się wznowić kolejki.`)); });
 const httpsServer = https.createServer({ key: localTls.key, cert: localTls.cert, minVersion: 'TLSv1.2' }, app);
 httpsServer.on('error', (err: NodeJS.ErrnoException) => {

@@ -79,7 +79,7 @@ export async function revokeCentralDevice(localUserId:number,centralToken:string
 export async function verifyCentralPurchase(localUserId:number,input:object){const entry=read()[localUserId];if(!entry)throw new Error('CENTRAL_ACCOUNT_REQUIRED');const {response,value}=await post(entry.origin,'/billing/google-play/verify',entry.credential,input);if(!response.ok)throw new Error(value.code||'PURCHASE_NOT_VERIFIED');await centralEntitlement(localUserId,true);return value;}
 export async function centralEntitlement(localUserId:number,force=false):Promise<{plan:Plan;expiresAt:number;validUntil:number|null;blocked:boolean}|null>{
  let entry=read()[localUserId];if(!entry)return null;
- if(force||entry.blocked||Date.now()-(entry.checkedAt||0)>15000){
+ if(force||entry.blocked||Date.now()-(entry.checkedAt||0)>600000){
   let pending=running.get(localUserId);if(!pending){pending=(async()=>{try{const {response,value}=await post(entry.origin,'/entitlements/refresh',entry.credential,{});if(response.ok){verifyEntitlement(value,entry);entry.lease=value;entry.blocked=false;}else if(response.status===401||response.status===403){entry.lease=undefined;entry.blocked=true;}}catch{/* A signed lease remains usable offline until its fixed expiry. */}entry.checkedAt=Date.now();update(localUserId,entry);})();running.set(localUserId,pending);}
   try{await pending;}finally{running.delete(localUserId);}entry=read()[localUserId];
  }
