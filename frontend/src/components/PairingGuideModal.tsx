@@ -16,7 +16,7 @@ type Props = {
   onClose: () => void;
 };
 
-/** Modal guiding local Wi-Fi QR pairing between desktop E-Teczka and mobile devices. */
+/** Modal guiding local Wi-Fi QR pairing between desktop MojaTeczka and mobile devices. */
 export default function PairingGuideModal({
   localAddresses, pairingCode, phoneConnected, pairingLimit, pairedPhones,
   replacementBusy, replacementNotice, localCaFingerprint, onReplacePhone, onClose,
@@ -55,7 +55,7 @@ export default function PairingGuideModal({
           <div className="rounded-xl border border-blue-500/50 bg-blue-950/30 p-5">
             <div className="mb-3 text-4xl">🖥️</div>
             <div className="font-bold text-blue-300">1. Połącz urządzenia z Wi‑Fi</div>
-            <p className="mt-2 text-sm text-slate-300">Telefon i komputer muszą być w tej samej sieci lokalnej. Otwórz E‑Teczkę na obu urządzeniach.</p>
+            <p className="mt-2 text-sm text-slate-300">Telefon i komputer muszą być w tej samej sieci lokalnej. Otwórz MojąTeczkę na obu urządzeniach.</p>
           </div>
           <div className="rounded-xl border border-emerald-500/50 bg-emerald-950/30 p-5">
             <div className="mb-3 text-4xl">📱</div>
@@ -88,7 +88,7 @@ export default function PairingGuideModal({
         </section>
         <div className="mt-5 flex flex-col items-center gap-3 rounded-xl border border-cyan-500/40 bg-cyan-950/20 p-5">
           <h3 className="font-bold text-cyan-200">Szyfrowane połączenie z telefonem</h3>
-          <p className="text-center text-sm text-slate-300">Na telefonie otwórz Połączenie z komputerem i zeskanuj kod QR. Aplikacja sprawdzi certyfikat przez Wi‑Fi i zapisze go w E‑Teczce. Nie musisz instalować certyfikatu w ustawieniach telefonu.</p>
+          <p className="text-center text-sm text-slate-300">Na telefonie otwórz Połączenie z komputerem i zeskanuj kod QR. Aplikacja sprawdzi certyfikat przez Wi‑Fi i zapisze go w MojejTeczce. Nie musisz instalować certyfikatu w ustawieniach telefonu.</p>
           <p className="max-w-full break-all text-center font-mono text-xs text-slate-400">Odcisk SHA-256 certyfikatu: {localCaFingerprint || 'niedostępny'}</p>
           <p className="text-center text-sm text-slate-300">W aplikacji mobilnej wybierz „Skanuj kod QR”.</p>
           {localAddresses[0] && pairingCode && localCaFingerprint ? (
@@ -96,7 +96,7 @@ export default function PairingGuideModal({
               <QRCode value={JSON.stringify({ serverUrl: `https://${localAddresses[0]}`, pairingCode, caFingerprint: localCaFingerprint })} size={190} />
             </div>
           ) : (
-            <p className="text-sm text-amber-200">Serwer HTTPS nie jest gotowy. Uruchom ponownie E‑Teczkę na komputerze, a potem odśwież to okno.</p>
+            <p className="text-sm text-amber-200">Serwer HTTPS nie jest gotowy. Uruchom ponownie MojąTeczkę na komputerze, a potem odśwież to okno.</p>
           )}
           <p className="font-mono text-xs text-slate-400">{localAddresses[0] || 'brak adresu'} · {pairingCode || 'brak kodu'}</p>
         </div>

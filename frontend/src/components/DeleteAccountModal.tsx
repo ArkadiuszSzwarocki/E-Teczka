@@ -40,7 +40,7 @@ export default function DeleteAccountModal({ apiUrl, fetcher, userEmail, onErase
       localStorage.removeItem(`eteczka_mobile_onboarding_v1:${emailKey}`);
       localStorage.removeItem('eteczka_default_scanner');
 
-      onErased(payload.centralNote || (payload.centralDeleted ? 'Konto i wszystkie dane zostały całkowicie usunięte.' : 'Wszystkie dane i konto w E‑Teczce zostały trwale usunięte.'));
+      onErased(payload.centralNote || (payload.centralDeleted ? 'Konto i wszystkie dane zostały całkowicie usunięte.' : 'Wszystkie dane i konto w MojejTeczce zostały trwale usunięte.'));
     } catch (reason) {
       setError(errorMessage(reason, 'Nie udało się usunąć konta.'));
     } finally {

@@ -97,7 +97,7 @@ export default function UploadPanel({
         </div>
         {foldersUnavailable && (
           <div role="status" className="text-sm text-amber-300">
-            <p>Nie udało się pobrać kartotek z serwera. Sprawdź, czy E-Teczka na komputerze działa.</p>
+            <p>Nie udało się pobrać kartotek z serwera. Sprawdź, czy MojaTeczka na komputerze działa.</p>
             <button type="button" onClick={onRetryFetch} className="mt-2 rounded border border-amber-500 px-3 py-1.5 text-amber-200 hover:bg-amber-500/10">Ponów połączenie</button>
           </div>
         )}

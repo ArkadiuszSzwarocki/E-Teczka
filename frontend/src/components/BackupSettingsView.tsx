@@ -98,7 +98,7 @@ export default function BackupSettingsView({
                   </button>
                   <div>
                     <label className="mb-1 block text-xs font-semibold text-slate-300">Folder docelowy w chmurze (opcjonalnie)</label>
-                    <input aria-label="Folder docelowy" value={remoteFolder} onChange={event => setRemoteFolder(event.target.value)} placeholder="np. /Backup/E-Teczka lub ID folderu" className="w-full rounded-lg border border-slate-600 bg-[#0f172a] p-2.5 text-sm text-white" />
+                    <input aria-label="Folder docelowy" value={remoteFolder} onChange={event => setRemoteFolder(event.target.value)} placeholder="np. /Backup/MojaTeczka lub ID folderu" className="w-full rounded-lg border border-slate-600 bg-[#0f172a] p-2.5 text-sm text-white" />
                   </div>
                 </div>
               )}

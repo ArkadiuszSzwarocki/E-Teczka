@@ -208,7 +208,7 @@ export default function MailInboxView({
             {inbox.stats && (
               <div role="status" className="space-y-1 rounded-xl border border-cyan-500/30 bg-cyan-950/20 p-3 text-xs text-cyan-100">
                 <p>📬 Wszystkie: <strong>{inbox.stats.totalMessages}</strong></p>
-                <p>✅ Już sprawdzone przez E‑Teczkę: <strong>{inbox.stats.checkedMessages}</strong></p>
+                <p>✅ Już sprawdzone przez MojąTeczkę: <strong>{inbox.stats.checkedMessages}</strong></p>
                 <p>🆕 Nowe (niesprawdzone): <strong>{inbox.stats.newMessages}</strong></p>
                 <p>✉️ Nieprzeczytane w poczcie: <strong>{inbox.stats.unreadMessages}</strong> <span className="text-slate-400">(bez oznaczania jako przeczytane)</span></p>
               </div>
@@ -254,7 +254,7 @@ export default function MailInboxView({
                 </div>
                 <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-700 bg-[#0f172a]/70 px-3 py-2 text-xs text-slate-200">
                   <input type="checkbox" checked={autoMailSync} onChange={e => { setAutoMailSync(e.target.checked); setAutoMailSyncEnabled(e.target.checked); }} className="h-3.5 w-3.5 accent-cyan-500" />
-                  <span>Skanuj automatycznie przy wejściu do E‑Teczki</span>
+                  <span>Skanuj automatycznie przy wejściu do MojejTeczki</span>
                 </label>
                 <div className="flex flex-wrap items-center gap-2 pt-1">
                   <button

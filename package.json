@@ -1,6 +1,10 @@
 {
   "name": "eteczka-master",
   "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "start": "concurrently \"npm run start:backend\" \"npm run start:accounts\" \"npm run start:frontend\"",
     "dev:desktop": "concurrently -k \"npm run start:backend\" \"npm run start:accounts\" \"npm run start:frontend\" \"npm run start:electron-dev\"",
@@ -9,7 +13,40 @@
     "start:frontend": "cd frontend && npm run dev",
     "start:electron-dev": "wait-on tcp:3000 http://127.0.0.1:5173 && set ETECZKA_DEV_URL=http://127.0.0.1:5173&& set ETECZKA_EXTERNAL_BACKEND=1&& electron .",
     "dev:desktop:existing-backend": "concurrently -k \"npm run start:frontend\" \"npm run start:electron-dev\"",
-    "dev:desktop:existing-backend-accounts": "concurrently -k \"npm run start:accounts\" \"npm run start:frontend\" \"npm run start:electron-dev\""
+    "dev:desktop:existing-backend-accounts": "concurrently -k \"npm run start:accounts\" \"npm run start:frontend\" \"npm run start:electron-dev\"",
+    "test:desktop": "node --test desktop/test/*.test.js",
+    "check:desktop": "npm run test:desktop",
+    "check:backend": "npm --prefix backend run typecheck && npm --prefix backend run build && npm --prefix backend run build:dist",
+    "check:frontend": "npm --prefix frontend run lint && npm --prefix frontend run typecheck && npm --prefix frontend run build",
+    "check:all": "npm run check:desktop && npm run check:backend && npm run check:frontend",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac"
+  },
+  "build": {
+    "appId": "pl.arecki.mojateczka",
+    "productName": "MojaTeczka",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "desktop/**/*",
+      "assets/icon.ico",
+      "assets/icon.png",
+      "frontend/dist/**/*",
+      "backend/dist/**/*",
+      "backend/prisma/**/*"
+    ],
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": ["nsis"]
+    },
+    "mac": {
+      "icon": "assets/icon.png",
+      "category": "public.app-category.productivity",
+      "target": ["dmg", "zip"]
+    }
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

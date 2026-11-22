@@ -3,8 +3,8 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 
-/** Registers Windows WIA scanner, default printer, and temporary scan file IPC handlers. */
-function registerWiaScannerIpc({ app, ipcMain, ownRenderer }) {
+/** Registers Windows WIA scanner (with safe macOS/Linux fallback), default printer, and temporary scan file IPC handlers. */
+function registerWiaScannerIpc({ app, ipcMain, ownRenderer, platform = process.platform }) {
   function runWiaPowerShell(script) {
     return new Promise((resolve, reject) => {
       const proc = spawn('powershell.exe', ['-NoProfile', '-STA', '-Command', script], { windowsHide: true });
@@ -46,6 +46,7 @@ function registerWiaScannerIpc({ app, ipcMain, ownRenderer }) {
   }
 
   ipcMain.handle('eteczka-wia-devices', async () => {
+    if (platform !== 'win32') return [];
     const script = "$ErrorActionPreference = 'Stop'; $manager = New-Object -ComObject WIA.DeviceManager; $devices = @($manager.DeviceInfos | Where-Object { $_.Type -eq 1 } | ForEach-Object { [PSCustomObject]@{ id = $_.DeviceID; name = [string]$_.Properties.Item('Name').Value; manufacturer = try { [string]$_.Properties.Item('Manufacturer').Value } catch { '' } } }); $devices | ConvertTo-Json -Compress";
     const output = await runWiaPowerShell(script);
     if (!output) return [];
@@ -54,6 +55,7 @@ function registerWiaScannerIpc({ app, ipcMain, ownRenderer }) {
   });
 
   ipcMain.handle('eteczka-default-printer', async () => {
+    if (platform !== 'win32') return '';
     try {
       return (await runWiaPowerShell("$p = Get-CimInstance Win32_Printer -Filter 'Default=True' | Select-Object -First 1 -ExpandProperty Name; if ($p) { Write-Output $p }")) || '';
     } catch {
@@ -61,9 +63,12 @@ function registerWiaScannerIpc({ app, ipcMain, ownRenderer }) {
     }
   });
 
-  ipcMain.handle('eteczka-wia-scan', async (event, deviceId) =>
-    acquireWithWia(deviceId, (stage) => event.sender.send('eteczka-wia-status', stage)),
-  );
+  ipcMain.handle('eteczka-wia-scan', async (event, deviceId) => {
+    if (platform !== 'win32') {
+      throw new Error('Skaner WIA jest obsługiwany w systemie Windows. Na macOS użyj aparatu lub Folderu obserwowanego.');
+    }
+    return acquireWithWia(deviceId, (stage) => event.sender.send('eteczka-wia-status', stage));
+  });
 
   ipcMain.handle('eteczka-read-temp-scan', (event, rawPath) => {
     if (!ownRenderer(event)) throw new Error('Brak uprawnień.');

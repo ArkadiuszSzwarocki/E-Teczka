@@ -7,7 +7,7 @@ import {
   pickTesterDiskDirectory,
   requestSavedDiskPermission,
 } from '../services/localTesterStore';
-import { isAndroidBrowser } from '../services/platform';
+import { isAndroidBrowser, isIosBrowser } from '../services/platform';
 
 const TRUSTED_WEB_COPY_KEY = 'eteczka_trusted_local_copy_v1';
 
@@ -30,10 +30,11 @@ type PickedDb = {
   hasSecurity: boolean;
 };
 
-/** Settings card allowing desktop and web/Android users to select, trust, and auto-attach a local E-Teczka data copy. */
+/** Settings card allowing desktop and web/Android users to select, trust, and auto-attach a local MojaTeczka data copy. */
 export function TrustedDatabaseCard({ accountEmail = '' }: { accountEmail?: string }) {
   const ipc = getElectronIpc();
   const isAndroid = isAndroidBrowser();
+  const isIos = isIosBrowser();
   const diskSupported = isDiskStorageSupported();
   const [status, setStatus] = useState<TrustedDbStatus | null>(null);
   const [picked, setPicked] = useState<PickedDb | null>(null);
@@ -128,9 +129,11 @@ export function TrustedDatabaseCard({ accountEmail = '' }: { accountEmail?: stri
             <p className="mt-0.5 text-xs text-slate-400">
               {diskSupported
                 ? 'Wskaż lokalny folder w pamięci urządzenia i zapamiętaj go jako zaufaną kopię bazy danych.'
-                : isAndroid
-                  ? 'Przeglądarka na Androidzie przechowuje lokalną kopię bazy w pamięci urządzenia (IndexedDB). Możesz ją zapamiętać jako zaufaną dla tego telefonu.'
-                  : 'Zapamiętaj lokalną kopię bazy danych w pamięci tej przeglądarki jako zaufaną.'}
+                : isIos
+                  ? 'Safari na iPhone / iPad przechowuje lokalną kopię bazy w pamięci urządzenia (IndexedDB). Możesz ją zapamiętać jako zaufaną dla tego urządzenia.'
+                  : isAndroid
+                    ? 'Przeglądarka na Androidzie przechowuje lokalną kopię bazy w pamięci urządzenia (IndexedDB). Możesz ją zapamiętać jako zaufaną dla tego telefonu.'
+                    : 'Zapamiętaj lokalną kopię bazy danych w pamięci tej przeglądarki jako zaufaną.'}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">

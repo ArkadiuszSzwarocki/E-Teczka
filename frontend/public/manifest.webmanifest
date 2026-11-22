@@ -1,0 +1,20 @@
+{
+  "name": "MojaTeczka — Domowe archiwum dokumentów",
+  "short_name": "MojaTeczka",
+  "description": "Domowe i mobilne archiwum dokumentów, faktur, paragonów i umów z OCR, ochroną RODO i kopią na własny dysk lub NAS.",
+  "lang": "pl",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

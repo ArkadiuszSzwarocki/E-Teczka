@@ -109,7 +109,7 @@ export default function DocumentPreviewModal({ apiUrl, fetcher, document, zoom, 
       const blob=await response.blob();if(!active)return;
       objectUrl=URL.createObjectURL(isPdf?new Blob([blob],{type:'application/pdf'}):blob);
       setPreview({source,url:objectUrl,error:''});
-    })().catch(error=>{if(active&&!controller.signal.aborted){const raw=error instanceof Error?error.message:'';setPreview({source,url:'',error:raw==='Failed to fetch'?'Brak połączenia z lokalnym serwerem E‑Teczki (port 3000). Kliknij „Odśwież DEV” lub uruchom ponownie backend.':raw||'Nie udało się pobrać dokumentu.'});}});
+    })().catch(error=>{if(active&&!controller.signal.aborted){const raw=error instanceof Error?error.message:'';setPreview({source,url:'',error:raw==='Failed to fetch'?'Brak połączenia z lokalnym serwerem MojejTeczki (port 3000). Kliknij „Odśwież DEV” lub uruchom ponownie backend.':raw||'Nie udało się pobrać dokumentu.'});}});
     return()=>{active=false;controller.abort();if(objectUrl)URL.revokeObjectURL(objectUrl);};
   },[apiUrl,source,isPdf,fetcher]);
   const previewUrl=preview.source===source?preview.url:'';

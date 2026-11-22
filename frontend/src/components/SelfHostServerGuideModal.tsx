@@ -56,7 +56,7 @@ export default function SelfHostServerGuideModal({ onClose, onOpenBackup }: Prop
           <div className="rounded-xl border border-slate-700 bg-slate-900/70 p-4">
             <h3 className="font-bold text-white">2. Przygotowanie środowiska na serwerze (NAS / VPS / Docker)</h3>
             <p className="mt-1 text-xs text-slate-300">
-              Skopiuj repozytorium E‑Teczki (lub obraz kontenera) na własny serwer z Node.js / Dockerem oraz skonfiguruj plik <code className="text-blue-300">.env</code> w katalogu <code className="text-blue-300">backend/</code>:
+              Skopiuj repozytorium MojejTeczki (lub obraz kontenera) na własny serwer z Node.js / Dockerem oraz skonfiguruj plik <code className="text-blue-300">.env</code> w katalogu <code className="text-blue-300">backend/</code>:
             </p>
             <div className="relative mt-2 rounded-lg border border-slate-700 bg-[#090d16] p-3 font-mono text-xs text-slate-200">
               <pre className="overflow-x-auto whitespace-pre-wrap">{ENV_SNIPPET}</pre>

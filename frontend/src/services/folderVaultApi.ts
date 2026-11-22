@@ -9,7 +9,7 @@ export type VaultStatus = {
   recoveryEmailConfigured: boolean;
 };
 
-/** Ensures the Safe Password and PIN do not match the main E-Teczka app access lock. */
+/** Ensures the Safe Password and PIN do not match the main MojaTeczka app access lock. */
 export async function ensureDifferentFromAppAccess(password: string, pin: string): Promise<string | null> {
   const ipc = getElectronIpc();
   if (!ipc) return null;

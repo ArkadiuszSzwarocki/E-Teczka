@@ -27,7 +27,7 @@ export default function SettingsDialog({ embedded = false, isPremiumPlan = false
     <>
       <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-700 px-6 py-5 sm:px-8">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-widest text-blue-400">E‑Teczka</p>
+          <p className="text-xs font-semibold uppercase tracking-widest text-blue-400">MojaTeczka</p>
           <h2 id="settings-window-title" className="mt-1.5 text-2xl font-bold text-white">Ustawienia aplikacji</h2>
           <p className="mt-1 text-sm text-slate-400">Wybierz, co chcesz skonfigurować.</p>
         </div>

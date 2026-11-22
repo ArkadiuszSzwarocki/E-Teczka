@@ -88,7 +88,7 @@ function registerAccessLockIpc({ app, ipcMain, safeStorage, ownRenderer, rootDir
 
   ipcMain.handle('eteczka-hello-available', () => checkWindowsHelloAvailability());
   ipcMain.handle('eteczka-hello-verify', async (event) => {
-    const result = await verifyWithWindowsHello('Potwierdź tożsamość w E-Teczce');
+    const result = await verifyWithWindowsHello('Potwierdź tożsamość w MojejTeczce');
     if (result.ok) verifiedSenders.set(event.sender.id, Date.now() + 5 * 60_000);
     return result;
   });

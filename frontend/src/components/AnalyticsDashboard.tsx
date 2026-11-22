@@ -98,7 +98,7 @@ export default function AnalyticsDashboard({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold text-white">Podsumowanie i analizy</h2>
-          <p className="text-sm text-slate-400">Analiza kosztów, dokumentów oraz nadchodzących terminów płatności w E‑Teczce</p>
+          <p className="text-sm text-slate-400">Analiza kosztów, dokumentów oraz nadchodzących terminów płatności w MojejTeczce</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" disabled={bundleBusy} onClick={() => void downloadAccountantBundle()} className="rounded-lg border border-amber-500/60 bg-amber-500/15 px-3 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-500/25 disabled:opacity-50">

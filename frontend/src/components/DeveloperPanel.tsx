@@ -146,7 +146,7 @@ export default function DeveloperPanel({
     <div className={embedded ? 'w-full space-y-5' : 'mx-auto max-w-7xl space-y-5'}>
       <header className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-700/80 bg-slate-900/90 px-6 py-4">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[.2em] text-amber-400">E‑Teczka · Deweloper</p>
+          <p className="text-xs font-bold uppercase tracking-[.2em] text-amber-400">MojaTeczka · Deweloper</p>
           <h1 className="mt-1 text-2xl font-semibold text-white">{sectionTitle}</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">

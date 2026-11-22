@@ -8,7 +8,7 @@ type Props = {
   onCancel: () => void;
 };
 
-/** Interactive holographic 3D folder icon generator matching E-Teczka preset icons. */
+/** Interactive holographic 3D folder icon generator matching MojaTeczka preset icons. */
 export function FolderIconGeneratorPanel({ folderName, atLimit, onApply, onCancel }: Props) {
   const initialSymbol = folderName.trim().slice(0, 3).toUpperCase() || '⚡';
   const [symbol, setSymbol] = useState(initialSymbol);
@@ -37,7 +37,7 @@ export function FolderIconGeneratorPanel({ folderName, atLimit, onApply, onCance
   return (
     <div className="space-y-3 rounded-xl border border-cyan-500/40 bg-[#0b1324] p-4">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-bold uppercase tracking-wider text-cyan-300">✨ Generator ikony w stylu E‑Teczki</p>
+        <p className="text-xs font-bold uppercase tracking-wider text-cyan-300">✨ Generator ikony w stylu MojejTeczki</p>
         <button type="button" onClick={onCancel} className="text-xs text-slate-400 hover:text-white">Zamknij</button>
       </div>
 

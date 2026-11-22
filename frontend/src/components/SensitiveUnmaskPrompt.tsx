@@ -97,7 +97,7 @@ export default function SensitiveUnmaskPrompt({ apiUrl, fetcher, onUnlocked, onC
         autoFocus
         value={code}
         onChange={e => setCode(e.target.value)}
-        placeholder={method === 'totp' ? 'Kod 6-cyfrowy z Authenticatora...' : method === 'local' ? 'Wpisz lokalny PIN lub hasło...' : 'Wpisz hasło konta E‑Teczki...'}
+        placeholder={method === 'totp' ? 'Kod 6-cyfrowy z Authenticatora...' : method === 'local' ? 'Wpisz lokalny PIN lub hasło...' : 'Wpisz hasło konta MojejTeczki...'}
         className="w-full rounded-lg border border-slate-600 bg-[#111827] px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500"
       />
       {error && <p role="alert" className="mt-2 text-xs font-semibold text-red-300">{error}</p>}

@@ -9,7 +9,7 @@ const SIZE_CLASSES: Record<'xs' | 'sm' | 'md' | 'lg', { img: string; emoji: stri
   lg: { img: 'h-14 w-14 object-contain', emoji: 'text-5xl' },
 };
 
-/** Renders the default E-Teczka folder icon (or classic emoji when enabled). */
+/** Renders the default MojaTeczka folder icon (or classic emoji when enabled). */
 export function AppFolderIcon({ size = 'sm' }: { size?: 'xs' | 'sm' | 'md' | 'lg' }) {
   const classic = useClassicIcons();
   const cls = SIZE_CLASSES[size];

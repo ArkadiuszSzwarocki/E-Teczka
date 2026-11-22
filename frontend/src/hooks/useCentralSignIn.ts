@@ -189,7 +189,7 @@ export function useCentralSignIn(apiUrl: string, origin: string, deviceId: strin
   async function finish() {
     if (!start) return; setBusy(true); setMessage(''); setDeviceLimitReached(false);
     try {
-      const { response, payload } = await post('/api/central-account/handoff/finish', { handle: start.handle, createNew: true, mfaCode, deviceId, deviceName: 'E‑Teczka Desktop' });
+      const { response, payload } = await post('/api/central-account/handoff/finish', { handle: start.handle, createNew: true, mfaCode, deviceId, deviceName: 'MojaTeczka Desktop' });
       if (response.status === 409 && ['LOCAL_LINK_REQUIRED', 'LOCAL_ACCOUNT_EXISTS'].includes(payload.code)) { setNeedsLink(true); return; }
       if (response.status === 401 && payload.code === 'MFA_REQUIRED') { setNeedsMfa(true); setMessage(payload.error); return; }
       if (payload?.code === 'DEVICE_LIMIT_REACHED') {
@@ -216,7 +216,7 @@ export function useCentralSignIn(apiUrl: string, origin: string, deviceId: strin
   async function linkExisting() {
     if (!start) return; setBusy(true); setMessage('');
     try {
-      const local = await post('/api/auth/login', { email, password, deviceId, deviceName: 'E‑Teczka Desktop' });
+      const local = await post('/api/auth/login', { email, password, deviceId, deviceName: 'MojaTeczka Desktop' });
       if (!local.response.ok || typeof local.payload.token !== 'string') throw new Error(local.payload.error || 'Nie udało się zalogować lokalnie.');
       const linked = await post('/api/central-account/handoff/link', { handle: start.handle }, local.payload.token);
       if (!linked.response.ok) throw new Error(linked.payload.error || 'Nie udało się połączyć kont.');
@@ -227,7 +227,7 @@ export function useCentralSignIn(apiUrl: string, origin: string, deviceId: strin
   async function createLocal() {
     if (!start) return; setBusy(true); setMessage(''); setDeviceLimitReached(false);
     try {
-      const { response, payload } = await post('/api/central-account/handoff/create-local', { handle: start.handle, localPassword: newLocalPassword, deviceId, deviceName: 'E‑Teczka Desktop' });
+      const { response, payload } = await post('/api/central-account/handoff/create-local', { handle: start.handle, localPassword: newLocalPassword, deviceId, deviceName: 'MojaTeczka Desktop' });
       if (payload?.code === 'DEVICE_LIMIT_REACHED') { setDeviceLimitReached(true); setDeviceFreed(false); void loadTrustedDevices(start.handle); }
       if (!response.ok) throw new Error(payload.error || 'Nie udało się utworzyć konta.');
       setNewLocalPassword('');
@@ -238,7 +238,7 @@ export function useCentralSignIn(apiUrl: string, origin: string, deviceId: strin
   async function linkDesktop() {
     if (!start) return; setBusy(true); setMessage(''); setDeviceLimitReached(false);
     try {
-      const { response, payload } = await post('/api/central-account/handoff/link-desktop', { handle: start.handle, secret: desktopSecret, deviceId, deviceName: 'E‑Teczka Desktop' });
+      const { response, payload } = await post('/api/central-account/handoff/link-desktop', { handle: start.handle, secret: desktopSecret, deviceId, deviceName: 'MojaTeczka Desktop' });
       if (payload?.code === 'DEVICE_LIMIT_REACHED') { setDeviceLimitReached(true); setDeviceFreed(false); void loadTrustedDevices(start.handle); }
       if (!response.ok) throw new Error(payload.error || 'Nie udało się połączyć danych.');
       setDesktopSecret('');

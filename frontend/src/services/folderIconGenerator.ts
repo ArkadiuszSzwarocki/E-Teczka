@@ -16,7 +16,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 }
 
 /**
- * Generates a 192x192 holographic 3D folder icon matching the E-Teczka preset style,
+ * Generates a 192x192 holographic 3D folder icon matching the MojaTeczka preset style,
  * projecting a glowing cyan emblem or short monogram onto the blank 3D folder cover.
  */
 export async function generateHolographicFolderIcon(symbolOrText: string): Promise<string> {

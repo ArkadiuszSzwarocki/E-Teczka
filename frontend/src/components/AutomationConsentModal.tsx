@@ -20,7 +20,7 @@ const CONSENT_COPY: Record<AutomationConsentFeature, ConsentCopy> = {
   },
   allowServerAi: {
     title: 'Zezwól na własny serwer AI/OCR (opcjonalnie, bez zapisu)',
-    summary: 'Włączenie tej funkcji oznacza zgodę na tymczasowe przesyłanie dokumentów do bezstanowego serwera AI/OCR E‑Teczki.',
+    summary: 'Włączenie tej funkcji oznacza zgodę na tymczasowe przesyłanie dokumentów do bezstanowego serwera AI/OCR MojejTeczki.',
     details: [
       'Dokument może zostać przekazany do serwera AI/OCR w celu rozpoznania tekstu i kategoryzacji.',
       'Przetwarzanie odbywa się wyłącznie w pamięci RAM serwera, bez trwałego zapisu ani archiwizowania plików.',
@@ -28,10 +28,10 @@ const CONSENT_COPY: Record<AutomationConsentFeature, ConsentCopy> = {
     ],
   },
   autoMailSync: {
-    title: 'Automatyczne skanowanie poczty przy wejściu do E‑Teczki',
+    title: 'Automatyczne skanowanie poczty przy wejściu do MojejTeczki',
     summary: 'Włączenie tej funkcji oznacza zgodę na automatyczne sprawdzanie skonfigurowanej skrzynki IMAP przy każdym otwarciu aplikacji.',
     details: [
-      'Po wejściu do E‑Teczki aplikacja automatycznie połączy się ze skonfigurowaną skrzynką IMAP.',
+      'Po wejściu do MojejTeczki aplikacja automatycznie połączy się ze skonfigurowaną skrzynką IMAP.',
       'Pobierane są wyłącznie informacje o nowych wiadomościach z załącznikami w celu zaproponowania ich przydziału do kartotek.',
       'W każdej chwili możesz zatrzymać skanowanie lub wyłączyć automatyzację w tym panelu.',
     ],

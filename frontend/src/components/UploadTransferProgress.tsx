@@ -6,7 +6,7 @@ export default function UploadTransferProgress({ progress, onCancel }: { progres
     progress.phase === 'preparing'
       ? 'Przygotowywanie i kompresja plików…'
       : progress.phase === 'uploading'
-        ? 'Przesyłanie z komputera do E‑Teczki…'
+        ? 'Przesyłanie z komputera do MojejTeczki…'
         : 'Zapisywanie i szyfrowanie w archiwum…';
 
   return (
@@ -31,7 +31,7 @@ export default function UploadTransferProgress({ progress, onCancel }: { progres
           </div>
           <div className="flex flex-col items-center gap-1 text-slate-300">
             <div className="flex h-14 w-14 items-center justify-center rounded-xl border border-blue-500/60 bg-blue-950/60 text-3xl">🗄️</div>
-            <span className="text-xs font-semibold text-blue-300">E‑Teczka</span>
+            <span className="text-xs font-semibold text-blue-300">MojaTeczka</span>
           </div>
         </div>
 

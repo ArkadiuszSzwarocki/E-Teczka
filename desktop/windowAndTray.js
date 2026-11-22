@@ -43,7 +43,7 @@ function createWindowAndTrayController({ app, BrowserWindow, Tray, Menu, ipcMain
       width: 1280,
       height: 800,
       autoHideMenuBar: true,
-      title: 'E-Teczka – Cyfrowe Archiwum Dokumentów',
+      title: 'MojaTeczka – Domowe Archiwum Dokumentów',
       ...(fs.existsSync(appIconPath) ? { icon: appIconPath } : {}),
       webPreferences: {
         preload: path.join(rootDir, 'preload.js'),
@@ -70,9 +70,9 @@ function createWindowAndTrayController({ app, BrowserWindow, Tray, Menu, ipcMain
     if (process.env.ETECZKA_PROFILE_DIR) {
       mainWindow.on('page-title-updated', event => {
         event.preventDefault();
-        mainWindow.setTitle('E-Teczka - TEST NOWEGO UZYTKOWNIKA');
+        mainWindow.setTitle('MojaTeczka - TEST NOWEGO UZYTKOWNIKA');
       });
-      mainWindow.setTitle('E-Teczka - TEST NOWEGO UZYTKOWNIKA');
+      mainWindow.setTitle('MojaTeczka - TEST NOWEGO UZYTKOWNIKA');
     }
 
     const startUrl = process.env.ETECZKA_DEV_URL || `file://${path.join(rootDir, 'frontend', 'dist', 'index.html')}`;
@@ -98,16 +98,16 @@ function createWindowAndTrayController({ app, BrowserWindow, Tray, Menu, ipcMain
         : await app.getFileIcon(process.execPath, { size: 'small' });
       if (icon.isEmpty()) return;
       tray = new Tray(icon);
-      tray.setToolTip('E-Teczka — działa w tle');
+      tray.setToolTip('MojaTeczka — działa w tle');
       const show = () => { if (!mainWindow) createWindow(); else { mainWindow.show(); mainWindow.focus(); } };
       tray.setContextMenu(Menu.buildFromTemplate([
-        { label: 'Otwórz E-Teczkę', click: show },
+        { label: 'Otwórz MojąTeczkę', click: show },
         { type: 'separator' },
-        { label: 'Zakończ E-Teczkę', click: () => { void quitGracefully(); } },
+        { label: 'Zakończ MojąTeczkę', click: () => { void quitGracefully(); } },
       ]));
       tray.on('double-click', show);
     } catch (error) {
-      console.error('Nie udało się uruchomić ikony E-Teczki:', error);
+      console.error('Nie udało się uruchomić ikony MojejTeczki:', error);
     }
   }
 
@@ -148,7 +148,7 @@ function createWindowAndTrayController({ app, BrowserWindow, Tray, Menu, ipcMain
     if (!win || !ownRenderer(event) || win.isDestroyed()) return false;
     win.hide();
     if (process.platform === 'win32' && tray) {
-      tray.displayBalloon({ title: 'E-Teczka', content: 'Aplikacja została zminimalizowana do zasobnika przy zegarze.' });
+      tray.displayBalloon({ title: 'MojaTeczka', content: 'Aplikacja została zminimalizowana do zasobnika przy zegarze.' });
     }
     return true;
   });

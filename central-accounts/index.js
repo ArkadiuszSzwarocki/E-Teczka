@@ -41,11 +41,11 @@ const accounts = createMariaAccountService({
   verifyGoogle: googleClients.length ? createGoogleIdentityVerifier({ audiences: googleClients }) : async () => { throw new Error('Google login is not configured.'); },
   sendVerification: async (email, code) => {
     const link = new URL(verificationUrl); link.hash = code;
-    await transport.sendMail({ from: CENTRAL_SMTP_FROM, to: email, subject: 'Potwierdzenie konta E-Teczki', text: `Aby potwierdzic adres e-mail, otworz: ${link.href}\nLink wygasa po godzinie.` });
+    await transport.sendMail({ from: CENTRAL_SMTP_FROM, to: email, subject: 'Potwierdzenie konta MojejTeczki', text: `Aby potwierdzic adres e-mail, otworz: ${link.href}\nLink wygasa po godzinie.` });
   },
   sendPasswordReset: async (email, code) => {
     const link = new URL('/reset', verificationUrl.origin); link.hash = code;
-    await transport.sendMail({ from: CENTRAL_SMTP_FROM, to: email, subject: 'Zmiana hasla E-Teczki', text: `Aby zmienic haslo, otworz: ${link.href}\nLink wygasa po godzinie. Jesli nie prosiles o zmiane, zignoruj wiadomosc.` });
+    await transport.sendMail({ from: CENTRAL_SMTP_FROM, to: email, subject: 'Zmiana hasla MojejTeczki', text: `Aby zmienic haslo, otworz: ${link.href}\nLink wygasa po godzinie. Jesli nie prosiles o zmiane, zignoruj wiadomosc.` });
   }
 });
 

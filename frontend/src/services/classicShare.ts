@@ -44,12 +44,12 @@ export async function shareDocumentClassic(
 export async function shareLinkClassic(title: string, url: string): Promise<'shared' | 'mailto'> {
   if (typeof navigator.share === 'function') {
     try {
-      await navigator.share({ title, text: `Dokument E‑Teczki: ${title}`, url });
+      await navigator.share({ title, text: `Dokument MojejTeczki: ${title}`, url });
       return 'shared';
     } catch (error) {
       if ((error as { name?: string })?.name === 'AbortError') throw error;
     }
   }
-  window.location.href = `mailto:?subject=${encodeURIComponent(`Dokument E‑Teczki: ${title}`)}&body=${encodeURIComponent(url)}`;
+  window.location.href = `mailto:?subject=${encodeURIComponent(`Dokument MojejTeczki: ${title}`)}&body=${encodeURIComponent(url)}`;
   return 'mailto';
 }

@@ -1,18 +1,24 @@
 {
   "expo": {
-    "name": "E-Teczka Mobile",
+    "name": "MojaTeczka",
     "slug": "e-teczka-mobile",
     "scheme": "eteczka",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "pl.arecki.mojateczka",
+      "infoPlist": {
+        "NSCameraUsageDescription": "MojaTeczka używa aparatu wyłącznie do skanowania dokumentów i paragonów.",
+        "NSPhotoLibraryUsageDescription": "MojaTeczka potrzebuje dostępu do zdjęć, aby dodawać zapisane dokumenty do archiwum.",
+        "NSFaceIDUsageDescription": "MojaTeczka używa Face ID do szybkiego i bezpiecznego odblokowania dokumentów."
+      }
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0F172A",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -37,7 +43,7 @@
       [
         "react-native-document-scanner-plugin",
         {
-          "cameraPermission": "E-Teczka używa aparatu wyłącznie do skanowania dokumentów."
+          "cameraPermission": "MojaTeczka używa aparatu wyłącznie do skanowania dokumentów."
         }
       ]
     ]

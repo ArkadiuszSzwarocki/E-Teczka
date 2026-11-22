@@ -66,7 +66,7 @@ function buildSections(catalog?: CatalogResponse['catalog']): { title: string; i
         { name: 'Wybrane dokumenty dostępne offline na telefonie', description: 'Wymaga wcześniejszego pobrania na urządzenie.', free: true, standard: true, premium: true, family: true, business: true },
         { name: 'Kopia na NAS lub do chmury', description: 'Okres próbny liczony od pierwszego użycia. Kopia wymaga działającego komputera.', free: f?.cloudBackup ? true : trialBackup, standard: s?.cloudBackup ? true : trialBackup, premium: p?.cloudBackup ?? true, family: fam?.cloudBackup ?? true, business: biz?.cloudBackup ?? true },
         { name: 'Wygasające linki do dokumentów', description: 'Bezpieczne linki z terminem wygaśnięcia, opcjonalnym PIN-em i trybem jednorazowym.', free: false, standard: false, premium: true, family: true, business: true },
-        { name: 'Znak wodny na dokumentach', description: 'Opcjonalny znak wodny (e-mail właściciela, logo i E-Teczka) w eksporcie PDF i bezpiecznych linkach.', free: false, standard: false, premium: true, family: true, business: true },
+        { name: 'Znak wodny na dokumentach', description: 'Opcjonalny znak wodny (e-mail właściciela, logo i MojaTeczka) w eksporcie PDF i bezpiecznych linkach.', free: false, standard: false, premium: true, family: true, business: true },
       ],
     },
   ];
@@ -148,7 +148,7 @@ export default function BillingPlansModalV2({ apiUrl, fetcher, busy, currentPlan
     <div className="fixed inset-0 z-[115] overflow-y-auto bg-black/80 p-3 backdrop-blur-sm">
       <div role="dialog" aria-modal="true" aria-labelledby="plans-title" className="mx-auto my-3 w-full max-w-7xl rounded-2xl border border-slate-600 bg-[#0f172a] p-5 shadow-2xl md:my-6 md:p-7">
         <div className="flex items-start justify-between gap-4">
-          <div><h2 id="plans-title" className="text-2xl font-bold text-white">Porównaj plany E‑Teczki</h2><p className="mt-1 text-sm text-slate-400">Zobacz, co jest dostępne w każdym planie, i wybierz sposób rozliczenia.</p></div>
+          <div><h2 id="plans-title" className="text-2xl font-bold text-white">Porównaj plany MojejTeczki</h2><p className="mt-1 text-sm text-slate-400">Zobacz, co jest dostępne w każdym planie, i wybierz sposób rozliczenia.</p></div>
           <button onClick={onClose} aria-label="Zamknij" className="text-2xl text-slate-400 hover:text-white">×</button>
         </div>
         <div className="mt-5 grid gap-3 md:grid-cols-3 lg:grid-cols-5">

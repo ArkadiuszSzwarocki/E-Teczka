@@ -10,7 +10,7 @@ export default function CloseAppModal({ onMinimize, onQuit, onCancel }: Props) {
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
       <section role="dialog" aria-modal="true" aria-labelledby="close-app-title" className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-600 bg-[#0f172a] shadow-2xl">
         <header className="flex items-center justify-between border-b border-slate-700 px-6 py-4">
-          <h2 id="close-app-title" className="text-lg font-bold text-white">🖥️ Zamykanie E-Teczki</h2>
+          <h2 id="close-app-title" className="text-lg font-bold text-white">🖥️ Zamykanie MojejTeczki</h2>
           <button type="button" aria-label="Anuluj" onClick={onCancel} className="rounded-lg px-2 py-1 text-2xl leading-none text-slate-400 hover:bg-slate-800 hover:text-white">×</button>
         </header>
         <div className="space-y-4 p-6">

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { getElectronIpc } from '../../services/electron';
-import { isMobileBrowser } from '../../services/platform';
+import { isIosBrowser, isMobileBrowser } from '../../services/platform';
 
 const MOBILE_WATCH_FOLDER_KEY = 'eteczka_mobile_watch_folder_v1';
 
@@ -25,6 +25,7 @@ export function MailWatchFolderPanel({ watchPath, watchAllowed, watchBusy, pendi
   const filesInputRef = useRef<HTMLInputElement | null>(null);
   const ipc = getElectronIpc();
   const isMobile = isMobileBrowser();
+  const isIos = isIosBrowser();
 
   if (isMobile && !ipc) {
     const handleMobileFilesSelected = (list: FileList | null, fromDirectory: boolean) => {
@@ -55,8 +56,12 @@ export function MailWatchFolderPanel({ watchPath, watchAllowed, watchBusy, pendi
       <section className="space-y-3 rounded-xl border border-slate-700 bg-[#1e293b] p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h3 className="text-xs font-bold uppercase tracking-wider text-amber-300">📂 Folder obserwowany (Android / Telefon)</h3>
-            <p className="mt-0.5 text-xs text-slate-400">Wybierz folder lub pliki z pamięci telefonu — nowe PDF/obrazy trafią od razu do poczekalni poniżej.</p>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-amber-300">📂 Folder obserwowany ({isIos ? 'iPhone / iPad' : 'Android / Telefon'})</h3>
+            <p className="mt-0.5 text-xs text-slate-400">
+              {isIos
+                ? 'Wybierz pliki PDF lub zdjęcia z aplikacji Pliki / iCloud Drive — trafią od razu do poczekalni poniżej.'
+                : 'Wybierz folder lub pliki z pamięci telefonu — nowe PDF/obrazy trafią od razu do poczekalni poniżej.'}
+            </p>
           </div>
           {!watchAllowed && <span className="rounded bg-amber-500/20 px-2 py-0.5 text-[11px] font-bold text-amber-300">Wymaga Premium</span>}
         </div>
@@ -79,21 +84,27 @@ export function MailWatchFolderPanel({ watchPath, watchAllowed, watchBusy, pendi
           className="hidden"
         />
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            disabled={!watchAllowed || watchBusy}
-            onClick={() => folderInputRef.current?.click()}
-            className="rounded-lg border border-cyan-500/60 bg-cyan-950/40 px-3.5 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-900/50 disabled:opacity-40"
-          >
-            📂 Wybierz folder z telefonu…
-          </button>
+          {!isIos && (
+            <button
+              type="button"
+              disabled={!watchAllowed || watchBusy}
+              onClick={() => folderInputRef.current?.click()}
+              className="rounded-lg border border-cyan-500/60 bg-cyan-950/40 px-3.5 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-900/50 disabled:opacity-40"
+            >
+              📂 Wybierz folder z telefonu…
+            </button>
+          )}
           <button
             type="button"
             disabled={!watchAllowed || watchBusy}
             onClick={() => filesInputRef.current?.click()}
-            className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 disabled:opacity-40"
+            className={`rounded-lg px-3 py-2 text-xs font-semibold disabled:opacity-40 ${
+              isIos
+                ? 'border border-cyan-500/60 bg-cyan-950/40 text-cyan-200 hover:bg-cyan-900/50'
+                : 'border border-slate-600 bg-slate-800 text-slate-200 hover:bg-slate-700'
+            }`}
           >
-            📄 Wybierz pliki
+            {isIos ? '📂 Wybierz z Plików / iCloud…' : '📄 Wybierz pliki'}
           </button>
           <button
             type="button"

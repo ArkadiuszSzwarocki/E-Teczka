@@ -92,24 +92,24 @@ function createShareRouter({ dataDir, masterKey, publisherSecret, publicBase, no
   });
 
   router.get('/s', shareSecurityHeaders, (_req, res) => res.type('html').send(
-    '<!doctype html><html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Bezpieczny dokument — E‑Teczka</title><link rel="stylesheet" href="/share.css"></head>' +
+    '<!doctype html><html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Bezpieczny dokument — MojaTeczka</title><link rel="stylesheet" href="/share.css"></head>' +
     '<body><main class="shell"><header class="brand">E<span>‑</span>Teczka <small>Twoje archiwum</small></header>' +
     '<div class="grid">' +
     '<section class="promo">' +
     '<p class="eyebrow">Mniej papieru. Więcej porządku.</p>' +
     '<h1>Wszystkie dokumenty.<br><span>Jedno miejsce.</span></h1>' +
-    '<p class="lead">Bezpiecznie odbierz udostępniony plik, a własne dokumenty uporządkuj w aplikacji E‑Teczka na komputer i telefon.</p>' +
+    '<p class="lead">Bezpiecznie odbierz udostępniony plik, a własne dokumenty uporządkuj w aplikacji MojaTeczka na komputer i telefon.</p>' +
     '<div class="steps">' +
     '<div class="step"><span>01</span><div><h2>Szyfrowane archiwum na komputerze</h2><p>Pełna kontrola nad plikami, wyszukiwanie OCR i automatyczne kopie na NAS.</p></div></div>' +
     '<div class="step"><span>02</span><div><h2>Aplikacja na telefon i skaner</h2><p>Skanuj dokumenty aparatem lub drukarką prosto do swoich kartotek.</p></div></div>' +
     '<div class="step"><span>03</span><div><h2>Powiadomienia o terminach</h2><p>Pilnuj ważności polis, umów, gwarancji i przeglądów w jednym miejscu.</p></div></div>' +
     '<div class="step"><span>04</span><div><h2>Bezpieczne linki z PIN‑em</h2><p>Udostępniaj pliki jednorazowo lub z datą wygaśnięcia — tak jak ten dokument.</p></div></div>' +
     '</div>' +
-    '<div class="cta"><p class="cta-title">Chcesz wygodnie archiwizować własne dokumenty?</p><p class="cta-sub">Pobierz aplikację E‑Teczka na Windows i Android i załóż bezpłatne konto.</p><a class="cta-btn" href="/account">Załóż konto i poznaj E‑Teczkę →</a></div>' +
+    '<div class="cta"><p class="cta-title">Chcesz wygodnie archiwizować własne dokumenty?</p><p class="cta-sub">Pobierz aplikację MojaTeczka na Windows i Android i załóż bezpłatne konto.</p><a class="cta-btn" href="/account">Załóż konto i poznaj MojąTeczkę →</a></div>' +
     '</section>' +
     '<section class="card" aria-labelledby="share-title">' +
     '<span class="badge">Zaszyfrowane udostępnianie</span>' +
-    '<h2 id="share-title">Bezpieczny dokument E‑Teczki</h2>' +
+    '<h2 id="share-title">Bezpieczny dokument MojejTeczki</h2>' +
     '<p class="card-desc">Jeżeli nadawca zabezpieczył plik kodem PIN, wpisz 6 cyfr poniżej przed pobraniem.</p>' +
     '<label for="pin">PIN (jeśli wymagany)</label>' +
     '<input id="pin" type="password" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="••••••">' +
@@ -117,7 +117,7 @@ function createShareRouter({ dataDir, masterKey, publisherSecret, publicBase, no
     '<p id="status" role="status"></p>' +
     '</section>' +
     '</div>' +
-    '<footer class="foot">E‑Teczka · Twoje cyfrowe archiwum dokumentów</footer>' +
+    '<footer class="foot">MojaTeczka · Twoje cyfrowe archiwum dokumentów</footer>' +
     '</main><script src="/share.js" defer></script></body></html>'
   ));
   router.get('/share.css', shareSecurityHeaders, (_req, res) => res.type('css').send(

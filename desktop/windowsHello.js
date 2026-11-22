@@ -17,8 +17,31 @@ function runWinRtPowerShell(script) {
   });
 }
 
-async function checkWindowsHelloAvailability() {
-  if (process.platform !== 'win32') return { available: false, status: 'UnsupportedPlatform' };
+function resolveSystemPreferences(customPrefs) {
+  if (customPrefs) return customPrefs;
+  try {
+    return require('electron').systemPreferences || null;
+  } catch {
+    return null;
+  }
+}
+
+async function checkWindowsHelloAvailability(options = {}) {
+  const platform = options.platform || process.platform;
+  if (platform === 'darwin') {
+    const sysPrefs = resolveSystemPreferences(options.systemPreferences);
+    try {
+      const canTouchId = Boolean(sysPrefs && typeof sysPrefs.canPromptTouchID === 'function' && sysPrefs.canPromptTouchID());
+      return {
+        available: canTouchId,
+        status: canTouchId ? 'TouchIDAvailable' : 'TouchIDUnavailable',
+        provider: 'touch_id',
+      };
+    } catch {
+      return { available: false, status: 'Error', provider: 'touch_id' };
+    }
+  }
+  if (platform !== 'win32') return { available: false, status: 'UnsupportedPlatform', provider: 'none' };
   const script = `
     Add-Type -AssemblyName System.Runtime.WindowsRuntime
     $asTask = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation\`1' })[0]
@@ -30,14 +53,27 @@ async function checkWindowsHelloAvailability() {
   `;
   try {
     const status = await runWinRtPowerShell(script);
-    return { available: status === 'Available', status };
+    return { available: status === 'Available', status, provider: 'windows_hello' };
   } catch {
-    return { available: false, status: 'Error' };
+    return { available: false, status: 'Error', provider: 'windows_hello' };
   }
 }
 
-async function verifyWithWindowsHello(prompt = 'Odblokuj E-Teczkę') {
-  if (process.platform !== 'win32') return { ok: false, error: 'Windows Hello działa wyłącznie w systemie Windows.' };
+async function verifyWithWindowsHello(prompt = 'Odblokuj MojąTeczkę', options = {}) {
+  const platform = options.platform || process.platform;
+  if (platform === 'darwin') {
+    const sysPrefs = resolveSystemPreferences(options.systemPreferences);
+    if (!sysPrefs || typeof sysPrefs.promptTouchID !== 'function' || (typeof sysPrefs.canPromptTouchID === 'function' && !sysPrefs.canPromptTouchID())) {
+      return { ok: false, error: 'Touch ID jest niedostępne na tym komputerze Mac.', provider: 'touch_id' };
+    }
+    try {
+      await sysPrefs.promptTouchID(String(prompt || 'Odblokuj MojąTeczkę').slice(0, 120));
+      return { ok: true, provider: 'touch_id' };
+    } catch {
+      return { ok: false, error: 'Weryfikacja Touch ID nie została ukończona.', provider: 'touch_id' };
+    }
+  }
+  if (platform !== 'win32') return { ok: false, error: 'Logowanie biometryczne jest obsługiwane w systemach Windows (Windows Hello) i macOS (Touch ID).' };
   const safePrompt = String(prompt).replace(/'/g, "''").slice(0, 120);
   const script = `
     Add-Type -AssemblyName System.Runtime.WindowsRuntime
@@ -50,10 +86,10 @@ async function verifyWithWindowsHello(prompt = 'Odblokuj E-Teczkę') {
   `;
   try {
     const result = await runWinRtPowerShell(script);
-    if (result === 'Verified') return { ok: true };
-    return { ok: false, error: 'Weryfikacja Windows Hello nie została ukończona.' };
+    if (result === 'Verified') return { ok: true, provider: 'windows_hello' };
+    return { ok: false, error: 'Weryfikacja Windows Hello nie została ukończona.', provider: 'windows_hello' };
   } catch {
-    return { ok: false, error: 'Nie udało się uruchomić Windows Hello.' };
+    return { ok: false, error: 'Nie udało się uruchomić Windows Hello.', provider: 'windows_hello' };
   }
 }
 

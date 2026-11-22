@@ -32,13 +32,13 @@
     if (!response.ok) {
       if (data.code === 'ACCOUNT_LINK_REQUIRED') {
         document.getElementById('passwordCredentials').hidden = false;
-        document.getElementById('googleIntro').textContent = 'Masz już konto E‑Teczki z tym adresem. Zaloguj się jego hasłem. Następnie wybierz „Połącz z kontem Google”, aby kolejne logowania działały przez Google.';
+        document.getElementById('googleIntro').textContent = 'Masz już konto MojejTeczki z tym adresem. Zaloguj się jego hasłem. Następnie wybierz „Połącz z kontem Google”, aby kolejne logowania działały przez Google.';
         document.getElementById('googleIntro').hidden = false;
       }
       throw new Error(data.error || 'Operacja nie powiodła się.');
     } return data;
   }
-  function showUser(user) { void loadDevices().catch(()=>undefined); signedInNext.hidden = false; nextMessage.textContent = handoffId ? 'Porównaj kod poniżej z kodem w aplikacji i potwierdź logowanie urządzenia. Następnie wróć do aplikacji, aby kontynuować.' : 'Jesteś zalogowany na stronie konta. Aby otworzyć dokumenty, przejdź do okna aplikacji E‑Teczka i wpisz tam e-mail oraz hasło w zakładce „Zaloguj się”. Logowanie e-mailem w aplikacji nie wymaga porównywania kodu.'; status.textContent = `Zalogowano: ${user.email}`; credentials.hidden = true; logout.hidden = false; googleLinkSection.hidden = !googleWebClientId; password.value = ''; approveHandoff.disabled = !handoffId; }
+  function showUser(user) { void loadDevices().catch(()=>undefined); signedInNext.hidden = false; nextMessage.textContent = handoffId ? 'Porównaj kod poniżej z kodem w aplikacji i potwierdź logowanie urządzenia. Następnie wróć do aplikacji, aby kontynuować.' : 'Jesteś zalogowany na stronie konta. Aby otworzyć dokumenty, przejdź do okna aplikacji MojaTeczka i wpisz tam e-mail oraz hasło w zakładce „Zaloguj się”. Logowanie e-mailem w aplikacji nie wymaga porównywania kodu.'; status.textContent = `Zalogowano: ${user.email}`; credentials.hidden = true; logout.hidden = false; googleLinkSection.hidden = !googleWebClientId; password.value = ''; approveHandoff.disabled = !handoffId; }
   async function execute(operation) { try { await operation(); } catch (error) { status.textContent = error.message || 'Błąd połączenia.'; } }
   form.addEventListener('submit', event => { event.preventDefault(); void execute(async () => { const result = await request('/login', { email: email.value, password: password.value }); sessionStorage.setItem(storageKey, result.token); showUser(result.user); }); });
   document.getElementById('register').addEventListener('click', () => void execute(async () => { const result = await request('/register', { email: email.value, password: password.value }); status.textContent = result.message; password.value = ''; }));
@@ -46,7 +46,7 @@
   document.getElementById('reset').addEventListener('click', () => void execute(async () => { status.textContent = (await request('/request-password-reset', { email: email.value })).message; }));
   logout.addEventListener('click', () => void execute(async () => { await request('/logout', {}, sessionStorage.getItem(storageKey)); sessionStorage.removeItem(storageKey); signedInNext.hidden = true; document.getElementById('deviceSection').hidden=true; status.textContent = 'Wylogowano.'; credentials.hidden = false; logout.hidden = true; googleLinkSection.hidden = true; document.getElementById('googleLink').replaceChildren(); approveHandoff.disabled = true; await setupGoogle('google', false); }));
   if (handoffId) void execute(async () => { try { const item = await request('/handoff/inspect', { requestId: handoffId }); handoffInfo.textContent = `Urządzenie: ${item.deviceName}. Kod: ${item.displayCode}`; handoff.hidden = googleOnly; } catch (error) { handoffId = ''; sessionStorage.removeItem(handoffKey); approveHandoff.disabled = true; nextMessage.textContent = 'Żądanie logowania wygasło. Wróć do aplikacji i wybierz ponownie „Otwórz logowanie”.'; throw error; } });
-  approveHandoff.addEventListener('click', () => void execute(async () => { approveHandoff.disabled = true; try { await request('/handoff/approve', { requestId: handoffId }, sessionStorage.getItem(storageKey)); handoffId = ''; sessionStorage.removeItem(handoffKey); handoff.hidden = true; nextMessage.textContent = 'Gotowe. Otwarta aplikacja E‑Teczka automatycznie dokończy logowanie. Możesz wrócić do jej okna.'; status.textContent = 'Logowanie urządzenia potwierdzone.'; } catch (error) { approveHandoff.disabled = false; throw error; } }));
+  approveHandoff.addEventListener('click', () => void execute(async () => { approveHandoff.disabled = true; try { await request('/handoff/approve', { requestId: handoffId }, sessionStorage.getItem(storageKey)); handoffId = ''; sessionStorage.removeItem(handoffKey); handoff.hidden = true; nextMessage.textContent = 'Gotowe. Otwarta aplikacja MojaTeczka automatycznie dokończy logowanie. Możesz wrócić do jej okna.'; status.textContent = 'Logowanie urządzenia potwierdzone.'; } catch (error) { approveHandoff.disabled = false; throw error; } }));
   async function setupGoogle(targetId, linking) {
     if (!googleWebClientId || !window.google?.accounts?.id) return;
     const { nonce } = await request('/google-challenge', {});
@@ -58,7 +58,7 @@
           sessionStorage.setItem(storageKey, result.token);
           showUser(result.user);
           if (googleOnly) {
-            if (!handoffId) throw new Error('Logowanie do aplikacji wygasło. Rozpocznij je ponownie w E‑Teczce.');
+            if (!handoffId) throw new Error('Logowanie do aplikacji wygasło. Rozpocznij je ponownie w MojejTeczce.');
             await request('/handoff/approve', { requestId: handoffId }, result.token);
             handoffId = ''; sessionStorage.removeItem(handoffKey);
             handoff.hidden = true; credentials.hidden = true; googleLinkSection.hidden = true; logout.hidden = true;
@@ -66,8 +66,8 @@
             document.getElementById('accountTitle').textContent = 'Wszystko gotowe';
             document.getElementById('nextTitle').hidden = true;
             document.getElementById('handoffFootnote').hidden = true;
-            nextMessage.textContent = 'Możesz zamknąć tę kartę. Aplikacja E‑Teczka automatycznie dokończy logowanie i otworzy Twoje dokumenty.';
-            if (securityConfirmation) nextMessage.textContent = 'Tożsamość potwierdzona. Możesz zamknąć tę kartę i wrócić do ustawień E‑Teczki.';
+            nextMessage.textContent = 'Możesz zamknąć tę kartę. Aplikacja MojaTeczka automatycznie dokończy logowanie i otworzy Twoje dokumenty.';
+            if (securityConfirmation) nextMessage.textContent = 'Tożsamość potwierdzona. Możesz zamknąć tę kartę i wrócić do ustawień MojejTeczki.';
             signedInNext.hidden = false;
           }
         }

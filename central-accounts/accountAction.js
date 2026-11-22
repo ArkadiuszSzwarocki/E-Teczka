@@ -12,7 +12,7 @@
     form.hidden = true; password.value = ''; confirmation.value = '';
     title.textContent = verifying ? 'Adres e-mail potwierdzony!' : 'Hasło zostało zmienione';
     message.textContent = verifying ? 'Twoje konto jest aktywne.' : 'Nowe hasło zostało zapisane.';
-    document.getElementById('hint').textContent = 'Wróć do otwartego okna aplikacji E‑Teczka i zaloguj się. Możesz zamknąć tę kartę.';
+    document.getElementById('hint').textContent = 'Wróć do otwartego okna aplikacji MojaTeczka i zaloguj się. Możesz zamknąć tę kartę.';
     if (verifying) sessionStorage.setItem(receiptKey, 'yes');
   }
   if (!verifying) {

@@ -208,7 +208,7 @@ export default function AppOptionsPage({ onClose, onOpenSecurity, onOpenBackup, 
         <OptionSwitch
           checked={autoMailSync}
           onChange={toggleAutoMailSync}
-          label="Automatycznie skanuj pocztę przy wejściu do E‑Teczki"
+          label="Automatycznie skanuj pocztę przy wejściu do MojejTeczki"
           description="Po otwarciu aplikacji automatycznie sprawdza skonfigurowaną skrzynkę IMAP i pyta, czy przydzielić znalezione załączniki do kartotek."
         />
       </section>

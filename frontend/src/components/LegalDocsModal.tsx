@@ -53,7 +53,7 @@ export default function LegalDocsModal({ apiUrl, initialTab = 'privacy', onClose
         <div className="flex items-start justify-between gap-4 border-b border-slate-700 pb-4">
           <div>
             <h2 id="legal-docs-title" className="text-xl font-bold text-white">Dokumenty prawne, zgody i przechowywanie danych</h2>
-            <p className="mt-1 text-xs text-slate-400">Aktualne dokumenty z repozytorium aplikacji E‑Teczka.</p>
+            <p className="mt-1 text-xs text-slate-400">Aktualne dokumenty z repozytorium aplikacji MojaTeczka.</p>
           </div>
           <button type="button" onClick={onClose} aria-label="Zamknij" className="text-2xl text-slate-400 hover:text-white">×</button>
         </div>

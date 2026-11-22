@@ -24,7 +24,7 @@ export default function AppUpdatePromptModal({ update, updatingProgress, onUpdat
   return (
     <div className="fixed inset-0 z-[145] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
       <section role="dialog" aria-modal="true" aria-labelledby="app-update-title" className="w-full max-w-md rounded-2xl border border-blue-500/50 bg-[#0f172a] p-6 text-slate-200 shadow-2xl">
-        <p className="text-xs font-bold uppercase tracking-wider text-blue-400">Aktualizacja E‑Teczki</p>
+        <p className="text-xs font-bold uppercase tracking-wider text-blue-400">Aktualizacja MojejTeczki</p>
         <h2 id="app-update-title" className="mt-1 text-xl font-bold text-white">Dostępna jest nowa wersja aplikacji</h2>
 
         <div className="mt-3 space-y-1 rounded-xl border border-slate-700 bg-slate-900/70 p-3 text-xs">

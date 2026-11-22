@@ -78,7 +78,7 @@ export default function CentralSignIn({ apiUrl, origin, deviceId, onAuthenticate
           </div>
         ) : (
           <div className="mt-4 rounded-lg border border-slate-600 p-4">
-            <p className="text-sm text-slate-300">Dokończ logowanie w oknie Google. E‑Teczka otworzy się automatycznie po zalogowaniu.</p>
+            <p className="text-sm text-slate-300">Dokończ logowanie w oknie Google. MojaTeczka otworzy się automatycznie po zalogowaniu.</p>
             <button className="mt-3 text-sm text-blue-300" onClick={() => void openExternalAccountUrl(s.start!.url, origin)}>Otwórz przeglądarkę ponownie</button>
           </div>
         )
