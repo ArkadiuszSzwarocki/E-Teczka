@@ -8,6 +8,7 @@ type NotificationsModule = typeof ExpoNotifications;
 
 export type RetentionDocument = MobileDocument & {
   createdAt: string;
+  dueDate?: string | null;
   retentionEnabled?: boolean;
   retentionValue?: number;
   retentionUnit?: RetentionUnit;
@@ -39,6 +40,10 @@ export function isRetentionDocument(value: unknown): value is RetentionDocument 
 }
 
 export function retentionExpiresAt(document: RetentionDocument): Date | null {
+  if (document.dueDate) {
+    const due = new Date(document.dueDate);
+    if (!Number.isNaN(due.getTime())) return due;
+  }
   if (document.retentionEnabled === false) return null;
   const value = Number(document.retentionValue ?? 0);
   const expiry = new Date(document.createdAt);
@@ -53,15 +58,10 @@ export function retentionExpiresAt(document: RetentionDocument): Date | null {
   return expiry;
 }
 
-/** Reminders required by E‑Teczka: six monthly and fifteen daily warnings. */
+/** Smart Guardian push reminders: 30 days, 7 days, and 1 day before expiry. */
 export function retentionReminders(expiry: Date, now = new Date()): RetentionReminder[] {
   const reminders: RetentionReminder[] = [];
-  for (let months = 6; months >= 1; months -= 1) {
-    const at = new Date(expiry);
-    at.setMonth(at.getMonth() - months);
-    if (at > now) reminders.push({ at, label: `${months} ${months === 1 ? "miesiąc" : "mies."}` });
-  }
-  for (let days = 15; days >= 1; days -= 1) {
+  for (const days of [30, 7, 1]) {
     const at = new Date(expiry);
     at.setDate(at.getDate() - days);
     if (at > now) reminders.push({ at, label: `${days} ${days === 1 ? "dzień" : "dni"}` });

@@ -7,6 +7,7 @@ import { protectOcrText } from './ocrText';
 import { emitRealtimeEvent } from './realtimeBus';
 import { extractDocumentText } from './ocrEngine';
 import { extractFinanceFromOcr } from './financeOcrParser';
+import { extractExpiryFromOcr } from './expiryOcrExtractor';
 import { parseReceiptFromOcr } from './receiptOcrParser';
 import { featureTrial } from './planLedger';
 
@@ -103,8 +104,10 @@ export function createOcrQueue(prisma: PrismaClient, options: Options) {
           } else if (!document.paymentStatus && receipt.paymentStatus) {
             financePatch.paymentStatus = receipt.paymentStatus;
           }
-          if (document.dueDate === null && extracted.dueDate !== null) {
-            financePatch.dueDate = extracted.dueDate;
+          if (document.dueDate === null) {
+            const expiryMatch = extractExpiryFromOcr(text, document.title);
+            if (extracted.dueDate !== null) financePatch.dueDate = extracted.dueDate;
+            else if (expiryMatch) financePatch.dueDate = expiryMatch.expiryDate;
           }
           await prisma.$transaction(async tx => {
             const updated = await tx.document.updateMany({ where: { id: document.id, filePath: document.filePath, isDeleted: false }, data: { ocrText: protectOcrText(text), ...financePatch } });

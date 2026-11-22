@@ -21,6 +21,8 @@ import { getApiUrl, getAuthHeaders, getLocalConnection } from "./src/services/lo
 import { getAutoLockMinutes } from "./src/services/appLock";
 import { pruneOfflineCache } from "./src/services/offlineCleanup";
 import { connectMobileRealtime, disconnectMobileRealtime, subscribeMobileConnection } from "./src/services/realtimeClient";
+import IncomingShareModal from "./src/components/IncomingShareModal";
+import { readIncomingShare, type ParsedIncomingShare } from "./src/services/incomingShareHandler";
 import type { FolderStackParamList, MainTabParamList, MobileDocument, RootStackParamList } from "./src/types/navigation";
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -146,6 +148,16 @@ function AppContent({ initiallyUnlocked = false }: { initiallyUnlocked?: boolean
   const [vaultInitializationError, setVaultInitializationError] = useState<string | null>(null);
   const [navigationReady, setNavigationReady] = useState(false);
   const [pendingNotificationDocumentId, setPendingNotificationDocumentId] = useState<number | null>(null);
+  const [incomingShare, setIncomingShare] = useState<ParsedIncomingShare | null>(null);
+
+  useEffect(() => {
+    const checkShare = () => {
+      void readIncomingShare().then(found => { if (found) setIncomingShare(found); }).catch(() => undefined);
+    };
+    checkShare();
+    const sub = AppState.addEventListener('change', state => { if (state === 'active') checkShare(); });
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -234,6 +246,7 @@ function AppContent({ initiallyUnlocked = false }: { initiallyUnlocked?: boolean
           <RootStack.Screen name="DocumentViewer" component={DocumentViewerScreen} options={{ animation: "slide_from_right" }} />
         </RootStack.Navigator>
       </NavigationContainer>
+      <IncomingShareModal share={incomingShare} onClose={() => setIncomingShare(null)} />
     </SafeAreaProvider>
   );
 }

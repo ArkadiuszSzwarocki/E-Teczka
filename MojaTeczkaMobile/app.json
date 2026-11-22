@@ -39,6 +39,7 @@
       ],
       "expo-secure-store",
       "./plugins/withLocalTls",
+      "./plugins/withShareIntent",
       "expo-notifications",
       [
         "react-native-document-scanner-plugin",

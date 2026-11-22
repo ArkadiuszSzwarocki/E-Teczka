@@ -19,6 +19,9 @@ import { createPrinterScanRouter } from './routes/printerScan';
 import { createScannerInboxRouter } from './routes/scannerInbox';
 import { createMailInboxRouter } from './routes/mailInbox';
 import { createAutomationRouter } from './routes/automation';
+import { createKsefRouter } from './routes/ksef';
+import { listScheduledKsefOwners } from './services/ksefCredentialsStore';
+import { syncKsefInvoices } from './services/ksefSyncService';
 import { createDocumentRouter } from './routes/documents';
 import { createSyncRouter } from './routes/sync';
 import { createMobileScanRouter } from './routes/mobileScan';
@@ -233,6 +236,12 @@ app.use('/api', createMobileScanRouter(prisma, ocrQueue));
 app.use('/api/scanner', createScannerInboxRouter(prisma, ocrQueue));
 app.use('/api/mail-inbox', createMailInboxRouter(prisma, ocrQueue));
 app.use('/api/automation', createAutomationRouter(prisma));
+app.use('/api/ksef', createKsefRouter(prisma));
+cron.schedule('15 7 * * *', () => {
+  for (const scheduledOwner of listScheduledKsefOwners()) {
+    void syncKsefInvoices(prisma, scheduledOwner, 7).catch(err => console.error(`[ksef] Daily sync failed for user ${scheduledOwner}:`, errorMessage(err)));
+  }
+});
 
 if (hasFrontendBundle) {
   app.use((req, res, next) => {

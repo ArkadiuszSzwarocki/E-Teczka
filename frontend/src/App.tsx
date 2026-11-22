@@ -7,6 +7,8 @@ import type { LegalDocId } from './components/LegalDocsModal';
 import SettingsDialog from './components/SettingsDialog';
 import AppOptionsPage from './components/AppOptionsPage';
 import MailInboxView from './components/MailInboxView';
+import KsefSyncPanel from './components/KsefSyncPanel';
+import ExpiryCalendarView from './components/ExpiryCalendarView';
 import { getAutoMailSyncEnabled } from './services/sensitiveMasking';
 import { useMailSync } from './hooks/useMailSync';
 import BackupModal, { type BackupSection } from './components/BackupModal';
@@ -387,6 +389,10 @@ export default function App() {
             <AppOptionsPage onClose={() => setActiveView('dashboard')} onOpenSecurity={() => setIsAccessSettingsOpen(true)} onOpenBackup={() => setBackupSection('settings')} onOpenTags={() => setIsTagManagerOpen(true)} onOpenPairing={() => pairing.setIsPairingGuideOpen(true)} />
           ) : activeView === 'mail-inbox' ? (
             <MailInboxView apiUrl={API_URL} fetcher={effectiveFetch} folders={folders} billingPlan={`${billing.billingPlan}:${devPlanNonce}`} onAssigned={fetchData} showToast={showToast} mailSyncing={mailSync.mailSyncing} mailSyncPaused={mailSync.mailSyncPaused} onStartSync={mailSync.startMailSync} onStopSync={mailSync.stopMailSync} onResetSync={mailSync.resetMailSync} />
+          ) : activeView === 'ksef-sync' ? (
+            <KsefSyncPanel apiUrl={API_URL} fetcher={fetch} folders={folders} billingPlan={billing.billingPlan} onSynced={fetchData} showToast={showToast} />
+          ) : activeView === 'expiry-calendar' ? (
+            <ExpiryCalendarView documents={documents} onOpenDocument={openPreview} />
           ) : activeView === 'developer' ? (
             <DeveloperPanel embedded initialSection={devSection} currentUser={session.currentUser} onPlanChanged={() => { billing.setBillingDetails(null); setDevPlanNonce(n => n + 1); void fetchData(); }} openBugCount={feedback.openBugCount} adminReplyCount={feedback.adminReplyCount} onOpenBugCountChange={feedback.updateOpenBugCount} onAdminReplyCountChange={feedback.setAdminReplyCount} onClose={() => setActiveView('dashboard')} />
           ) : activeView === 'scanner' ? (

@@ -62,9 +62,11 @@ export default function DesktopSidebar({
       <p className="mb-3 px-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">Dokumenty</p>
       <div className="space-y-1 text-sm">
         <button onClick={closeIfMobile(() => onViewChange('analytics'))} className={navClass('analytics')}>{icon(kartotekiIcon, '📊')}<span>Podsumowanie i analizy</span></button>
+        <button onClick={closeIfMobile(() => onViewChange('expiry-calendar'))} className={navClass('expiry-calendar')}><span aria-hidden="true" className="inline-flex h-5 w-5 shrink-0 items-center justify-center text-base leading-none">🗓️</span><span>Kalendarz ważności</span></button>
         <button onClick={closeIfMobile(() => onViewChange('dashboard'))} className={navClass('dashboard')}>{icon(kartotekiIcon, '📁')}<span>Kartoteki</span></button>
         <button onClick={closeIfMobile(() => onViewChange('upload'))} className={navClass('upload')}>{icon(dodajDokumentIcon, '⬆️')}<span>Dodaj dokument</span></button>
         <button onClick={closeIfMobile(() => onViewChange('mail-inbox'))} className={navClass('mail-inbox')}><span aria-hidden="true" className="inline-flex h-5 w-5 shrink-0 items-center justify-center text-base leading-none">📧</span><span>Poczta (Załączniki)</span></button>
+        <button onClick={closeIfMobile(() => onViewChange('ksef-sync'))} className={navClass('ksef-sync')}><span aria-hidden="true" className="inline-flex h-5 w-5 shrink-0 items-center justify-center text-base leading-none">🏛️</span><span>KSeF (API MF)</span></button>
         <button onClick={closeIfMobile(onOpenScanner)} className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-slate-400 hover:bg-white/5 hover:text-white">{icon(skanujIcon, isMobile ? '📷' : '🖨️')}<span>{isMobile ? 'Skanuj aparatem telefonu' : 'Skanuj z drukarki'}</span></button>
       </div>
       <p className="mb-3 mt-7 px-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">Urządzenia</p>
