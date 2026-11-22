@@ -105,20 +105,22 @@ export function createOcrQueue(prisma: PrismaClient, options: Options) {
           if (document.dueDate === null && extracted.dueDate !== null) {
             financePatch.dueDate = extracted.dueDate;
           }
-          const updated = await prisma.document.updateMany({ where: { id: document.id, filePath: document.filePath, isDeleted: false }, data: { ocrText: protectOcrText(text), ...financePatch } });
-          if (updated.count !== 1) throw new Error('Dokument zmienił się podczas rozpoznawania.');
-          if (receipt.items.length > 0) {
-            await prisma.documentLineItem.deleteMany({ where: { documentId: document.id } });
-            await prisma.documentLineItem.createMany({
-              data: receipt.items.map(item => ({
-                documentId: document.id,
-                name: item.name,
-                quantity: item.quantity,
-                totalCents: item.totalCents,
-                category: item.category,
-              })),
-            });
-          }
+          await prisma.$transaction(async tx => {
+            const updated = await tx.document.updateMany({ where: { id: document.id, filePath: document.filePath, isDeleted: false }, data: { ocrText: protectOcrText(text), ...financePatch } });
+            if (updated.count !== 1) throw new Error('Dokument zmienił się podczas rozpoznawania.');
+            if (receipt.items.length > 0) {
+              await tx.documentLineItem.deleteMany({ where: { documentId: document.id } });
+              await tx.documentLineItem.createMany({
+                data: receipt.items.map(item => ({
+                  documentId: document.id,
+                  name: item.name,
+                  quantity: item.quantity,
+                  totalCents: item.totalCents,
+                  category: item.category,
+                })),
+              });
+            }
+          });
           update(next.documentId, next.ownerKey, { state: 'done' });
         } catch (error) {
           const rawMsg = error instanceof Error ? error.message : '';

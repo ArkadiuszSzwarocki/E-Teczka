@@ -143,7 +143,11 @@ export function registerPairingRoutes(app: express.Express, mobileLimit: (ownerK
     const address = req.socket.remoteAddress || 'unknown';
     const attempts = pairingAttempts.get(address) || 0;
     if (attempts >= 5) { rotatePairingCode(); return res.status(429).json({ error: 'Za dużo nieudanych prób. Na komputerze wyświetlono nowy kod.' }); }
-    if (Date.now() >= pairingExpiresAt || req.body?.pairingCode !== pairingCode) { pairingAttempts.set(address, attempts + 1); return res.status(401).json({ error: 'Nieprawidłowy lub wygasły kod parowania.' }); }
+    const providedCode = typeof req.body?.pairingCode === 'string' ? req.body.pairingCode : '';
+    const expectedBuf = Buffer.from(pairingCode, 'utf8');
+    const providedBuf = Buffer.from(providedCode, 'utf8');
+    const codeMatches = expectedBuf.length > 0 && expectedBuf.length === providedBuf.length && crypto.timingSafeEqual(expectedBuf, providedBuf);
+    if (Date.now() >= pairingExpiresAt || !codeMatches) { pairingAttempts.set(address, attempts + 1); return res.status(401).json({ error: 'Nieprawidłowy lub wygasły kod parowania.' }); }
     // Individual plans pair one mobile device per archive owner. Multi-device
     // business/family entitlements must be enforced here when those plans ship.
     const trustedPhones = pairedDevices.filter(device => (device.ownerKey || 'desktop-local') === pairingOwner.ownerKey);
