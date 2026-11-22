@@ -57,7 +57,7 @@ export function createBillingRouter(prisma: PrismaClient, getStripe: () => Strip
 
   router.post('/offline', async (request, response) => {
     const userId = centralOwner(ocrOwnerKey(response));
-    if (!userId) return response.status(400).json({ error: 'Zaloguj się na konto E‑Teczki, aby pobrać przydział offline.' });
+    if (!userId) return response.status(400).json({ error: 'Zaloguj się na konto MojejTeczki, aby pobrać przydział offline.' });
     try {
       if (request.body?.budgets !== undefined && (typeof request.body.budgets !== 'object' || request.body.budgets === null || Array.isArray(request.body.budgets))) throw new Error('Nieprawidłowe przydziały offline.');
       await centralEntitlement(userId, true);
@@ -123,11 +123,11 @@ export function createBillingRouter(prisma: PrismaClient, getStripe: () => Strip
   });
 
   router.get('/cancel', (_request, response) => {
-    response.type('html').send('<!doctype html><meta charset="utf-8"><title>E‑Teczka — płatność anulowana</title><body style="font-family:Arial;background:#0f172a;color:#e2e8f0;padding:40px"><h1>Płatność anulowana</h1><p>Nie pobrano opłaty. Możesz zamknąć tę kartę i wrócić do E‑Teczki.</p></body>');
+    response.type('html').send('<!doctype html><meta charset="utf-8"><title>MojaTeczka — płatność anulowana</title><body style="font-family:Arial;background:#0f172a;color:#e2e8f0;padding:40px"><h1>Płatność anulowana</h1><p>Nie pobrano opłaty. Możesz zamknąć tę kartę i wrócić do MojejTeczki.</p></body>');
   });
 
   router.get('/portal-return', (_request, response) => {
-    response.type('html').send('<!doctype html><meta charset="utf-8"><title>E‑Teczka — powrót</title><body style="font-family:Arial;background:#0f172a;color:#e2e8f0;padding:40px"><h1>Wróć do E‑Teczki</h1><p>Możesz zamknąć to okno. Aplikacja sprawdzi status subskrypcji.</p></body>');
+    response.type('html').send('<!doctype html><meta charset="utf-8"><title>MojaTeczka — powrót</title><body style="font-family:Arial;background:#0f172a;color:#e2e8f0;padding:40px"><h1>Wróć do MojejTeczki</h1><p>Możesz zamknąć to okno. Aplikacja sprawdzi status subskrypcji.</p></body>');
   });
 
   router.get('/cancel-preview', async (request, response) => {
@@ -178,7 +178,7 @@ export function createBillingRouter(prisma: PrismaClient, getStripe: () => Strip
           const subscription = await stripe.subscriptions.retrieve(localSubscription.providerSubscriptionId, { expand: ['latest_invoice'] });
           const invoice = typeof subscription.latest_invoice === 'object' && subscription.latest_invoice ? subscription.latest_invoice : null;
           if (invoice && typeof invoice.id === 'string') {
-            await recordBillingTransaction(prisma, { ownerKey: key, providerReference: invoice.id, providerSubscriptionId: subscription.id, type: 'subscription_payment', status: invoice.status === 'paid' ? 'succeeded' : String(invoice.status || 'open'), amount: invoice.amount_paid || 0, currency: invoice.currency, description: 'Subskrypcja E‑Teczka Premium' });
+            await recordBillingTransaction(prisma, { ownerKey: key, providerReference: invoice.id, providerSubscriptionId: subscription.id, type: 'subscription_payment', status: invoice.status === 'paid' ? 'succeeded' : String(invoice.status || 'open'), amount: invoice.amount_paid || 0, currency: invoice.currency, description: 'Subskrypcja MojaTeczka Premium' });
             transactions = await prisma.billingTransaction.findMany({ where: { ownerKey: key }, orderBy: { occurredAt: 'desc' }, take: 100 });
           }
         } catch {}

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { buildPrintableKsefHtml, parseKsefPreviewXml } from '../services/ksefPreviewParser';
+import { buildPrintableKsefHtml, formatKsefVatRate, parseKsefPreviewXml } from '../services/ksefPreviewParser';
 
 type Props = {
   xmlText: string;
@@ -13,13 +13,33 @@ export default function KsefInvoicePreview({ xmlText, title }: Props) {
 
   const handlePrintPdf = () => {
     if (!invoice) return;
-    const printWin = window.open('', '_blank', 'width=920,height=760');
-    if (!printWin) return;
-    printWin.document.open();
-    printWin.document.write(buildPrintableKsefHtml(invoice));
-    printWin.document.close();
-    printWin.focus();
-    window.setTimeout(() => printWin.print(), 250);
+    const html = buildPrintableKsefHtml(invoice);
+    const frame = document.createElement('iframe');
+    frame.setAttribute('aria-hidden', 'true');
+    frame.style.position = 'fixed';
+    frame.style.right = '0';
+    frame.style.bottom = '0';
+    frame.style.width = '0';
+    frame.style.height = '0';
+    frame.style.border = '0';
+    document.body.appendChild(frame);
+    const frameDoc = frame.contentDocument || frame.contentWindow?.document;
+    if (!frameDoc || !frame.contentWindow) {
+      document.body.removeChild(frame);
+      return;
+    }
+    frameDoc.open();
+    frameDoc.write(html);
+    frameDoc.close();
+    const cleanup = () => {
+      if (frame.parentNode) frame.parentNode.removeChild(frame);
+    };
+    frame.contentWindow.onafterprint = cleanup;
+    window.setTimeout(() => {
+      frame.contentWindow?.focus();
+      frame.contentWindow?.print();
+      window.setTimeout(cleanup, 60_000);
+    }, 200);
   };
 
   if (!invoice) {
@@ -111,7 +131,7 @@ export default function KsefInvoicePreview({ xmlText, title }: Props) {
                       <td className="px-3 py-2 font-medium text-slate-900">{item.name}</td>
                       <td className="px-3 py-2 text-right whitespace-nowrap">{item.quantity} {item.unit}</td>
                       <td className="px-3 py-2 text-right whitespace-nowrap">{item.unitPrice}</td>
-                      <td className="px-3 py-2 text-right whitespace-nowrap">{item.vatRate === '—' ? '—' : `${item.vatRate}%`}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">{formatKsefVatRate(item.vatRate)}</td>
                       <td className="px-3 py-2 text-right font-semibold whitespace-nowrap">{item.value}</td>
                     </tr>
                   )) : (

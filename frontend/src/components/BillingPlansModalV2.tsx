@@ -299,7 +299,6 @@ export default function BillingPlansModalV2({ apiUrl, fetcher, busy, currentPlan
             </table>
           )}
         </div>
-        <div className="mt-5 rounded-xl border border-amber-700/50 bg-amber-950/20 p-4 text-sm text-amber-100">Funkcje oznaczone „W przygotowaniu” są przypisane do planu Premium i nie są jeszcze dostępne.</div>
         <p className="mt-4 text-center text-xs text-slate-400">Zakupy przez Google Play będą dostępne po zakończeniu konfiguracji.</p>
       </div>
     </div>

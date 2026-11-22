@@ -111,6 +111,12 @@ export function parseKsefPreviewXml(xmlText: string): KsefPreviewInvoice | null 
   };
 }
 
+export function formatKsefVatRate(rate: string): string {
+  const trimmed = rate.trim();
+  if (!trimmed || trimmed === '—') return '—';
+  return /^\d+([.,]\d+)?$/.test(trimmed) ? `${trimmed}%` : trimmed;
+}
+
 export function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
@@ -127,7 +133,7 @@ export function buildPrintableKsefHtml(inv: KsefPreviewInvoice): string {
       <td>${escapeHtml(item.name)}</td>
       <td class="num">${escapeHtml(item.quantity)} ${escapeHtml(item.unit)}</td>
       <td class="num">${escapeHtml(item.unitPrice)}</td>
-      <td class="num">${escapeHtml(item.vatRate)}%</td>
+      <td class="num">${escapeHtml(formatKsefVatRate(item.vatRate))}</td>
       <td class="num"><strong>${escapeHtml(item.value)}</strong></td>
     </tr>
   `).join('');

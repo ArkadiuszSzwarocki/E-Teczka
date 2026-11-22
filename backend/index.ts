@@ -93,7 +93,7 @@ app.use(requireSecureRemote);
 app.get('/api/local-ca', (req, res) => {
   const peer = req.socket.remoteAddress || '';
   if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(peer)) return res.sendStatus(403);
-  res.setHeader('Content-Disposition', 'attachment; filename=E-Teczka-local-CA.crt');
+  res.setHeader('Content-Disposition', 'attachment; filename=MojaTeczka-local-CA.crt');
   res.type('application/x-x509-ca-cert').send(localTls.caPem);
 });
 app.get('/api/local-ca-info', (req, res) => {
@@ -130,7 +130,7 @@ app.get('/api/mobile-app/status', (_req, res) => {
 });
 app.get('/api/mobile-app/download', (_req, res) => {
   if (!mobileTestApkAllowed()) return res.status(404).json({ error: 'Plik instalacyjny testowy nie jest dostępny.' });
-  res.download(mobileTestApkPath, 'E-Teczka-test.apk');
+  res.download(mobileTestApkPath, 'MojaTeczka-test.apk');
 });
 const centralDeviceGate:express.RequestHandler=async(_req,res,next)=>{if(res.locals.userId){const state=await centralEntitlement(Number(res.locals.userId));if(state?.blocked)return res.status(403).json({code:'DEVICE_REVOKED',error:'To urządzenie nie ma już uprawnień do konta. Zaloguj się ponownie lub sprawdź urządzenia na stronie konta.'});}next();};
 const frontendDistDir = path.resolve(__dirname, '../frontend/dist');
