@@ -35,7 +35,7 @@ export function createBackupMfaStore(filename: string, now: () => number = Date.
     const proposal = pending.get(owner);
     if (!proposal || proposal.expires <= now()) { pending.delete(owner); throw new MfaSetupError('MFA_SETUP_EXPIRED', 'Konfiguracja wygasła. Rozpocznij ją ponownie i zeskanuj nowy kod QR.'); }
     const step = verifyBackupAuthenticator(proposal.secret, code.replace(/\s/g, ''));
-    if (step === null) { proposal.failures++; if (proposal.failures >= 5) { pending.delete(owner); throw new MfaSetupError('MFA_SETUP_EXPIRED', 'Po kilku błędnych próbach konfiguracja została zamknięta. Zeskanuj nowy kod QR.'); } throw new MfaSetupError('MFA_INVALID_CODE', 'Kod nie pasuje do bieżącego kodu QR. Użyj najnowszego wpisu E‑Teczki w Authenticatorze i sprawdź automatyczny czas telefonu.'); }
+    if (step === null) { proposal.failures++; if (proposal.failures >= 5) { pending.delete(owner); throw new MfaSetupError('MFA_SETUP_EXPIRED', 'Po kilku błędnych próbach konfiguracja została zamknięta. Zeskanuj nowy kod QR.'); } throw new MfaSetupError('MFA_INVALID_CODE', 'Kod nie pasuje do bieżącego kodu QR. Użyj najnowszego wpisu MojejTeczki w Authenticatorze i sprawdź automatyczny czas telefonu.'); }
     const data = load(); if (data[owner]) throw new MfaSetupError('MFA_ALREADY_ENABLED', 'Authenticator jest już włączony.');
     const recovery = createBackupRecoveryCodes();
     data[owner] = { secret: proposal.secret, hashes: recovery.hashes, lastStep: step, failures: 0, blockedUntil: 0 };

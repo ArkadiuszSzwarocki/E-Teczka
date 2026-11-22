@@ -20,8 +20,8 @@ async function sendVaultRecoveryEmail(to: string, code: string) {
   await transport.sendMail({
     from,
     to,
-    subject: 'E-Teczka Sejf — kod odzyskiwania hasła i PIN-u',
-    text: `Kod odzyskiwania sejfu E-Teczki: ${code}\n\nKod jest ważny przez 10 minut.`,
+    subject: 'MojaTeczka Sejf — kod odzyskiwania hasła i PIN-u',
+    text: `Kod odzyskiwania sejfu MojejTeczki: ${code}\n\nKod jest ważny przez 10 minut.`,
   });
 }
 

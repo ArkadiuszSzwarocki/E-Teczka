@@ -24,7 +24,7 @@ export function createCentralHandoffs(request: typeof fetch = fetch) {
       const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
       let started:Awaited<ReturnType<typeof post>>|undefined;
       for(let attempt=0;attempt<2;attempt++){
-        try{started=await post(origin,'/handoff/start',{challenge,deviceName:'E-Teczka na komputerze'});break;}
+        try{started=await post(origin,'/handoff/start',{challenge,deviceName:'MojaTeczka na komputerze'});break;}
         catch(error){const e=error as Error&{cause?:{code?:string}};const transient=e instanceof CentralHandoffError?e.code==='CENTRAL_UNAVAILABLE':e.name==='TypeError';if(attempt===0&&transient){await new Promise(resolve=>setTimeout(resolve,200));continue;}if(e instanceof CentralHandoffError)throw e;throw new CentralHandoffError(e.name==='TimeoutError'||e.name==='AbortError'?'CENTRAL_TIMEOUT':'CENTRAL_CONNECTION_FAILED');}
       }
       if(!started)throw new CentralHandoffError('CENTRAL_UNAVAILABLE');

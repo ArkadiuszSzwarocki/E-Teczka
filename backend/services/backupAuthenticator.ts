@@ -4,7 +4,7 @@ import { generateSecret, generateURI, verifySync } from 'otplib';
 /** Cryptographic primitives only; callers must persist state atomically and rate-limit attempts. */
 export function createBackupAuthenticator(accountLabel: string) {
   const secret = generateSecret();
-  return { secret, uri: generateURI({ issuer: 'E-Teczka', label: accountLabel, secret, algorithm: 'sha1', digits: 6, period: 30 }) };
+  return { secret, uri: generateURI({ issuer: 'MojaTeczka', label: accountLabel, secret, algorithm: 'sha1', digits: 6, period: 30 }) };
 }
 
 /** Returns a time step for atomic replay protection, never a reusable authorization. */

@@ -4,7 +4,7 @@ const STORAGE_KEY = 'mojateczka_custom_icons_v1';
 export const DEFAULT_FOLDER_ICONS = ['📁', '📂', '🗂️', '💼', '🏠', '📄', '🔒', '⭐', '🏢', '🚗', '🧾', '💊'];
 
 export function customIconLimit(plan: 'free' | 'standard' | 'premium' | 'family' | 'business'): number | null {
-  if (plan === 'premium') return null;
+  if (plan === 'premium' || plan === 'family' || plan === 'business') return null;
   return plan === 'standard' ? 6 : 3;
 }
 

@@ -28,7 +28,7 @@ export function createDocumentExportRouter(prisma: PrismaClient, ownerId: (res: 
       let bytes = await exportDocumentsAsPdf(records);
       if (watermark) {
         const owner = await prisma.user.findUnique({ where: { id: ownerId(res) }, select: { email: true } });
-        const ownerEmail = owner?.email || String(res.locals.userEmail || 'Właściciel E-Teczki');
+        const ownerEmail = owner?.email || String(res.locals.userEmail || 'Właściciel MojejTeczki');
         bytes = await applyWatermarkToPdf(bytes, ownerEmail);
       }
       res.setHeader('Content-Type', 'application/pdf');

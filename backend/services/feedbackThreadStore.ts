@@ -129,8 +129,8 @@ export async function sendFeedbackEmailCopy(input: {
     await transport.sendMail({
       from,
       to: input.toEmail,
-      subject: `E-Teczka — kopia zgłoszenia #${input.id}: ${input.title}`,
-      text: `Dziękujemy za zgłoszenie w aplikacji E-Teczka.\n\nNumer zgłoszenia: #${input.id}\nKategoria: ${input.category}\nTemat: ${input.title}\n\nOpis:\n${input.description}\n`,
+      subject: `MojaTeczka — kopia zgłoszenia #${input.id}: ${input.title}`,
+      text: `Dziękujemy za zgłoszenie w aplikacji MojaTeczka.\n\nNumer zgłoszenia: #${input.id}\nKategoria: ${input.category}\nTemat: ${input.title}\n\nOpis:\n${input.description}\n`,
     });
     return { sent: true, message: `Wysłano kopię zgłoszenia na adres ${input.toEmail}.` };
   } catch {

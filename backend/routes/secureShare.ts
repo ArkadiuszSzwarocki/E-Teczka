@@ -28,7 +28,7 @@ export function createSecureShareRouter(prisma: PrismaClient) {
       let bytes: Buffer = await fs.readFile(path.join(uploadsDir,doc.filePath));
       if (watermark) {
         const ownerUser = await prisma.user.findUnique({ where: { id: owner }, select: { email: true } });
-        const ownerEmail = ownerUser?.email || String(res.locals.userEmail || 'Właściciel E-Teczki');
+        const ownerEmail = ownerUser?.email || String(res.locals.userEmail || 'Właściciel MojejTeczki');
         bytes = await applyWatermarkToDocument(bytes, doc.mimeType, ownerEmail);
       }
       const remote=await fetch(`${service.base}/admin/shares`,{method:'POST',headers:{Authorization:`Bearer ${service.secret}`,'Content-Type':'application/json'},body:JSON.stringify({content:bytes.toString('base64'),mimeType:doc.mimeType,expiresInSeconds:expires,pin,singleUse}),signal:AbortSignal.timeout(30000)});

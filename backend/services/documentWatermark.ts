@@ -3,7 +3,7 @@ import path from 'node:path';
 import { PDFDocument, degrees } from 'pdf-lib';
 import { createCanvas, loadImage } from '@napi-rs/canvas';
 
-const APP_NAME = 'E-Teczka';
+const APP_NAME = 'MojaTeczka';
 
 function resolveLogoPath(): string | null {
   const candidates = [
@@ -15,7 +15,7 @@ function resolveLogoPath(): string | null {
 }
 
 async function createWatermarkStampPng(ownerEmail: string): Promise<Buffer> {
-  const label = ownerEmail.trim() || 'Właściciel E-Teczki';
+  const label = ownerEmail.trim() || 'Właściciel MojejTeczki';
   const width = 560;
   const height = 110;
   const canvas = createCanvas(width, height);

@@ -47,7 +47,7 @@ export function createCentralAccountRouter(prisma: PrismaClient, verify = verify
         return res.status(429).json({ error: `Zbyt wiele prób wysłania linku. Spróbuj ponownie ${waitText}.` });
       }
       if (!upstream.ok) return res.status(503).json({ error: 'Usługa jest chwilowo niedostępna. Spróbuj ponownie.' });
-      return res.status(202).json({ message: 'Jeśli ten adres należy do potwierdzonego konta, wyślemy jednorazowy link do ustawienia lub zmiany hasła E‑Teczki. Sprawdź również folder spam. Logowanie Google pozostanie dostępne.' });
+      return res.status(202).json({ message: 'Jeśli ten adres należy do potwierdzonego konta, wyślemy jednorazowy link do ustawienia lub zmiany hasła MojejTeczki. Sprawdź również folder spam. Logowanie Google pozostanie dostępne.' });
     } catch { return res.status(503).json({ error: 'Nie można połączyć się z usługą kont. Spróbuj ponownie.' }); }
   });
   router.post('/register', async (req, res) => {

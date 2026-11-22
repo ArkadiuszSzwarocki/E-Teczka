@@ -11,12 +11,25 @@ import { ocrOwnerKey } from '../services/ocrPremium';
 import { accountingKey } from '../services/devPlans';
 import { getPlan, ensurePlanLedger, consumeUsage, PlanLimitError } from '../services/planLedger';
 
-type PrinterScanJob = { status: 'running' | 'completed' | 'failed'; stage: string; error?: string; temporaryPath?: string; createdAt: number };
+type PrinterScanJob = { ownerId: number; status: 'running' | 'completed' | 'failed'; stage: string; error?: string; temporaryPath?: string; createdAt: number };
+const JOB_TTL_MS = 15 * 60_000;
 
 export function createPrinterScanRouter(prisma: PrismaClient) {
   const router = express.Router();
   const jobs = new Map<string, PrinterScanJob>();
   let activeJobId: string | null = null;
+
+  const pruneStaleJobs = () => {
+    const cutoff = Date.now() - JOB_TTL_MS;
+    for (const [id, job] of jobs.entries()) {
+      if (job.status === 'running' || job.createdAt > cutoff) continue;
+      if (job.temporaryPath) {
+        try { if (fs.existsSync(job.temporaryPath)) fs.unlinkSync(job.temporaryPath); } catch { /* ignore cleanup errors */ }
+      }
+      jobs.delete(id);
+    }
+  };
+  setInterval(pruneStaleJobs, 5 * 60_000).unref();
 
   router.get('/devices', async (_req, res) => {
     try { res.json(await getWiaDevices()); }
@@ -37,20 +50,21 @@ export function createPrinterScanRouter(prisma: PrismaClient) {
     if (!deviceNumber) return res.status(400).json({ error: 'Wybrany skaner nie jest już dostępny.' });
     const jobId = crypto.randomUUID(); const key = ocrOwnerKey(res);
     try { const plan = await getPlan(prisma, key); await ensurePlanLedger(prisma); await prisma.$transaction(tx => consumeUsage(tx, key, plan, 'printerScan', jobId, 1)); } catch (error) { if (error instanceof PlanLimitError) return res.status(403).json({ code: error.code, error: error.message, resetsAt: error.resetsAt }); return res.status(500).json({ error: 'Nie udało się sprawdzić limitu skanowania.' }); }
-    const job: PrinterScanJob = { status: 'running', stage: 'Zlecenie odebrane przez komputer…', createdAt: Date.now() };
+    pruneStaleJobs();
+    const job: PrinterScanJob = { ownerId: Number(res.locals.userId || 1), status: 'running', stage: 'Zlecenie odebrane przez komputer…', createdAt: Date.now() };
     jobs.set(jobId, job); activeJobId = jobId; res.status(202).json({ jobId });
     void runPrinterScan(job, deviceNumber).finally(async () => { if (job.status === 'failed') { try { await prisma.$executeRaw`DELETE FROM PlanUsage WHERE ownerKey = ${accountingKey(key)} AND feature = ${'printerScan'} AND operationId = ${jobId}`; } catch { console.error('[scan] Nie udało się cofnąć licznika nieudanego skanu.'); } } activeJobId = null; });
   });
 
   router.get('/:jobId', (req, res) => {
     const job = jobs.get(req.params.jobId);
-    if (!job) return res.status(404).json({ error: 'Zlecenie skanowania wygasło.' });
+    if (!job || job.ownerId !== Number(res.locals.userId || 1)) return res.status(404).json({ error: 'Zlecenie skanowania wygasło.' });
     res.json({ status: job.status, stage: job.stage, error: job.error, createdAt: job.createdAt });
   });
 
   router.get('/:jobId/file', (req, res) => {
     const job = jobs.get(req.params.jobId);
-    if (!job || job.status !== 'completed' || !job.temporaryPath || !fs.existsSync(job.temporaryPath)) return res.status(404).json({ error: 'Plik wersji roboczej nie jest dostępny.' });
+    if (!job || job.ownerId !== Number(res.locals.userId || 1) || job.status !== 'completed' || !job.temporaryPath || !fs.existsSync(job.temporaryPath)) return res.status(404).json({ error: 'Plik wersji roboczej nie jest dostępny.' });
     const safeFileName = path.basename(job.temporaryPath);
     const temporaryPath = resolveSafePath(scanDraftsDir, safeFileName);
     res.type('jpeg').sendFile(safeFileName, { root: path.resolve(scanDraftsDir) }, error => {

@@ -20,7 +20,7 @@ export function createBackupMfaRouter(prisma: PrismaClient) {
   router.post('/start', requireLocalDesktop, async (req, res) => {
     const owner = mfaOwner(res); const primaryOwner = billingOwnerKey(res); const now = Date.now(); const previous = attempts.get(owner);
     if (previous && previous.expires > now && previous.count >= 5) return res.status(429).json({ error: 'Zbyt wiele prób. Spróbuj za 5 minut.' });
-    if (!await verifyBackupPrimary(prisma, primaryOwner, String(req.body?.password || ''))) { const entry = previous && previous.expires > now ? previous : { count: 0, expires: now + 300_000 }; entry.count++; attempts.set(owner, entry); return res.status(401).json({ error: 'Nieprawidłowy PIN lub hasło E-Teczki.' }); }
+    if (!await verifyBackupPrimary(prisma, primaryOwner, String(req.body?.password || ''))) { const entry = previous && previous.expires > now ? previous : { count: 0, expires: now + 300_000 }; entry.count++; attempts.set(owner, entry); return res.status(401).json({ error: 'Nieprawidłowy PIN lub hasło MojejTeczki.' }); }
     attempts.delete(owner);
     try { const { uri } = mfa.start(owner); res.setHeader('Cache-Control', 'no-store'); res.json({ uri }); } catch (error) { res.status(400).json({ error: error instanceof Error ? error.message : 'Nie udało się rozpocząć konfiguracji.' }); }
   });
@@ -28,7 +28,7 @@ export function createBackupMfaRouter(prisma: PrismaClient) {
   router.post('/disable', requireLocalDesktop, async (req, res) => {
     const owner = mfaOwner(res); const now = Date.now(); const previous = attempts.get(owner);
     if (previous && previous.expires > now && previous.count >= 5) return res.status(429).json({ error: 'Zbyt wiele prób. Spróbuj za 5 minut.' });
-    if (!await verifyBackupPrimary(prisma, billingOwnerKey(res), String(req.body?.password || ''))) { const entry = previous && previous.expires > now ? previous : { count: 0, expires: now + 300_000 }; entry.count++; attempts.set(owner, entry); return res.status(401).json({ error: 'Nieprawidłowy PIN lub hasło E-Teczki.' }); }
+    if (!await verifyBackupPrimary(prisma, billingOwnerKey(res), String(req.body?.password || ''))) { const entry = previous && previous.expires > now ? previous : { count: 0, expires: now + 300_000 }; entry.count++; attempts.set(owner, entry); return res.status(401).json({ error: 'Nieprawidłowy PIN lub hasło MojejTeczki.' }); }
     attempts.delete(owner);
     try {
       if (!mfa.verify(owner, String(req.body?.code || ''))) return res.status(401).json({ error: 'Nieprawidłowy lub użyty kod Authenticatora.' });
