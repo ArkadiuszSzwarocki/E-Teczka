@@ -66,8 +66,8 @@ export function useTagAndOcrActions({
   }, [apiUrl, fetcher, selectedDocs, showToast]);
 
   const exportDocumentPdf = useCallback(async (doc: { id: number; title?: string }, watermark = false) => {
-    if (billingPlan !== 'premium') {
-      setPlanLimitMessage('Eksport dokumentu do PDF jest dostępny w planie Premium.');
+    if (!['premium', 'family', 'business'].includes(billingPlan)) {
+      setPlanLimitMessage('Eksport dokumentu do PDF jest dostępny w planie Premium, Rodzinny lub Firmowy.');
       return;
     }
     try {

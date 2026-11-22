@@ -19,7 +19,7 @@ import { initResumableSession, writeResumableChunk, completeResumableSession } f
 import { activeDocumentIds, activeTagIds } from '../services/planRestrictions';
 import { assertUniqueDocument, DuplicateDocumentError, hashFile } from '../services/duplicateDocuments';
 import { saveBatchBase64Documents, saveMergedBase64Document } from '../services/documentBase64Upload';
-import { saveBatchBinaryDocuments } from '../services/documentBinaryUpload';
+import { BusinessPlanRequiredError, saveBatchBinaryDocuments } from '../services/documentBinaryUpload';
 import { createDocumentExportRouter } from './documentExport';
 
 const retentionUnits = new Set(['years', 'months', 'days', 'minutes']);
@@ -114,6 +114,7 @@ export function createDocumentRouter(prisma: PrismaClient, ocrQueue?: ReturnType
       void enqueuePremiumOcr(prisma, ocrQueue, res, document.id);
       return res.json({ success: true, document });
     } catch (error: unknown) {
+      if (error instanceof BusinessPlanRequiredError) return res.status(402).json({ code: error.code, error: error.message });
       if (error instanceof PlanLimitError) return res.status(403).json({ code: error.code, error: error.message, resetsAt: error.resetsAt });
       if (error instanceof DuplicateDocumentError) return res.status(409).json({ code: error.code, error: error.message, existingTitle: error.existingTitle });
       return res.status(400).json({ error: error instanceof Error ? error.message : 'Błąd scalania pliku.' });
@@ -285,6 +286,7 @@ export function createDocumentRouter(prisma: PrismaClient, ocrQueue?: ReturnType
       }
       res.json({ success: true, savedDocs, skippedDuplicates });
     } catch (error: unknown) {
+      if (error instanceof BusinessPlanRequiredError) return res.status(402).json({ code: error.code, error: error.message });
       if (error instanceof PlanLimitError) return res.status(403).json({ code: error.code, error: error.message, resetsAt: error.resetsAt });
       if (error instanceof DuplicateDocumentError) return res.status(409).json({ code: error.code, error: error.message, existingTitle: error.existingTitle });
       const details = errorMessage(error);
@@ -319,6 +321,7 @@ export function createDocumentRouter(prisma: PrismaClient, ocrQueue?: ReturnType
       }
       return res.json({ success: true, savedDocs, skippedDuplicates });
     } catch (error: unknown) {
+      if (error instanceof BusinessPlanRequiredError) return res.status(402).json({ code: error.code, error: error.message });
       if (error instanceof PlanLimitError) return res.status(403).json({ code: error.code, error: error.message, resetsAt: error.resetsAt });
       if (error instanceof DuplicateDocumentError) return res.status(409).json({ code: error.code, error: error.message, existingTitle: error.existingTitle });
       const details = errorMessage(error);

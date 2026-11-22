@@ -46,6 +46,14 @@ export type BinaryUploadFile = {
 export type BinaryRetention = { enabled: boolean; value: number; unit: string };
 
 /** Persists raw binary multipart files directly to disk without Base64/JSON overhead. */
+export class BusinessPlanRequiredError extends Error {
+  readonly code = 'BUSINESS_REQUIRED';
+  constructor(message = 'Import faktur KSeF (XML) wymaga planu Firmowy (JDG).') {
+    super(message);
+    this.name = 'BusinessPlanRequiredError';
+  }
+}
+
 export async function saveBatchBinaryDocuments(
   prisma: PrismaClient,
   input: {
@@ -75,7 +83,11 @@ export async function saveBatchBinaryDocuments(
 
     const isBusinessPlan = input.plan === 'business';
     const isPremiumTier = input.plan === 'premium' || input.plan === 'family' || input.plan === 'business';
-    const ksef = ext === '.xml' && isBusinessPlan ? parseKsefXml(file.buffer.toString('utf8')) : null;
+    const parsedKsef = ext === '.xml' ? parseKsefXml(file.buffer.toString('utf8')) : null;
+    if (parsedKsef && !isBusinessPlan) {
+      throw new BusinessPlanRequiredError('Import faktur KSeF (XML) wymaga planu Firmowy (JDG).');
+    }
+    const ksef = parsedKsef;
     const eReceipt = ext === '.json' && isPremiumTier ? parseEReceiptPayload(file.buffer.toString('utf8')) : null;
     const structuredItems = ksef?.items ?? eReceipt?.items ?? [];
 

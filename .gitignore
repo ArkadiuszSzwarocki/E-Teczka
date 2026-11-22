@@ -99,3 +99,5 @@ backend/.devin/
 
 backend/security/mail-filters.enc
 backend/security/mail-filters.enc.*.tmp
+backend/security/*.enc
+backend/security/*.enc.*.tmp

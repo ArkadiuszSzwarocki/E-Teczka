@@ -3,8 +3,8 @@ export type Plan = 'free' | 'standard' | 'premium' | 'family' | 'business';
 export type MeteredFeature = 'cameraScan' | 'printerScan' | 'merge';
 export type TrialFeature = 'ocr' | 'cloudBackup';
 export const PLAN_LIMITS: Record<Plan, { documents: number | null; tags: number | null; cameraScan: number | null; printerScan: number | null; merge: number | null }> = {
-  free: { documents: 200, tags: 3, cameraScan: 50, printerScan: 50, merge: 10 },
-  standard: { documents: 400, tags: 6, cameraScan: 100, printerScan: 100, merge: 20 },
+  free: { documents: 20, tags: 3, cameraScan: 20, printerScan: 20, merge: 3 },
+  standard: { documents: 40, tags: 6, cameraScan: 40, printerScan: 40, merge: 10 },
   premium: { documents: null, tags: null, cameraScan: null, printerScan: null, merge: null },
   family: { documents: null, tags: null, cameraScan: null, printerScan: null, merge: null },
   business: { documents: null, tags: null, cameraScan: null, printerScan: null, merge: null },
@@ -18,7 +18,7 @@ export function activePlan(plan: string | null | undefined, status: string | nul
 }
 export function trialEnd(feature: TrialFeature, startedAt: Date, plan: Plan = 'free'): Date {
   if (feature === 'ocr') {
-    const days = plan === 'standard' ? (getCatalog().standardOcrTrialDays ?? 60) : getCatalog().ocrTrialDays;
+    const days = plan === 'standard' ? (getCatalog().standardOcrTrialDays ?? 30) : getCatalog().ocrTrialDays;
     return new Date(startedAt.getTime() + days * 24 * 60 * 60 * 1000);
   }
   // Add two calendar months, clamping dates such as 31 January to the last day of March.

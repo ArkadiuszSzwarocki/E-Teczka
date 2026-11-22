@@ -28,7 +28,7 @@ export function createApiFetch(apiUrl: string): typeof fetch {
         return response;
       }
       if ((method !== 'GET' || /\/api\/backup\/oauth\/[^/]+\/start$/.test(requestUrl.pathname))
-        && ['PLAN_LIMIT_REACHED', 'OCR_UNAVAILABLE', 'PREMIUM_REQUIRED', 'DEVICE_LIMIT_REACHED'].includes(data.code || '')) {
+        && ['PLAN_LIMIT_REACHED', 'OCR_UNAVAILABLE', 'PREMIUM_REQUIRED', 'BUSINESS_REQUIRED', 'DEVICE_LIMIT_REACHED'].includes(data.code || '')) {
         const renewal = data.resetsAt ? ` Najbliższe zwolnienie limitu: ${new Date(data.resetsAt).toLocaleString('pl-PL')}.` : '';
         window.dispatchEvent(new CustomEvent('eteczka-plan-limit', { detail: (data.error || 'Limit Twojego planu został wykorzystany.') + renewal }));
       }
@@ -38,7 +38,7 @@ export function createApiFetch(apiUrl: string): typeof fetch {
       && response.status === 402
     ) {
       const data = await response.clone().json().catch(() => ({})) as { code?: string; error?: string; resetsAt?: string };
-      if (['PLAN_LIMIT_REACHED', 'OCR_UNAVAILABLE', 'PREMIUM_REQUIRED', 'DEVICE_LIMIT_REACHED'].includes(data.code || '')) {
+      if (['PLAN_LIMIT_REACHED', 'OCR_UNAVAILABLE', 'PREMIUM_REQUIRED', 'BUSINESS_REQUIRED', 'DEVICE_LIMIT_REACHED'].includes(data.code || '')) {
         const renewal = data.resetsAt ? ` Najbliższe zwolnienie limitu: ${new Date(data.resetsAt).toLocaleString('pl-PL')}.` : '';
         window.dispatchEvent(new CustomEvent('eteczka-plan-limit', { detail: (data.error || 'Limit Twojego planu został wykorzystany.') + renewal }));
       }

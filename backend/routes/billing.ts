@@ -196,11 +196,20 @@ export function createBillingRouter(prisma: PrismaClient, getStripe: () => Strip
       const subscription = await stripe.subscriptions.retrieve(existing.providerSubscriptionId);
       const customer = typeof subscription.customer === 'string' ? subscription.customer : subscription.customer.id;
       const price = subscription.items.data[0]?.price?.id;
-      if (subscription.metadata?.ownerKey !== ownerKey(request) || customer !== existing.providerCustomerId || !['active', 'trialing'].includes(subscription.status) || !price || ![process.env.STRIPE_PRICE_MONTHLY, process.env.STRIPE_PRICE_YEARLY].includes(price)) return response.json({ upgraded: false });
+      const priceToPlan: Array<[string | undefined, 'premium' | 'family' | 'business']> = [
+        [process.env.STRIPE_PRICE_MONTHLY, 'premium'],
+        [process.env.STRIPE_PRICE_YEARLY, 'premium'],
+        [process.env.STRIPE_FAMILY_PRICE_MONTHLY, 'family'],
+        [process.env.STRIPE_FAMILY_PRICE_YEARLY, 'family'],
+        [process.env.STRIPE_BUSINESS_PRICE_MONTHLY, 'business'],
+        [process.env.STRIPE_BUSINESS_PRICE_YEARLY, 'business'],
+      ];
+      const matchedPlan = price ? priceToPlan.find(([id]) => id === price)?.[1] : undefined;
+      if (subscription.metadata?.ownerKey !== ownerKey(request) || customer !== existing.providerCustomerId || !['active', 'trialing'].includes(subscription.status) || !matchedPlan) return response.json({ upgraded: false });
       const invoiceId = typeof subscription.latest_invoice === 'string' ? subscription.latest_invoice : subscription.latest_invoice?.id;
       if (!invoiceId || (await stripe.invoices.retrieve(invoiceId)).status !== 'paid') return response.json({ upgraded: false });
-      await prisma.subscription.updateMany({ where: { ownerKey: ownerKey(request), providerSubscriptionId: subscription.id }, data: { plan: 'premium', status: subscription.status, currentPeriodEnd: periodEnd(subscription.items.data[0]?.current_period_end), cancelAtPeriodEnd: Boolean(subscription.cancel_at || subscription.cancel_at_period_end) } });
-      return response.json({ upgraded: true });
+      await prisma.subscription.updateMany({ where: { ownerKey: ownerKey(request), providerSubscriptionId: subscription.id }, data: { plan: matchedPlan, status: subscription.status, currentPeriodEnd: periodEnd(subscription.items.data[0]?.current_period_end), cancelAtPeriodEnd: Boolean(subscription.cancel_at || subscription.cancel_at_period_end) } });
+      return response.json({ upgraded: true, plan: matchedPlan });
     } catch { return response.status(503).json({ error: 'Nie udało się potwierdzić zmiany planu w Stripe.' }); }
   });
 
@@ -210,17 +219,26 @@ export function createBillingRouter(prisma: PrismaClient, getStripe: () => Strip
     const stripe = getStripe();
     if (!stripe) return response.status(503).json({ error: 'Płatności testowe nie są jeszcze skonfigurowane.' });
 
+    const planOrder: Record<string, number> = { free: 0, standard: 1, premium: 2, family: 3, business: 4 };
+    const requestedPlan = String(request.body?.plan || 'premium');
     const existing = await prisma.subscription.findUnique({ where: { ownerKey: ownerKey(request) } });
-    if (existing?.plan === 'standard' && ['active', 'trialing'].includes(existing.status) && !existing.cancelAtPeriodEnd && request.body?.plan === 'premium') {
-      const price = request.body?.interval === 'yearly' ? process.env.STRIPE_PRICE_YEARLY : process.env.STRIPE_PRICE_MONTHLY;
-      if (!price || !existing.providerSubscriptionId || !existing.providerCustomerId) return response.status(503).json({ error: 'Zmiana planu wymaga skonfigurowanej ceny Premium i aktywnej subskrypcji Stripe.' });
+    const isActiveUpgrade = existing && ['active', 'trialing'].includes(existing.status) && !existing.cancelAtPeriodEnd
+      && (planOrder[requestedPlan] ?? 0) > (planOrder[existing.plan] ?? 0);
+    if (isActiveUpgrade) {
+      const upgradePrices: Record<string, { monthly?: string; yearly?: string }> = {
+        premium: { monthly: process.env.STRIPE_PRICE_MONTHLY, yearly: process.env.STRIPE_PRICE_YEARLY },
+        family: { monthly: process.env.STRIPE_FAMILY_PRICE_MONTHLY, yearly: process.env.STRIPE_FAMILY_PRICE_YEARLY },
+        business: { monthly: process.env.STRIPE_BUSINESS_PRICE_MONTHLY, yearly: process.env.STRIPE_BUSINESS_PRICE_YEARLY },
+      };
+      const price = request.body?.interval === 'yearly' ? upgradePrices[requestedPlan]?.yearly : upgradePrices[requestedPlan]?.monthly;
+      if (!price || !existing.providerSubscriptionId || !existing.providerCustomerId) return response.status(503).json({ error: 'Zmiana planu wymaga skonfigurowanej ceny docelowego planu i aktywnej subskrypcji Stripe.' });
       try {
         const subscription = await stripe.subscriptions.retrieve(existing.providerSubscriptionId);
         const customer = typeof subscription.customer === 'string' ? subscription.customer : subscription.customer.id;
         if (subscription.metadata?.ownerKey !== ownerKey(request) || customer !== existing.providerCustomerId || subscription.items.data.length !== 1 || !['active', 'trialing'].includes(subscription.status)) return response.status(409).json({ error: 'Nie można bezpiecznie potwierdzić obecnej subskrypcji.' });
         const portal = await stripe.billingPortal.sessions.create({ customer, return_url: `${billingReturnBase(request.socket.localAddress)}/api/billing/portal-return`, flow_data: { type: 'subscription_update_confirm', subscription_update_confirm: { subscription: subscription.id, items: [{ id: subscription.items.data[0].id, price, quantity: subscription.items.data[0].quantity || 1 }] } } });
         return response.json({ url: portal.url, sessionId: '', kind: 'upgrade' });
-      } catch (error) { console.error('[billing] Nie udało się przygotować zmiany planu:', error instanceof Error ? error.message : 'Stripe error'); return response.status(503).json({ error: 'Nie udało się przygotować zmiany planu w Stripe. Sprawdź konfigurację portalu klienta i ceny Premium.' }); }
+      } catch (error) { console.error('[billing] Nie udało się przygotować zmiany planu:', error instanceof Error ? error.message : 'Stripe error'); return response.status(503).json({ error: 'Nie udało się przygotować zmiany planu w Stripe. Sprawdź konfigurację portalu klienta i ceny planów.' }); }
     }
     try { if (!await permitsReplacement(stripe, existing, ownerKey(request))) return response.status(409).json({ error: 'Masz aktywną subskrypcję bez zaplanowanego anulowania.' }); }
     catch { return response.status(503).json({ error: 'Nie udało się sprawdzić anulowania w Stripe. Spróbuj ponownie.' }); }

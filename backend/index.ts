@@ -62,12 +62,18 @@ app.disable('x-powered-by');
 const ocrQueue = createOcrQueue(prisma, { file: path.join(securityDir, 'ocr-queue.enc'), uploadsDirectory: uploadsDir });
 
 const localTls = makeLocalTls(securityDir);
+const extraCorsOrigins = new Set(
+  (process.env.ETECZKA_CORS_ORIGINS || (process.env.NODE_ENV === 'production' ? '' : 'https://e-teczkatest.arecki.pl'))
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean),
+);
 app.use(cors({
   origin(origin, callback) {
     if (!origin) return callback(null, true);
     const allowed =
       /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin) ||
-      origin === 'https://e-teczkatest.arecki.pl';
+      extraCorsOrigins.has(origin);
     callback(null, allowed);
   },
 }));
