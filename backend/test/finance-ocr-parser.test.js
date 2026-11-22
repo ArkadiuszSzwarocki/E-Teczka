@@ -84,7 +84,7 @@ test('buildAnalyticsSummary excludes non-receipt non-invoice documents from rece
   };
 
   const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  const summary = await buildAnalyticsSummary(prisma, 1, { month, allowReceiptInvoiceReading: true });
+  const summary = await buildAnalyticsSummary(prisma, 1, month, { allowReceiptInvoiceReading: true });
   assert.equal(summary.receiptMerchants.length, 1);
   assert.equal(summary.receiptMerchants[0].name, 'Biedronka');
   assert.equal(summary.receiptMerchants[0].totalCents, 4599);

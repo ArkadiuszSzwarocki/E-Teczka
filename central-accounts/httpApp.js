@@ -5,7 +5,7 @@ const { renderDesktopDownloadPage } = require('./desktopDownload');
 
 // This API is not yet suitable for exposure to the Internet. Distributed rate
 // limiting, password recovery, and deployment-specific origin checks remain.
-function createHttpApp(accounts, { ledger, catalog, playBilling, entitlements, feedback, shareRouter, rateLimit, accountRateLimit, handoffRateLimit, cloudflareGate, turnstileGate, googleWebClientId = '', turnstileSiteKey = '', appUrl = '' } = {}) {
+function createHttpApp(accounts, { ledger, catalog, playBilling, entitlements, feedback, shareRouter, rateLimit, accountRateLimit, handoffRateLimit, cloudflareGate, turnstileGate, googleWebClientId = '', turnstileSiteKey = '', appUrl = '', desktopDownload } = {}) {
   const app = express();
   app.disable('x-powered-by');
   app.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
@@ -122,7 +122,7 @@ function createHttpApp(accounts, { ledger, catalog, playBilling, entitlements, f
   });
   app.get('/pc', (req, res) => {
     res.set({ 'Content-Security-Policy': "default-src 'none'; style-src 'self'; base-uri 'none'; frame-ancestors 'none'", 'Referrer-Policy': 'strict-origin-when-cross-origin', 'X-Content-Type-Options': 'nosniff' });
-    const cfg = options.desktopDownload || { origin: 'https://konto.arecki.pl', winUrl: '', macUrl: '' };
+    const cfg = desktopDownload || { origin: 'https://konto.arecki.pl', winUrl: '', macUrl: '' };
     res.type('html').send(renderDesktopDownloadPage({
       origin: cfg.origin,
       userAgent: req.get('user-agent') || '',
@@ -133,7 +133,7 @@ function createHttpApp(accounts, { ledger, catalog, playBilling, entitlements, f
   app.post('/desktop-download/email', async (req, res) => {
     const user = await accounts.getSession(bearer(req));
     if (!user) return res.status(401).json({ error: 'Sesja wygasła. Zaloguj się ponownie.' });
-    const cfg = options.desktopDownload;
+    const cfg = desktopDownload;
     if (!cfg || typeof cfg.sendEmail !== 'function') {
       return res.status(503).json({ error: 'Wysyłka linku e-mail nie jest skonfigurowana na serwerze.' });
     }

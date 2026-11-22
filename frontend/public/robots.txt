@@ -1,6 +1,2 @@
 User-agent: *
-Allow: /
-Disallow: /api/
-Disallow: /uploads/
-
-Sitemap: /sitemap.xml
+Disallow: /

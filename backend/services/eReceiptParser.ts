@@ -31,7 +31,7 @@ function classifyEReceiptItem(name: string): string {
 
 function parseMoneyToCents(raw: unknown): number | null {
   if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0 && raw <= 10_000_000) {
-    return Number.isInteger(raw) && raw >= 100 && raw > 50_000 ? raw : Math.round(raw * 100);
+    return Math.round(raw * 100);
   }
   if (typeof raw !== 'string') return null;
   const normalized = raw.replace(/[\s\u00A0]/g, '').replace(',', '.').replace(/[^\d.]/g, '');

@@ -18,7 +18,7 @@ export function verifyEntitlement(signed:SignedLease,entry:Pick<Entry,'accountId
  const key=crypto.createPublicKey({key:Buffer.from(signed.publicKey,'base64'),type:'spki',format:'der'});
  if(key.asymmetricKeyType!=='ed25519'||!crypto.verify(null,Buffer.from(signed.payload),key,Buffer.from(signed.signature,'base64url')))throw new Error('INVALID_ENTITLEMENT');
  const lease=JSON.parse(Buffer.from(signed.payload,'base64url').toString()) as Lease;
- if(lease.version!==1||lease.accountId!==entry.accountId||lease.deviceId!==entry.deviceId||lease.kind!=='desktop'||!['free','standard','premium'].includes(lease.plan)||!Number.isSafeInteger(lease.issuedAt)||!Number.isSafeInteger(lease.expiresAt)||lease.issuedAt>now+60000||lease.expiresAt<=now||lease.expiresAt>lease.issuedAt+86400000||(lease.validUntil!==null&&lease.expiresAt>lease.validUntil))throw new Error('EXPIRED_ENTITLEMENT');
+ if(lease.version!==1||lease.accountId!==entry.accountId||lease.deviceId!==entry.deviceId||lease.kind!=='desktop'||!['free','standard','premium','family','business'].includes(lease.plan)||!Number.isSafeInteger(lease.issuedAt)||!Number.isSafeInteger(lease.expiresAt)||lease.issuedAt>now+60000||lease.expiresAt<=now||lease.expiresAt>lease.issuedAt+86400000||(lease.validUntil!==null&&lease.expiresAt>lease.validUntil))throw new Error('EXPIRED_ENTITLEMENT');
  if(lease.catalog){require('./planCatalog').applyCentralCatalog(lease.catalog);require('./planPolicy').refreshPlanPolicy();}
  return lease;
 }
@@ -28,7 +28,7 @@ export async function registerCentralDevice(localUserId:number,origin:string,acc
  let entry=read()[localUserId];if(!entry||entry.blocked||entry.origin!==safe||entry.accountId!==accountId){entry={origin:safe,accountId,deviceId:crypto.randomUUID(),credential:crypto.randomBytes(32).toString('base64url')};update(localUserId,entry);}
  // The key is obtained independently through the configured HTTPS origin, not from untrusted lease data.
  const keyResponse=await fetch(`${safe}/entitlements/public-key`,{redirect:'error',signal:AbortSignal.timeout(7000)});if(!keyResponse.ok)throw new Error('CENTRAL_ENTITLEMENTS_UNAVAILABLE');const config=await keyResponse.json() as {publicKey:string};
- const {response,value}=await post(safe,'/entitlements/register',token,{deviceId:entry.deviceId,credential:entry.credential,kind:'desktop',name:'E‑Teczka Desktop'});
+ const {response,value}=await post(safe,'/entitlements/register',token,{deviceId:entry.deviceId,credential:entry.credential,kind:'desktop',name:'MojaTeczka Desktop'});
  if(!response.ok)throw new Error(value.code==='DEVICE_LIMIT_REACHED'?'CENTRAL_DEVICE_LIMIT':'CENTRAL_ENTITLEMENTS_UNAVAILABLE');
  entry.publicKey=config.publicKey;verifyEntitlement(value,entry);entry.lease=value;entry.checkedAt=Date.now();entry.blocked=false;failedAt.delete(localUserId);update(localUserId,entry);
 }

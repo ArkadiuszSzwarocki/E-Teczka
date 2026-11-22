@@ -53,7 +53,7 @@ async function post<T>(origin: string, endpoint: string, body: object, token?: s
 async function saveSession(origin: string, session: Omit<CentralSession, 'origin'>): Promise<CentralAccountUser> {
   if (!/^[A-Za-z0-9_-]{43}$/.test(session.token) || !Number.isFinite(session.expiresAt) || !session.user?.id || !session.user.email) throw new Error('Serwer zwrócił nieprawidłową sesję.');
   const device=await mobileDevice(session.user.id);
-  try{await savePlan(origin,session.user.id,await post(origin,'/entitlements/register',{...device,kind:'mobile',name:'E‑Teczka Mobile'},session.token));}catch(error){throw error;}
+  try{await savePlan(origin,session.user.id,await post(origin,'/entitlements/register',{...device,kind:'mobile',name:'MojaTeczka Mobile'},session.token));}catch(error){throw error;}
   if(currentMobileAccount()!==session.user.id)DeviceEventEmitter.emit('eteczka-account-switch-start');
   try{await selectMobileProfile(session.user.id,session.user.email);await SecureStore.setItemAsync(SESSION_KEY,JSON.stringify({...session,origin:centralAccountOrigin(origin)}));}catch(error){DeviceEventEmitter.emit('eteczka-account-switch-failed',error instanceof Error?error.message:'Nie udało się zmienić konta.');throw error;}
   DeviceEventEmitter.emit('eteczka-central-session-changed');
@@ -67,7 +67,7 @@ export async function resendCentralVerification(origin: string, email: string) {
 export async function getCentralGoogleChallenge(origin: string) { return post<{ nonce: string }>(origin, '/google-challenge', {}); }
 export async function loginCentralWithGoogle(origin: string, credential: string, nonce: string) { return saveSession(origin, await post<Omit<CentralSession, 'origin'>>(origin, '/google', { credential, nonce })); }
 export async function linkCentralGoogle(origin: string, credential: string, nonce: string) {
-  const session = await getCentralSession(origin); if (!session) throw new Error('Najpierw zaloguj się na konto E‑Teczki.');
+  const session = await getCentralSession(origin); if (!session) throw new Error('Najpierw zaloguj się na konto MojejTeczki.');
   await post(origin, '/link-google', { credential, nonce }, session.token);
 }
 
@@ -103,7 +103,7 @@ export async function logoutCentralAccount(origin: string) {
 
 export async function deleteCentralAccount(origin: string) {
   const session = await getCentralSession(origin);
-  if (!session) throw new Error('Najpierw zaloguj się na konto E‑Teczki.');
+  if (!session) throw new Error('Najpierw zaloguj się na konto MojejTeczki.');
   await post(origin, '/delete-account', {}, session.token);
   DeviceEventEmitter.emit('eteczka-account-switch-start');
   await closeMobileProfile();
