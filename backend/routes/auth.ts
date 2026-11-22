@@ -1,7 +1,9 @@
 import { AccountMfaRequired, verifyAccountMfa } from '../services/accountMfa';
 import { SESSION_DURATION_MS, ensureIdleSessionPolicy, activeSessionWhere, effectiveSessionExpiry } from '../services/sessionPolicy';
 import { getCatalog } from '../services/planCatalog';
+import { activePlan } from '../services/planPolicy';
 import crypto from 'crypto';
+import { promisify } from 'util';
 import express from 'express';
 import type { PrismaClient } from '@prisma/client';
 import { authSecret } from '../security/authSecret';
@@ -54,9 +56,16 @@ function isStrongEnoughPassword(password: string, email: string): boolean {
 
 
 
+const scryptAsync = promisify(crypto.scrypt);
+
 export function passwordHash(password: string, salt = crypto.randomBytes(16).toString('hex')) {
   const digest = crypto.scryptSync(password, salt, 64).toString('hex');
   return `${salt}:${digest}`;
+}
+
+export async function passwordHashAsync(password: string, salt = crypto.randomBytes(16).toString('hex')) {
+  const derived = await scryptAsync(password, salt, 64) as Buffer;
+  return `${salt}:${derived.toString('hex')}`;
 }
 
 export function passwordMatches(password: string, stored: string | null) {
@@ -64,6 +73,14 @@ export function passwordMatches(password: string, stored: string | null) {
   const [salt, expected] = stored.split(':');
   if (!salt || !expected) return false;
   const actual = crypto.scryptSync(password, salt, 64).toString('hex');
+  return expected.length === actual.length && crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(actual));
+}
+
+export async function passwordMatchesAsync(password: string, stored: string | null) {
+  if (!stored) return false;
+  const [salt, expected] = stored.split(':');
+  if (!salt || !expected) return false;
+  const actual = ((await scryptAsync(password, salt, 64)) as Buffer).toString('hex');
   return expected.length === actual.length && crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(actual));
 }
 
@@ -103,7 +120,7 @@ export function createAuthRouter(prisma: PrismaClient) {
         recordLoginFailure(key);
         return response.status(409).json({ error: 'Konto z tym adresem już istnieje.' });
       }
-      const user = await prisma.user.create({ data: { email, name: email.split('@')[0], passwordHash: passwordHash(request.body.password) } });
+      const user = await prisma.user.create({ data: { email, name: email.split('@')[0], passwordHash: await passwordHashAsync(request.body.password) } });
       return response.status(201).json(await createSession(prisma, user.id, user.email, user.name, request.body));
     } catch { return response.status(500).json({ error: 'Nie udało się utworzyć konta.' }); }
   });
@@ -120,7 +137,7 @@ export function createAuthRouter(prisma: PrismaClient) {
       return response.status(429).json({ error: `Zbyt wiele nieudanych prób logowania. Spróbuj ponownie za ${retryAfter} s.` });
     }
     const user = await prisma.user.findUnique({ where: { email } });
-    const valid = passwordMatches(request.body.password, user?.passwordHash ?? DUMMY_HASH) && Boolean(user);
+    const valid = (await passwordMatchesAsync(request.body.password, user?.passwordHash ?? DUMMY_HASH)) && Boolean(user);
     if (!valid || !user) {
       if (!bypassRate) {
         recordLoginFailure(key);
@@ -176,7 +193,7 @@ export async function createSession(prisma: PrismaClient, userId: number, email:
   const deviceName = typeof body?.deviceName === 'string' ? body.deviceName.trim().slice(0, 80) : 'Nieznane urządzenie';
   const subscription = await prisma.subscription.findUnique({ where: { ownerKey: `user:${userId}` } });
   const overridePlan = devPlan(`user:${userId}`);
-  const plan = overridePlan ?? (central ? central.plan : subscription?.plan === 'premium' && ['active', 'trialing'].includes(subscription.status) ? 'premium' : subscription?.plan === 'standard' && ['active', 'trialing'].includes(subscription.status) ? 'standard' : 'free');
+  const plan = overridePlan ?? (central ? central.plan : activePlan(subscription?.plan, subscription?.status, Boolean(subscription?.cancelAtPeriodEnd), subscription?.currentPeriodEnd));
   const limit = getCatalog().plans[plan].accountDevices ?? Number.POSITIVE_INFINITY;
   if (Number.isFinite(limit) && !overrides.bypassDeviceLimit) {
     const activeSessions = await prisma.authSession.findMany({ where: { userId, ...activeSessionWhere() }, select: { deviceId: true } });

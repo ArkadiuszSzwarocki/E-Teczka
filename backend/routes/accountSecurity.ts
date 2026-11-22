@@ -6,7 +6,7 @@ import type { PrismaClient } from '@prisma/client';
 import { requireLocalDesktop } from '../middleware/accessControl';
 import { securityDir } from '../config/paths';
 import { accountMfa } from '../services/accountMfa';
-import { passwordMatches } from './auth';
+import { passwordMatchesAsync } from './auth';
 import { centralAccountOrigin, createCentralAccountLinks, verifyCentralSession } from '../services/centralAccountLink';
 import { createCentralHandoffs } from '../services/centralHandoff';
 import { eraseLocalAccountCompletely } from '../services/accountErasure';
@@ -69,7 +69,7 @@ export function createAccountSecurityRouter(prisma: PrismaClient, googleHandoffs
   }
 
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { passwordHash: true } });
-  const localOk = Boolean(user && passwordMatches(code, user.passwordHash));
+  const localOk = Boolean(user && await passwordMatchesAsync(code, user.passwordHash));
   const centralOk = !localOk && await reauthenticate(userId, code);
   if (!localOk && !centralOk) {
    return res.status(403).json({ error: 'Nieprawidłowe hasło konta.' });

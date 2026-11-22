@@ -296,7 +296,7 @@ export function createBackupOAuthCallbackRouter(prisma: PrismaClient) {
     const state = String(req.query.state || '');
     const context = oauthStates.get(state);
     oauthStates.delete(state);
-    if (!context || context.expiresAt < Date.now()) return res.status(400).send('Sesja OAuth wygasła. Wróć do E‑Teczki i spróbuj ponownie.');
+    if (!context || context.expiresAt < Date.now()) return res.status(400).send('Sesja OAuth wygasła. Wróć do MojejTeczki i spróbuj ponownie.');
     const config = oauthConfig[context.provider];
     const code = String(req.query.code || '');
     if (!config || !code) return res.status(400).send('Brak kodu autoryzacji OAuth.');
@@ -306,7 +306,7 @@ export function createBackupOAuthCallbackRouter(prisma: PrismaClient) {
       const tokens = await tokenResponse.json() as { access_token?: string; refresh_token?: string; expires_in?: number };
       if (!tokenResponse.ok || !tokens.access_token) return res.status(502).send('Dostawca chmury odrzucił autoryzację.');
       await prisma.backupDestination.upsert({ where: { ownerKey: context.ownerKey }, create: { ownerKey: context.ownerKey, provider: context.provider, encryptedCredentials: encrypt(JSON.stringify({ accessToken: tokens.access_token, refreshToken: tokens.refresh_token || null, expiresAt: Date.now() + Number(tokens.expires_in || 3600) * 1000 })), enabled: true }, update: { provider: context.provider, encryptedCredentials: encrypt(JSON.stringify({ accessToken: tokens.access_token, refreshToken: tokens.refresh_token || null, expiresAt: Date.now() + Number(tokens.expires_in || 3600) * 1000 })), enabled: true } });
-      res.type('html').send('<!doctype html><meta charset="utf-8"><title>E‑Teczka</title><h2>Chmura została połączona.</h2><p>Możesz zamknąć tę kartę i wrócić do E‑Teczki.</p>');
+      res.type('html').send('<!doctype html><meta charset="utf-8"><title>MojaTeczka</title><h2>Chmura została połączona.</h2><p>Możesz zamknąć tę kartę i wrócić do MojejTeczki.</p>');
     } catch { res.status(502).send('Nie udało się zapisać połączenia chmury.'); }
   });
   return router;
