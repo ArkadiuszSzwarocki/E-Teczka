@@ -25,8 +25,10 @@ export function configureAccountSessionValidator(validator: (token: string, user
   accountSessionIsActive = validator;
 }
 
+let lastPairedSaveByDevice = new Map<string, number>();
+
 function savePairedDevices(devices = pairedDevices) {
-  const temporaryFile = `${pairedDevicesFile}.tmp`;
+  const temporaryFile = `${pairedDevicesFile}.${process.pid}.${Date.now()}.tmp`;
   fs.writeFileSync(temporaryFile, JSON.stringify(devices, null, 2), { encoding: 'utf8', mode: 0o600 });
   fs.renameSync(temporaryFile, pairedDevicesFile);
 }
@@ -69,14 +71,18 @@ export async function requireAccess(request: express.Request, response: express.
     }
   }
   if (isLoopback(request)) {
-    return response.status(401).json({ error: 'Zaloguj się na konto E‑Teczki, aby uzyskać dostęp do dokumentów.' });
+    return response.status(401).json({ error: 'Zaloguj się na konto MojejTeczki, aby uzyskać dostęp do dokumentów.' });
   }
   if (!token) return response.status(401).json({ error: 'Brak autoryzacji urządzenia.' });
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
   const device = pairedDevices.find(item => item.tokenHash === tokenHash);
   if (!device) return response.status(401).json({ error: 'Urządzenie nie jest sparowane.' });
-  device.lastSeenAt = new Date().toISOString();
-  savePairedDevices();
+  const nowMs = Date.now();
+  device.lastSeenAt = new Date(nowMs).toISOString();
+  if (nowMs - (lastPairedSaveByDevice.get(device.id) || 0) >= 30_000) {
+    lastPairedSaveByDevice.set(device.id, nowMs);
+    try { savePairedDevices(); } catch { /* avoid failing request on transient Windows file lock */ }
+  }
   if (device.ownerId) response.locals.userId = device.ownerId;
   response.locals.billingOwnerKey = device.ownerKey || `device:${device.id}`;
   next();

@@ -27,7 +27,12 @@ async function readState(): Promise<SyncState> {
     throw new Error('Nie udało się odczytać kolejki synchronizacji. Dane pozostawiono na telefonie.');
   }
 }
-async function writeState(state: SyncState) { await ensure(); await FileSystem.writeAsStringAsync(STATE(), JSON.stringify(state)); }
+async function writeState(state: SyncState) {
+  await ensure();
+  const tmp = `${STATE()}.${Date.now()}.tmp`;
+  await FileSystem.writeAsStringAsync(tmp, JSON.stringify(state));
+  await FileSystem.moveAsync({ from: tmp, to: STATE() });
+}
 // Serialize read-modify-write operations so a sync cannot overwrite a change
 // queued by another screen while its network request is in progress.
 let stateOperation: Promise<void> = Promise.resolve();
@@ -303,6 +308,30 @@ async function syncNowLocked() {
     if (receipt.success !== true || receipt.value?.id !== id) throw new Error('Komputer nie potwierdził usunięcia kartoteki.');
     state.queue = state.queue.filter(item => item !== change);
     await writeState(state);
+  }
+  for (const change of [...state.queue]) {
+    if (change.entity !== 'documents' || change.operation !== 'deleted') continue;
+    const id = Number(change.value.id);
+    if (!Number.isInteger(id) || id < 1 || !change.queuedAt) {
+      state.queue = state.queue.filter(item => item !== change);
+      await writeState(state);
+      continue;
+    }
+    const permanent = change.value.permanent === true;
+    const response = permanent
+      ? await fetch(await getApiUrl(`/api/documents/${id}`), { method: 'DELETE', headers: await getAuthHeaders() })
+      : await fetch(await getApiUrl(`/api/documents/${id}`), { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...await getAuthHeaders() }, body: JSON.stringify({ isDeleted: true }) });
+    if (response.status === 404 || response.ok) {
+      state.queue = state.queue.filter(item => item !== change);
+      await writeState(state);
+      continue;
+    }
+    if (response.status === 409) {
+      const errPayload = await response.json().catch(() => ({})) as { error?: string };
+      await moveChangeToConflicts(state, change, errPayload.error || 'Dokument został zmieniony na komputerze.');
+      continue;
+    }
+    throw new Error('Nie udało się zsynchronizować usunięcia dokumentu. Zmiana pozostała w kolejce.');
   }
   if (state.queue.length) throw new Error("Część zmian oczekuje na obsługę synchronizacji. Pozostały bezpiecznie w kolejce.");
   state.lastPulledAt = Number(pulled.timestamp || Date.now()); await writeState(state); DeviceEventEmitter.emit('eteczka-sync-completed'); return { pending: 0, conflicts: state.conflicts };

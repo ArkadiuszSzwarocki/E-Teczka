@@ -3,6 +3,7 @@ import path from 'node:path';
 import { createCanvas } from '@napi-rs/canvas';
 import { createWorker } from 'tesseract.js';
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { dataRoot } from '../config/paths';
 import { preprocessOcrImage } from './ocrPreprocess';
 
 type TextItem = { str?: string; hasEOL?: boolean };
@@ -10,7 +11,7 @@ type Recognizer = { recognize: (input: Buffer) => Promise<string>; close: () => 
 type OcrOptions = { languageDirectory?: string; createRecognizer?: () => Promise<Recognizer>; maxPages?: number };
 
 async function localRecognizer(languageDirectory?: string): Promise<Recognizer> {
-  const directory = languageDirectory || path.join(__dirname, '..', 'ocr-language-data');
+  const directory = languageDirectory || path.join(dataRoot, 'ocr-language-data');
   if (!languageDirectory) {
     fs.mkdirSync(directory, { recursive: true });
     for (const code of ['pol', 'eng']) {
@@ -54,7 +55,8 @@ export async function extractDocumentText(file: string, mimeType: string, option
           const operations = await page.getOperatorList();
           const hasImage = operations.fnArray.some(op => op === pdfjs.OPS.paintImageXObject || op === pdfjs.OPS.paintInlineImageXObject || op === pdfjs.OPS.paintImageMaskXObject);
           let ocr = '';
-          if (hasImage || !text) {
+          // Only run expensive Tesseract OCR on PDF pages that lack sufficient vector text (e.g. scanned pages).
+          if ((hasImage && text.length < 40) || !text) {
             const original = page.getViewport({ scale: 1 });
             const scale = Math.min(2, 2400 / Math.max(original.width, original.height));
             const viewport = page.getViewport({ scale });

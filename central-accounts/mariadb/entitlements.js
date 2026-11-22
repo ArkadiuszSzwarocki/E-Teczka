@@ -1,7 +1,7 @@
 'use strict';
 const crypto = require('node:crypto');
 const { hash, validToken, first, execute, transaction } = require('./dbHelpers');
-const plans = { free:{desktop:1,mobile:1}, standard:{desktop:2,mobile:1}, premium:{desktop:null,mobile:1} };
+const plans = { free:{desktop:1,mobile:1}, standard:{desktop:2,mobile:1}, premium:{desktop:null,mobile:1}, family:{desktop:null,mobile:4}, business:{desktop:null,mobile:10} };
 async function ensureEntitlementsSchema(pool) {
   await pool.query(`CREATE TABLE IF NOT EXISTS account_plans (account_id BIGINT UNSIGNED PRIMARY KEY, plan VARCHAR(16) NOT NULL DEFAULT 'free', status VARCHAR(16) NOT NULL DEFAULT 'active', valid_until BIGINT NULL, source VARCHAR(32) NOT NULL DEFAULT 'admin', updated_at BIGINT NOT NULL, FOREIGN KEY(account_id) REFERENCES accounts(id) ON DELETE CASCADE) ENGINE=InnoDB`);
   await pool.query(`CREATE TABLE IF NOT EXISTS account_devices (account_id BIGINT UNSIGNED NOT NULL, device_id VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, kind VARCHAR(16) NOT NULL, name VARCHAR(80) NOT NULL, credential_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL UNIQUE, created_at BIGINT NOT NULL, last_seen BIGINT NOT NULL, PRIMARY KEY(account_id,device_id), FOREIGN KEY(account_id) REFERENCES accounts(id) ON DELETE CASCADE) ENGINE=InnoDB`);
@@ -20,7 +20,7 @@ function createEntitlements({pool,getSession,privateKey,catalogReader,now=Date.n
       return transaction(pool,async db=>{await first(db,'SELECT id FROM accounts WHERE id = ? FOR UPDATE',[user.internal_id]);const state=await effective(db,user.internal_id);const device=await first(db,'SELECT * FROM account_devices WHERE account_id = ? AND device_id = ?',[user.internal_id,deviceId]);
         if(device&&(device.credential_hash!==hash(credential)||device.kind!==kind))throw new Error('DEVICE_CREDENTIAL_REQUIRED');
         if(device&&state.limits[kind]!==null){const devices=await execute(db,'SELECT device_id FROM account_devices WHERE account_id = ? AND kind = ? ORDER BY created_at, device_id',[user.internal_id,kind]);if(devices.findIndex(item=>item.device_id===deviceId)>=state.limits[kind])throw new Error('DEVICE_LIMIT_REACHED');}
-        if(!device){const rows=await execute(db,'SELECT device_id FROM account_devices WHERE account_id = ? AND kind = ?',[user.internal_id,kind]);const limit=state.limits[kind];if(limit!==null&&rows.length>=limit)throw new Error('DEVICE_LIMIT_REACHED');await execute(db,'INSERT INTO account_devices (account_id,device_id,kind,name,credential_hash,created_at,last_seen) VALUES (?,?,?,?,?,?,?)',[user.internal_id,deviceId,kind,String(input.name||'E-Teczka').slice(0,80),hash(credential),now(),now()]);}
+        if(!device){const rows=await execute(db,'SELECT device_id FROM account_devices WHERE account_id = ? AND kind = ?',[user.internal_id,kind]);const limit=state.limits[kind];if(limit!==null&&rows.length>=limit)throw new Error('DEVICE_LIMIT_REACHED');await execute(db,'INSERT INTO account_devices (account_id,device_id,kind,name,credential_hash,created_at,last_seen) VALUES (?,?,?,?,?,?,?)',[user.internal_id,deviceId,kind,String(input.name||'MojaTeczka').slice(0,80),hash(credential),now(),now()]);}
         await execute(db,'UPDATE account_devices SET last_seen = ? WHERE account_id = ? AND device_id = ?',[now(),user.internal_id,deviceId]);return issue(user,{device_id:deviceId,kind},state);
       });
     },

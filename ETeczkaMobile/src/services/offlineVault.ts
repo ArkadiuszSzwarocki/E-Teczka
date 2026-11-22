@@ -212,7 +212,17 @@ async function syncOfflineVaultLocked(onProgress?: (done: number, total: number,
     await new Promise<void>((resolve) => setTimeout(resolve, 80));
   }
   const allowed = new Set(docs.map((document) => document.id));
-  for (const old of current) if (!allowed.has(old.id)) await removeOfflineOcr(old.id);
+  const vaultEntries = await FileSystem.readDirectoryAsync(ROOT()).catch(() => [] as string[]);
+  for (const old of current) {
+    if (allowed.has(old.id)) continue;
+    await removeOfflineOcr(old.id);
+    const prefix = `${old.id}.`;
+    for (const entry of vaultEntries) {
+      if (entry.startsWith(prefix)) {
+        await FileSystem.deleteAsync(`${ROOT()}${entry}`, { idempotent: true }).catch(() => undefined);
+      }
+    }
+  }
   await saveIndex([...map.values()].filter((doc) => allowed.has(doc.id)));
   return docs.length;
 }

@@ -99,7 +99,11 @@ object LocalTls {
           } else if (request.isHttps) {
             // A custom computer CA must not grant trust to unrelated hosts.
             val certificates = chain.connection()?.handshake()?.peerCertificates?.filterIsInstance<X509Certificate>()?.toTypedArray() ?: throw java.io.IOException("Brak certyfikatu serwera.")
-            try { system.checkServerTrusted(certificates, certificates[0].publicKey.algorithm) } catch (e: Exception) { throw javax.net.ssl.SSLPeerUnverifiedException("Niezaufany certyfikat serwera.") }
+            val authType = when (certificates[0].publicKey.algorithm.uppercase()) {
+              "EC", "ECDSA" -> "ECDHE_ECDSA"
+              else -> "ECDHE_RSA"
+            }
+            try { X509TrustManagerExtensions(system).checkServerTrusted(certificates, authType, host) } catch (e: Exception) { throw javax.net.ssl.SSLPeerUnverifiedException("Niezaufany certyfikat serwera.") }
           } else if (request.header("Authorization") != null) {
             throw java.io.IOException("Wysyłanie tokenu przez HTTP jest zabronione.")
           }

@@ -104,7 +104,9 @@ export async function applyCheckoutSession(prisma: PrismaClient, stripe: Stripe,
     if (strict) throw new BillingHttpError(409, 'Konto ma już inną aktywną subskrypcję.');
     return null;
   }
-  const plan = session.metadata?.plan === 'standard' ? 'standard' : 'premium';
+  const rawMetaPlan = String(session.metadata?.plan || 'premium');
+  const plan = ['standard', 'premium', 'family', 'business'].includes(rawMetaPlan) ? rawMetaPlan : 'premium';
+  const planLabels: Record<string, string> = { standard: 'Standard', premium: 'Premium', family: 'Rodzinny', business: 'Firmowy' };
   await prisma.subscription.upsert({
     where: { ownerKey: currentOwner },
     create: { ownerKey: currentOwner, providerCustomerId: customerId, providerSubscriptionId: subscriptionId, plan, status: stripeSubscription.status },
@@ -118,7 +120,7 @@ export async function applyCheckoutSession(prisma: PrismaClient, stripe: Stripe,
     status: 'succeeded',
     amount: session.amount_total || 0,
     currency: session.currency,
-    description: 'Subskrypcja E‑Teczka Premium',
+    description: `Subskrypcja MojaTeczka ${planLabels[plan] || 'Premium'}`,
   });
   return plan;
 }
@@ -232,12 +234,21 @@ export async function processStripeWebhookEvent(prisma: PrismaClient, stripe: St
     const cancellationTime = periodEnd(subscription.cancel_at || (subscription.cancel_at_period_end ? subscription.items.data[0]?.current_period_end : null));
     const periodFinish = periodEnd(subscription.items.data[0]?.current_period_end);
     const actualPrice = subscription.items.data[0]?.price?.id;
-    const pricePlan = actualPrice && [process.env.STRIPE_PRICE_MONTHLY, process.env.STRIPE_PRICE_YEARLY].includes(actualPrice)
-      ? 'premium'
-      : actualPrice && [process.env.STRIPE_STANDARD_PRICE_MONTHLY, process.env.STRIPE_STANDARD_PRICE_YEARLY].includes(actualPrice)
-        ? 'standard'
-        : (subscription.metadata?.plan === 'standard' ? 'standard' : 'premium');
-    if (key && subscription.status !== 'canceled' && pricePlan === 'premium' && subscription.metadata?.plan === 'standard') {
+    const priceToPlan: Array<[string | undefined, 'standard' | 'premium' | 'family' | 'business']> = [
+      [process.env.STRIPE_STANDARD_PRICE_MONTHLY, 'standard'],
+      [process.env.STRIPE_STANDARD_PRICE_YEARLY, 'standard'],
+      [process.env.STRIPE_PRICE_MONTHLY, 'premium'],
+      [process.env.STRIPE_PRICE_YEARLY, 'premium'],
+      [process.env.STRIPE_FAMILY_PRICE_MONTHLY, 'family'],
+      [process.env.STRIPE_FAMILY_PRICE_YEARLY, 'family'],
+      [process.env.STRIPE_BUSINESS_PRICE_MONTHLY, 'business'],
+      [process.env.STRIPE_BUSINESS_PRICE_YEARLY, 'business'],
+    ];
+    const metaPlan = String(subscription.metadata?.plan || '');
+    const fallbackMetaPlan = ['standard', 'premium', 'family', 'business'].includes(metaPlan) ? metaPlan : 'premium';
+    const pricePlan = (actualPrice ? priceToPlan.find(([id]) => id === actualPrice)?.[1] : undefined) || fallbackMetaPlan;
+    const planRank: Record<string, number> = { standard: 1, premium: 2, family: 3, business: 4 };
+    if (key && subscription.status !== 'canceled' && (planRank[pricePlan] ?? 0) > (planRank[metaPlan] ?? 0)) {
       const invoiceId = typeof subscription.latest_invoice === 'string' ? subscription.latest_invoice : subscription.latest_invoice?.id;
       if (!invoiceId || (await stripe.invoices.retrieve(invoiceId)).status !== 'paid') return;
     }

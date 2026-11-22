@@ -39,9 +39,14 @@ app.whenReady().then(async () => {
   setTimeout(() => backend.waitForServer(windowCtrl.createWindow), 1000);
 });
 
-app.on('before-quit', () => windowCtrl.markQuitting());
+app.on('before-quit', () => {
+  windowCtrl.markQuitting();
+  backend.stopBackend();
+});
 
 app.on('window-all-closed', () => {
-  backend.stopBackend();
-  if (process.platform !== 'darwin') app.quit();
+  if (process.platform !== 'darwin') {
+    backend.stopBackend();
+    app.quit();
+  }
 });

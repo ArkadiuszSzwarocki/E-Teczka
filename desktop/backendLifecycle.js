@@ -17,10 +17,15 @@ function createBackendLifecycle({ ipcMain, BrowserWindow, ownRenderer, rootDir, 
     const backendDir = path.join(rootDir, 'backend');
     const tsNodeBin = path.join(backendDir, 'node_modules', 'ts-node', 'dist', 'bin.js');
     const useTsNode = Boolean(process.env.ETECZKA_DEV_URL) && fs.existsSync(tsNodeBin);
-    const args = useTsNode ? [tsNodeBin, '--preferTsExts', path.join(backendDir, 'index.ts')] : [path.join(backendDir, 'index.js')];
-    backendProcess = spawn('node', args, {
+    const distEntry = path.join(backendDir, 'dist', 'index.js');
+    const prodEntry = fs.existsSync(distEntry) ? distEntry : path.join(backendDir, 'index.js');
+    const args = useTsNode ? [tsNodeBin, '--preferTsExts', path.join(backendDir, 'index.ts')] : [prodEntry];
+    backendProcess = spawn(process.execPath, args, {
       cwd: backendDir,
-      env: { ...process.env, ...resolveEnv(), PORT: '3000' },
+      env: { ...process.env, ...resolveEnv(), ELECTRON_RUN_AS_NODE: '1', PORT: '3000' },
+    });
+    backendProcess.on('error', (err) => {
+      console.error(`${logStamp()} [BACKEND SPAWN ERR]: ${err.message}`);
     });
     backendProcess.stdout.on('data', (data) => console.log(`${logStamp()} [BACKEND]: ${data}`));
     backendProcess.stderr.on('data', (data) => console.error(`${logStamp()} [BACKEND ERR]: ${data}`));
