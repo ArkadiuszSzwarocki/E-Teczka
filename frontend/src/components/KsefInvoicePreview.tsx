@@ -1,15 +1,62 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import QRCode from 'react-qr-code';
 import { buildPrintableKsefHtml, formatKsefVatRate, parseKsefPreviewXml } from '../services/ksefPreviewParser';
+import { resolveApiBase } from '../services/apiBase';
+import { buildZbpTransferQr } from '../utils/zbpQr';
+
+type VatWhitelistStatus = {
+  checked: boolean;
+  statusVat: string | null;
+  isActiveVat: boolean;
+  ibanChecked: boolean;
+  ibanMatch: boolean | null;
+  requestId: string | null;
+  error?: string;
+};
 
 type Props = {
   xmlText: string;
   title: string;
 };
 
-/** Renders Polish KSeF XML invoices (FA(2)/FA(3)) as a readable invoice sheet with print/PDF export and raw XML toggle. */
+/** Renders Polish KSeF XML invoices (FA(2)/FA(3)) with ZBP transfer QR, MF VAT Whitelist check, and PDF print. */
 export default function KsefInvoicePreview({ xmlText, title }: Props) {
   const [showRawXml, setShowRawXml] = useState(false);
+  const [vatStatus, setVatStatus] = useState<VatWhitelistStatus | null>(null);
+  const [vatLoading, setVatLoading] = useState(false);
   const invoice = useMemo(() => parseKsefPreviewXml(xmlText), [xmlText]);
+  const zbpQrPayload = useMemo(
+    () => (invoice ? buildZbpTransferQr({
+      nip: invoice.seller.nip,
+      iban: invoice.bankAccount,
+      amountGross: invoice.totalGross,
+      recipient: invoice.seller.name,
+      title: invoice.invoiceNumber,
+    }) : null),
+    [invoice],
+  );
+
+  useEffect(() => {
+    if (!invoice?.seller.nip) {
+      setVatStatus(null);
+      return;
+    }
+    let active = true;
+    setVatLoading(true);
+    const apiBase = resolveApiBase(window.location, import.meta.env.VITE_API_URL);
+    const token = localStorage.getItem('mojateczka_auth_token');
+    const params = new URLSearchParams({ nip: invoice.seller.nip });
+    if (invoice.bankAccount) params.set('iban', invoice.bankAccount);
+    if (invoice.issueDate) params.set('date', invoice.issueDate.slice(0, 10));
+    void fetch(`${apiBase}/api/ksef/vat-whitelist?${params.toString()}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    })
+      .then(async res => (res.ok ? (await res.json()) as VatWhitelistStatus : null))
+      .then(data => { if (active && data) setVatStatus(data); })
+      .catch(() => undefined)
+      .finally(() => { if (active) setVatLoading(false); });
+    return () => { active = false; };
+  }, [invoice?.seller.nip, invoice?.bankAccount, invoice?.issueDate]);
 
   const handlePrintPdf = () => {
     if (!invoice) return;
@@ -103,6 +150,25 @@ export default function KsefInvoicePreview({ xmlText, title }: Props) {
                 <p className="mt-1 text-sm font-bold text-slate-900">{invoice.seller.name}</p>
                 {invoice.seller.nip && <p className="mt-0.5 text-slate-700">NIP: {invoice.seller.nip}</p>}
                 {invoice.seller.address && <p className="mt-0.5 text-slate-600">{invoice.seller.address}</p>}
+                {invoice.seller.nip && (
+                  <div className="mt-2">
+                    {vatLoading ? (
+                      <span className="inline-flex rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                        Sprawdzanie Białej Listy VAT (MF)…
+                      </span>
+                    ) : vatStatus?.checked ? (
+                      vatStatus.isActiveVat && vatStatus.ibanMatch !== false ? (
+                        <span className="inline-flex flex-wrap items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800">
+                          ✓ Czynny podatnik VAT{vatStatus.ibanChecked ? ' · Rachunek na Białej Liście' : ''}
+                        </span>
+                      ) : (
+                        <span className="inline-flex flex-wrap items-center gap-1 rounded-full border border-red-300 bg-red-50 px-2.5 py-0.5 text-[11px] font-bold text-red-800">
+                          ⚠️ {!vatStatus.isActiveVat ? `Status VAT: ${vatStatus.statusVat || 'Niezarejestrowany'}` : 'Rachunek bankowy NIE widnieje na Białej Liście VAT!'}
+                        </span>
+                      )
+                    ) : null}
+                  </div>
+                )}
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3.5 text-xs">
                 <p className="font-bold uppercase tracking-wider text-slate-500">Nabywca</p>
@@ -143,7 +209,7 @@ export default function KsefInvoicePreview({ xmlText, title }: Props) {
               </table>
             </div>
 
-            <footer className="mt-5 flex flex-wrap items-end justify-between gap-4 border-t border-slate-200 pt-4">
+            <footer className="mt-5 flex flex-wrap items-center justify-between gap-4 border-t border-slate-200 pt-4">
               <div className="space-y-1 text-xs text-slate-700">
                 <p>
                   Status płatności:{' '}
@@ -154,6 +220,17 @@ export default function KsefInvoicePreview({ xmlText, title }: Props) {
                 </p>
                 {invoice.bankAccount && <p>Rachunek bankowy: <strong className="font-mono text-slate-900">{invoice.bankAccount}</strong></p>}
               </div>
+              {zbpQrPayload && !invoice.paid && (
+                <div className="flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50/70 p-2.5">
+                  <div className="shrink-0 rounded bg-white p-1 shadow-sm">
+                    <QRCode value={zbpQrPayload} size={84} />
+                  </div>
+                  <div className="max-w-[170px] text-[11px] leading-4 text-slate-700">
+                    <p className="font-bold text-blue-900">QR przelew (ZBP)</p>
+                    <p className="mt-0.5">Zeskanuj w aplikacji banku (PKO, mBank, ING, Pekao, Santander) — przelew w 3 sekundy.</p>
+                  </div>
+                </div>
+              )}
               <div className="text-right">
                 <p className="text-xs uppercase tracking-wider text-slate-500">Razem brutto</p>
                 <p className="text-2xl font-extrabold text-slate-900">{invoice.totalGross} {invoice.currency}</p>

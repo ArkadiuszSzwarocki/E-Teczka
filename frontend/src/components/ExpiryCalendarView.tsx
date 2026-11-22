@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { DocumentRecord } from '../types/domain';
+import EmergencyKitCard from './EmergencyKitCard';
 
 type CategoryFilter = 'all' | 'auto' | 'identity' | 'warranty' | 'other';
 
@@ -37,12 +38,14 @@ function resolveDocExpiry(doc: DocumentRecord): Date | null {
 }
 
 type Props = {
+  apiUrl: string;
+  fetcher: typeof fetch;
   documents: DocumentRecord[];
   onOpenDocument: (doc: DocumentRecord) => void;
 };
 
 /** Dedicated Guardian view ("Kalendarz ważności") grouping policies, inspections, IDs, and warranties by urgency. */
-export default function ExpiryCalendarView({ documents, onOpenDocument }: Props) {
+export default function ExpiryCalendarView({ apiUrl, fetcher, documents, onOpenDocument }: Props) {
   const [filter, setFilter] = useState<CategoryFilter>('all');
 
   const items = useMemo<ExpiryItem[]>(() => {
@@ -134,6 +137,8 @@ export default function ExpiryCalendarView({ documents, onOpenDocument }: Props)
           {renderGroup('Dalsze terminy', later, 'text-slate-400')}
         </div>
       )}
+
+      <EmergencyKitCard apiUrl={apiUrl} fetcher={fetcher} />
     </section>
   );
 }

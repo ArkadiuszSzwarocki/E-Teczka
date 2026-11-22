@@ -40,6 +40,7 @@
       "expo-secure-store",
       "./plugins/withLocalTls",
       "./plugins/withShareIntent",
+      "./plugins/withQuickScanWidget",
       "expo-notifications",
       [
         "react-native-document-scanner-plugin",

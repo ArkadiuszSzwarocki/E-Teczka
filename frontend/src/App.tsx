@@ -392,7 +392,7 @@ export default function App() {
           ) : activeView === 'ksef-sync' ? (
             <KsefSyncPanel apiUrl={API_URL} fetcher={fetch} folders={folders} billingPlan={billing.billingPlan} onSynced={fetchData} showToast={showToast} />
           ) : activeView === 'expiry-calendar' ? (
-            <ExpiryCalendarView documents={documents} onOpenDocument={openPreview} />
+            <ExpiryCalendarView apiUrl={API_URL} fetcher={fetch} documents={documents} onOpenDocument={openPreview} />
           ) : activeView === 'developer' ? (
             <DeveloperPanel embedded initialSection={devSection} currentUser={session.currentUser} onPlanChanged={() => { billing.setBillingDetails(null); setDevPlanNonce(n => n + 1); void fetchData(); }} openBugCount={feedback.openBugCount} adminReplyCount={feedback.adminReplyCount} onOpenBugCountChange={feedback.updateOpenBugCount} onAdminReplyCountChange={feedback.setAdminReplyCount} onClose={() => setActiveView('dashboard')} />
           ) : activeView === 'scanner' ? (

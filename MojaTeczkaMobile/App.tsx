@@ -1,6 +1,6 @@
 import MobileAccountGate from './src/components/MobileAccountGate';
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, AppState, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, AppState, Linking, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import * as FileSystem from "expo-file-system/legacy";
 import { NavigationContainer, createNavigationContainerRef } from "@react-navigation/native";
 import { createBottomTabNavigator, type BottomTabBarButtonProps } from "@react-navigation/bottom-tabs";
@@ -205,6 +205,13 @@ function AppContent({ initiallyUnlocked = false }: { initiallyUnlocked?: boolean
   }, []);
   useEffect(() => {
     NavigationBar.setHidden(true);
+    const handleScanDeepLink = (url: string | null) => {
+      if (!url || !/^mojateczka:\/\/scan/i.test(url)) return;
+      setInitialTab("Skaner");
+    };
+    void Linking.getInitialURL().then(handleScanDeepLink).catch(() => undefined);
+    const linkSub = Linking.addEventListener('url', ({ url }) => handleScanDeepLink(url));
+    return () => linkSub.remove();
   }, []);
   const checkVault = useCallback(() => {
     let mounted = true;

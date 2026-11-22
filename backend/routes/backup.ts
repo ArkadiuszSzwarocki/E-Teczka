@@ -9,6 +9,7 @@ import { ocrOwnerKey } from '../services/ocrPremium';
 import { encrypt, decrypt, exportRecoveryKey, importRecoveryKey } from '../services/backupCrypto';
 import { requireLocalDesktop } from '../middleware/accessControl';
 import { restoreBackup } from '../services/restoreBackup';
+import { buildFamilyEmergencyKitPdf } from '../services/emergencyKitService';
 import { emitRealtimeEvent } from '../services/realtimeBus';
 import { exportSystemSettings, restoreSystemSettings } from '../services/settingsBackup';
 import { importExternalArchive } from '../services/externalImport';
@@ -286,6 +287,23 @@ export function createBackupRouter(prisma: PrismaClient) {
     } catch (error) {
       console.error('[backup] import-external:', error);
       res.status(400).json({ error: error instanceof Error ? error.message : 'Nie udało się zaimportować archiwum.' });
+    }
+  });
+
+  router.post('/emergency-kit', async (req, res) => {
+    try {
+      const plan = await getPlan(prisma, ocrOwnerKey(res));
+      if (plan !== 'family' && plan !== 'business') {
+        return res.status(402).json({ code: 'PREMIUM_REQUIRED', error: 'Teczka Awaryjna Rodziny jest dostępna w planie Rodzinnym i Firmowym.' });
+      }
+      const contacts = typeof req.body?.contacts === 'string' ? req.body.contacts.slice(0, 2000) : '';
+      const pdfBytes = await buildFamilyEmergencyKitPdf(prisma, ownerId(res), contacts);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', 'attachment; filename="MojaTeczka-Teczka-Awaryjna.pdf"');
+      res.send(Buffer.from(pdfBytes));
+    } catch (error) {
+      console.error('[backup] emergency-kit:', error);
+      res.status(500).json({ error: 'Nie udało się wygenerować Teczki Awaryjnej Rodziny.' });
     }
   });
 

@@ -6,6 +6,7 @@ import { useAnalyticsSummary } from '../hooks/useAnalyticsSummary';
 import AnalyticsBarChart from './AnalyticsBarChart';
 import AnalyticsDonutChart from './AnalyticsDonutChart';
 import AnalyticsFileLocationsCard from './AnalyticsFileLocationsCard';
+import PriceInflationCard from './PriceInflationCard';
 import ReceiptInsightsPanel from './ReceiptInsightsPanel';
 
 type Props = {
@@ -38,6 +39,29 @@ export default function AnalyticsDashboard({
   const { selectedMonth, setSelectedMonth, summary, usage, loading, error, reload, markPaymentStatus } = useAnalyticsSummary(apiUrl, fetcher);
   const [bundleBusy, setBundleBusy] = useState(false);
   const [bundleError, setBundleError] = useState('');
+  const [shareBusy, setShareBusy] = useState(false);
+  const [accountantLink, setAccountantLink] = useState<{ url: string; pin: string; month: string } | null>(null);
+
+  const shareAccountantPortal = async () => {
+    setShareBusy(true);
+    setBundleError('');
+    try {
+      const res = await fetcher(`${apiUrl}/api/analytics/accountant-share`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ month: selectedMonth }),
+      });
+      const payload = await res.json().catch(() => ({})) as { url?: string; pin?: string; month?: string; error?: string };
+      if (!res.ok || !payload.url || !payload.pin) {
+        throw new Error(payload.error || 'Nie udało się wygenerować linku dla księgowej.');
+      }
+      setAccountantLink({ url: payload.url, pin: payload.pin, month: payload.month || selectedMonth });
+    } catch (err) {
+      setBundleError(err instanceof Error ? err.message : 'Błąd tworzenia linku dla księgowej.');
+    } finally {
+      setShareBusy(false);
+    }
+  };
 
   const downloadAccountantBundle = async () => {
     setBundleBusy(true);
@@ -104,12 +128,27 @@ export default function AnalyticsDashboard({
           <button type="button" disabled={bundleBusy} onClick={() => void downloadAccountantBundle()} className="rounded-lg border border-amber-500/60 bg-amber-500/15 px-3 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-500/25 disabled:opacity-50">
             {bundleBusy ? 'Pakowanie ZIP…' : `📦 Paczka dla księgowej (${selectedMonth})`}
           </button>
+          <button type="button" disabled={shareBusy} onClick={() => void shareAccountantPortal()} className="rounded-lg border border-indigo-500/60 bg-indigo-500/15 px-3 py-1.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-500/25 disabled:opacity-50">
+            {shareBusy ? 'Tworzenie linku…' : '🔗 Wyślij księgowej (link + PIN)'}
+          </button>
           <button type="button" onClick={() => void reload()} className="cyber-btn-secondary rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-700">
             ↻ Odśwież dane
           </button>
         </div>
       </div>
       {bundleError && <p role="alert" className="rounded-lg border border-red-500/40 bg-red-950/30 px-3 py-2 text-xs text-red-200">{bundleError}</p>}
+      {accountantLink && (
+        <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-500/50 bg-emerald-950/30 px-4 py-3 text-xs text-emerald-100">
+          <div className="min-w-0 flex-1 space-y-1">
+            <p className="font-bold text-emerald-300">🔗 Link dla księgowej ({accountantLink.month}) ważny 7 dni:</p>
+            <p className="truncate font-mono text-white">{accountantLink.url}</p>
+            <p>Jednorazowy PIN dla księgowej: <strong className="rounded bg-slate-900 px-2 py-0.5 font-mono text-sm text-amber-300">{accountantLink.pin}</strong></p>
+          </div>
+          <button type="button" onClick={() => void navigator.clipboard?.writeText(`Paczka dokumentów (${accountantLink.month}): ${accountantLink.url}\nPIN: ${accountantLink.pin}`)} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-500">
+            📋 Kopiuj link i PIN
+          </button>
+        </div>
+      )}
 
       {summary.receiptReadingLocked && (
         <div role="status" className="rounded-xl border border-amber-500/40 bg-amber-950/30 px-4 py-3 text-xs text-amber-200">
@@ -239,6 +278,8 @@ export default function AnalyticsDashboard({
         items={summary.receiptItems}
         onOpenDocument={onOpenDocument}
       />
+
+      <PriceInflationCard apiUrl={apiUrl} fetcher={fetcher} />
 
       <AnalyticsFileLocationsCard fileLocations={summary.fileLocations} />
     </div>

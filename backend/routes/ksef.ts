@@ -2,6 +2,7 @@ import express from 'express';
 import type { PrismaClient } from '@prisma/client';
 import { deleteKsefConfig, getPublicKsefConfig, saveKsefConfig, type KsefEnvironment } from '../services/ksefCredentialsStore';
 import { syncKsefInvoices } from '../services/ksefSyncService';
+import { checkVatWhitelist } from '../services/vatWhitelistService';
 import { ocrOwnerKey } from '../services/ocrPremium';
 import { getPlan } from '../services/planLedger';
 import { errorMessage } from '../utils/errors';
@@ -59,6 +60,14 @@ export function createKsefRouter(prisma: PrismaClient) {
     } catch (error) {
       res.status(400).json({ error: errorMessage(error, 'Nie udało się pobrać faktur z KSeF.') });
     }
+  });
+
+  router.get('/vat-whitelist', async (req, res) => {
+    const nip = String(req.query.nip || '');
+    const iban = typeof req.query.iban === 'string' ? req.query.iban : undefined;
+    const date = typeof req.query.date === 'string' ? req.query.date : undefined;
+    const result = await checkVatWhitelist(nip, iban, date);
+    res.json(result);
   });
 
   return router;
