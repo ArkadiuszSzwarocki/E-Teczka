@@ -1,6 +1,7 @@
 'use strict';
 const express = require('express');
 const path = require('node:path');
+const { renderDesktopDownloadPage } = require('./desktopDownload');
 
 // This API is not yet suitable for exposure to the Internet. Distributed rate
 // limiting, password recovery, and deployment-specific origin checks remain.
@@ -118,6 +119,30 @@ function createHttpApp(accounts, { ledger, catalog, playBilling, entitlements, f
   app.post('/delete-account', async (req, res) => {
     try { await accounts.deleteAccount(bearer(req)); return res.status(204).end(); }
     catch { return res.status(401).json({ error: 'Sesja wygasła.' }); }
+  });
+  app.get('/pc', (req, res) => {
+    res.set({ 'Content-Security-Policy': "default-src 'none'; style-src 'self'; base-uri 'none'; frame-ancestors 'none'", 'Referrer-Policy': 'strict-origin-when-cross-origin', 'X-Content-Type-Options': 'nosniff' });
+    const cfg = options.desktopDownload || { origin: 'https://konto.arecki.pl', winUrl: '', macUrl: '' };
+    res.type('html').send(renderDesktopDownloadPage({
+      origin: cfg.origin,
+      userAgent: req.get('user-agent') || '',
+      winUrl: cfg.winUrl || '',
+      macUrl: cfg.macUrl || '',
+    }));
+  });
+  app.post('/desktop-download/email', async (req, res) => {
+    const user = await accounts.getSession(bearer(req));
+    if (!user) return res.status(401).json({ error: 'Sesja wygasła. Zaloguj się ponownie.' });
+    const cfg = options.desktopDownload;
+    if (!cfg || typeof cfg.sendEmail !== 'function') {
+      return res.status(503).json({ error: 'Wysyłka linku e-mail nie jest skonfigurowana na serwerze.' });
+    }
+    try {
+      await cfg.sendEmail(user.email);
+      return res.json({ ok: true, email: user.email, pcUrl: cfg.pcUrl });
+    } catch {
+      return res.status(503).json({ error: 'Nie udało się wysłać wiadomości e-mail. Spróbuj ponownie za chwilę.' });
+    }
   });
   app.get(['/', '/updates'], (_req, res) => {
     res.set({ 'Content-Security-Policy': "default-src 'none'; style-src 'self'; base-uri 'none'; frame-ancestors 'none'", 'Referrer-Policy': 'strict-origin-when-cross-origin', 'X-Content-Type-Options': 'nosniff' });

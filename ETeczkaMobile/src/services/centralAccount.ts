@@ -115,6 +115,16 @@ export function privacyPolicyUrl(origin: string): string {
   return `${centralAccountOrigin(origin)}/privacy`;
 }
 
+export function desktopDownloadPageUrl(origin: string): string {
+  return `${centralAccountOrigin(origin)}/pc`;
+}
+
+export async function sendDesktopDownloadEmail(origin: string): Promise<{ ok: boolean; email: string; pcUrl: string }> {
+  const session = await getCentralSession(origin);
+  if (!session) throw new Error('Najpierw zaloguj się na konto MojejTeczki.');
+  return post<{ ok: boolean; email: string; pcUrl: string }>(origin, '/desktop-download/email', {}, session.token);
+}
+
 export type CentralPromotion = { id: string; name: string; plan: Exclude<CentralPlanName, 'free'>; interval: 'monthly' | 'yearly'; percent: number; startsAt: string; endsAt: string; enabled: boolean };
 export type CentralCatalog = { plans: Record<CentralPlanName, { name: string; monthly: number; yearly: number }>; promotions: CentralPromotion[] };
 

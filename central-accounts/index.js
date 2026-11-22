@@ -22,6 +22,7 @@ const { createProxyGate } = require('./proxyGate');
 const { createCloudflareGate } = require('./cloudflareGate');
 const { createTurnstileGate } = require('./turnstileGate');
 const { createShareRouter } = require('./shareService');
+const { resolveDesktopDownloadConfig, buildDesktopDownloadEmail } = require('./desktopDownload');
 
 // Direct development access is loopback-only. Container access requires an
 // explicitly trusted HTTPS-terminating proxy and a persistent rate-limit key.
@@ -75,6 +76,15 @@ const shareRouter = process.env.SHARE_MASTER_KEY && process.env.SHARE_PUBLISH_SE
   publicBase: process.env.SHARE_PUBLIC_BASE || process.env.CENTRAL_PUBLIC_ORIGIN || verificationUrl.origin
 }) : undefined;
 
+const desktopDownloadCfg = resolveDesktopDownloadConfig(process.env, verificationUrl.origin);
+const desktopDownload = {
+  ...desktopDownloadCfg,
+  sendEmail: async (email) => {
+    const mail = buildDesktopDownloadEmail(desktopDownloadCfg);
+    await transport.sendMail({ from: CENTRAL_SMTP_FROM, to: email, subject: mail.subject, text: mail.text });
+  },
+};
+
 const playBilling=createPlayBilling({pool,getSession:accounts.getSession});
 ensureEntitlementsSchema(pool).then(()=>ensureCatalogSchema(pool)).then(()=>ensureLedgerSchema(pool)).then(()=>ensureBillingSchema(pool)).then(()=>ensureFeedbackSchema(pool)).then(()=>{void playBilling.refreshDue().catch(()=>console.error('Nie udało się odświeżyć subskrypcji.'));setInterval(()=>{void playBilling.refreshDue().catch(()=>console.error('Nie udało się odświeżyć subskrypcji.'));},300000).unref();return createHttpApp(accounts, {
   entitlements:createEntitlements({pool,getSession:accounts.getSession,privateKey:process.env.CENTRAL_ENTITLEMENT_PRIVATE_KEY,catalogReader:getCatalog}),
@@ -83,6 +93,7 @@ ensureEntitlementsSchema(pool).then(()=>ensureCatalogSchema(pool)).then(()=>ensu
   playBilling,
   feedback:createFeedbackService({pool,getSession:accounts.getSession}),
   shareRouter,
+  desktopDownload,
   rateLimit: createMariaRateLimiter({ pool }),
   accountRateLimit,
   handoffRateLimit: createMariaRateLimiter({ pool, namespace: 'handoff', limit: 1000, windowMs: 300000 }),

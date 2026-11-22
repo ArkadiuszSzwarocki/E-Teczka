@@ -5,6 +5,7 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import { fetchVerifiedPairingCertificate } from "../services/downloadPairingCertificate";
 import { setPendingComputerCertificate } from "../services/localTls";
 import { normalizeServerUrl } from "../services/localConnection";
+import DesktopDownloadCard from "./DesktopDownloadCard";
 
 type ConnectionSettingsCardProps = {
   status: string;
@@ -57,6 +58,7 @@ export default function ConnectionSettingsCard({
     <TouchableOpacity style={styles.btn} onPress={onRefresh} disabled={isPairing}>
       <Text style={styles.btnText}>Wymuś synchronizację</Text>
     </TouchableOpacity>
+    <DesktopDownloadCard />
     <Modal visible={scannerOpen} animationType="slide" onRequestClose={() => setScannerOpen(false)}><View style={styles.scanner}><View style={styles.scannerHeader}><Text style={styles.scannerTitle}>Skanuj kod QR</Text><TouchableOpacity onPress={() => setScannerOpen(false)}><Ionicons name="close" size={28} color="white" /></TouchableOpacity></View><CameraView style={styles.camera} facing="back" barcodeScannerSettings={{ barcodeTypes: ["qr"] }} onBarcodeScanned={({ data }) => handleQr(data)} /><Text style={styles.scannerHint}>Skieruj aparat na kod QR widoczny w aplikacji komputerowej.</Text></View></Modal>
   </View>;
 }
