@@ -39,13 +39,14 @@ function registerWiaScannerIpc({ app, ipcMain, ownRenderer, platform = process.p
     if (typeof rawPath !== 'string' || !rawPath) throw new Error('Nieprawidłowa ścieżka skanu.');
     const tmpBase = path.resolve(os.tmpdir());
     const target = path.resolve(rawPath);
-    if (target !== tmpBase && !target.startsWith(`${tmpBase}${path.sep}`)) {
-      throw new Error('Odmowa dostępu poza katalogiem tymczasowym.');
+    if (path.dirname(target) !== tmpBase || !/^eteczka_wia_\d+\.jpg$/i.test(path.basename(target))) {
+      throw new Error('Odmowa dostępu poza plikami tymczasowymi skanera.');
     }
     return target;
   }
 
-  ipcMain.handle('eteczka-wia-devices', async () => {
+  ipcMain.handle('eteczka-wia-devices', async (event) => {
+    if (!ownRenderer(event)) throw new Error('Brak uprawnień.');
     if (platform !== 'win32') return [];
     const script = "$ErrorActionPreference = 'Stop'; $manager = New-Object -ComObject WIA.DeviceManager; $devices = @($manager.DeviceInfos | Where-Object { $_.Type -eq 1 } | ForEach-Object { [PSCustomObject]@{ id = $_.DeviceID; name = [string]$_.Properties.Item('Name').Value; manufacturer = try { [string]$_.Properties.Item('Manufacturer').Value } catch { '' } } }); $devices | ConvertTo-Json -Compress";
     const output = await runWiaPowerShell(script);
@@ -54,7 +55,8 @@ function registerWiaScannerIpc({ app, ipcMain, ownRenderer, platform = process.p
     return Array.isArray(parsed) ? parsed : [parsed];
   });
 
-  ipcMain.handle('eteczka-default-printer', async () => {
+  ipcMain.handle('eteczka-default-printer', async (event) => {
+    if (!ownRenderer(event)) throw new Error('Brak uprawnień.');
     if (platform !== 'win32') return '';
     try {
       return (await runWiaPowerShell("$p = Get-CimInstance Win32_Printer -Filter 'Default=True' | Select-Object -First 1 -ExpandProperty Name; if ($p) { Write-Output $p }")) || '';
@@ -64,6 +66,7 @@ function registerWiaScannerIpc({ app, ipcMain, ownRenderer, platform = process.p
   });
 
   ipcMain.handle('eteczka-wia-scan', async (event, deviceId) => {
+    if (!ownRenderer(event)) throw new Error('Brak uprawnień.');
     if (platform !== 'win32') {
       throw new Error('Skaner WIA jest obsługiwany w systemie Windows. Na macOS użyj aparatu lub Folderu obserwowanego.');
     }

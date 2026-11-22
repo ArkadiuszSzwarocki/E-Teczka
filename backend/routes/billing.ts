@@ -258,7 +258,9 @@ export function createBillingRouter(prisma: PrismaClient, getStripe: () => Strip
     const testKey = (process.env.STRIPE_SECRET_KEY || '').startsWith('sk_test_');
     if (!price && !testKey) return response.status(503).json({ error: `Brak ceny dla planu ${planCfg.label} (${interval}).` });
 
-    const lineItem = price ? { price, quantity: 1 } : { price_data: { currency: 'pln', unit_amount: interval === 'yearly' ? planCfg.fallbackYearly : planCfg.fallbackMonthly, recurring: { interval: interval === 'yearly' ? 'year' as const : 'month' as const }, product_data: { name: `MojaTeczka ${planCfg.label}` } }, quantity: 1 };
+    const quotedAmount = quote(plan, interval).amount;
+    const fallbackAmount = quotedAmount > 0 ? quotedAmount : (interval === 'yearly' ? planCfg.fallbackYearly : planCfg.fallbackMonthly);
+    const lineItem = price ? { price, quantity: 1 } : { price_data: { currency: 'pln', unit_amount: fallbackAmount, recurring: { interval: interval === 'yearly' ? 'year' as const : 'month' as const }, product_data: { name: `MojaTeczka ${planCfg.label}` } }, quantity: 1 };
     const returnBase = billingReturnBase(request.socket.localAddress);
     const replacesSubscriptionId = existing?.cancelAtPeriodEnd && ['active', 'trialing'].includes(existing.status) ? existing.providerSubscriptionId || '' : '';
     const checkoutParams = { mode: 'subscription', line_items: [lineItem], success_url: process.env.ETECZKA_BILLING_SUCCESS_URL || `${returnBase}/api/billing/confirm?session_id={CHECKOUT_SESSION_ID}`, cancel_url: process.env.ETECZKA_BILLING_CANCEL_URL || `${returnBase}/api/billing/cancel`, metadata: { ownerKey: ownerKey(request), plan, replacesSubscriptionId }, subscription_data: { metadata: { ownerKey: ownerKey(request), plan } } } as Stripe.Checkout.SessionCreateParams & { managed_payments?: { enabled: boolean } };

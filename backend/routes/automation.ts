@@ -140,6 +140,7 @@ export function createAutomationRouter(prisma: PrismaClient) {
               retentionValue: parsed.suggestWarrantyYears || 2,
               retentionUnit: 'years',
               ocrText: protectOcrText(parsed.summaryText),
+              ...(parsed.issuedAt ? { createdAt: parsed.issuedAt } : {}),
             },
           });
           if (parsed.items.length > 0) {

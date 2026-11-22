@@ -23,16 +23,24 @@ export default function EReceiptImportModal({
   const [scanningQr, setScanningQr] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const mountedRef = useRef(true);
+  const scanSessionRef = useRef(0);
 
   const stopCamera = () => {
+    scanSessionRef.current += 1;
     streamRef.current?.getTracks().forEach(t => t.stop());
     streamRef.current = null;
-    setScanningQr(false);
+    if (mountedRef.current) setScanningQr(false);
   };
 
-  useEffect(() => () => {
-    streamRef.current?.getTracks().forEach(t => t.stop());
-    streamRef.current = null;
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      scanSessionRef.current += 1;
+      streamRef.current?.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+    };
   }, []);
 
   const startQrScan = async () => {
@@ -41,8 +49,13 @@ export default function EReceiptImportModal({
       setError('Brak dostępu do aparatu w tej przeglądarce (wymagane HTTPS lub localhost). Wklej kod QR albo JSON poniżej.');
       return;
     }
+    const session = ++scanSessionRef.current;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+      if (!mountedRef.current || scanSessionRef.current !== session) {
+        stream.getTracks().forEach(t => t.stop());
+        return;
+      }
       streamRef.current = stream;
       setScanningQr(true);
       requestAnimationFrame(() => {

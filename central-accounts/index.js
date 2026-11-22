@@ -31,7 +31,8 @@ if (!CENTRAL_SMTP_HOST || !CENTRAL_SMTP_USER || !CENTRAL_SMTP_PASSWORD || !CENTR
 const verificationUrl = new URL(CENTRAL_VERIFY_URL);
 if (!(verificationUrl.protocol === 'https:' || (verificationUrl.protocol === 'http:' && verificationUrl.hostname === '127.0.0.1')) || verificationUrl.username || verificationUrl.password || verificationUrl.hash || verificationUrl.search || verificationUrl.pathname !== '/verify') throw new Error('Verification URL must be HTTPS and point to /verify.');
 
-const transport = nodemailer.createTransport({ host: CENTRAL_SMTP_HOST, port: Number(process.env.CENTRAL_SMTP_PORT || 465), secure: true, auth: { user: CENTRAL_SMTP_USER, pass: CENTRAL_SMTP_PASSWORD } });
+const smtpPort = Number(process.env.CENTRAL_SMTP_PORT || 465);
+const transport = nodemailer.createTransport({ host: CENTRAL_SMTP_HOST, port: smtpPort, secure: smtpPort === 465, auth: { user: CENTRAL_SMTP_USER, pass: CENTRAL_SMTP_PASSWORD } });
 const pool = createDatabasePool();
 const googleWebClientId = process.env.CENTRAL_GOOGLE_WEB_CLIENT_ID || '';
 const googleClients = (CENTRAL_GOOGLE_CLIENT_IDS || '').split(',').map(x => x.trim()).filter(Boolean);
@@ -42,11 +43,11 @@ const accounts = createMariaAccountService({
   verifyGoogle: googleClients.length ? createGoogleIdentityVerifier({ audiences: googleClients }) : async () => { throw new Error('Google login is not configured.'); },
   sendVerification: async (email, code) => {
     const link = new URL(verificationUrl); link.hash = code;
-    await transport.sendMail({ from: CENTRAL_SMTP_FROM, to: email, subject: 'Potwierdzenie konta MojejTeczki', text: `Aby potwierdzic adres e-mail, otworz: ${link.href}\nLink wygasa po godzinie.` });
+    await transport.sendMail({ from: CENTRAL_SMTP_FROM, to: email, subject: 'Potwierdzenie konta MojejTeczki', text: `Aby potwierdzić adres e-mail, otwórz: ${link.href}\nLink wygasa po godzinie.` });
   },
   sendPasswordReset: async (email, code) => {
     const link = new URL('/reset', verificationUrl.origin); link.hash = code;
-    await transport.sendMail({ from: CENTRAL_SMTP_FROM, to: email, subject: 'Zmiana hasla MojejTeczki', text: `Aby zmienic haslo, otworz: ${link.href}\nLink wygasa po godzinie. Jesli nie prosiles o zmiane, zignoruj wiadomosc.` });
+    await transport.sendMail({ from: CENTRAL_SMTP_FROM, to: email, subject: 'Zmiana hasła MojejTeczki', text: `Aby zmienić hasło, otwórz: ${link.href}\nLink wygasa po godzinie. Jeśli nie prosiłeś o zmianę, zignoruj wiadomość.` });
   }
 });
 

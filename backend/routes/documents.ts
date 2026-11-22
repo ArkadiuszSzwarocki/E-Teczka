@@ -122,7 +122,7 @@ export function createDocumentRouter(prisma: PrismaClient, ocrQueue?: ReturnType
   });
 
   router.use('/:id', async (req, res, next) => {
-    if (req.method === 'POST' && (req.params.id === 'export-pdf' || req.params.id === 'upload-base64')) return next();
+    if (req.method === 'POST' && (req.params.id === 'export-pdf' || req.params.id === 'upload-base64' || req.params.id === 'upload-binary')) return next();
     if (!/^\d+$/.test(req.params.id) || Number(req.params.id) < 1) return res.status(400).json({ error: 'Nieprawidłowy identyfikator dokumentu.' });
     const accessible = await getAccessibleFolderIds(prisma, ownerId(res));
     const document = await prisma.document.findFirst({ where: { id: Number(req.params.id), folderId: { in: accessible } } });
@@ -201,7 +201,7 @@ export function createDocumentRouter(prisma: PrismaClient, ocrQueue?: ReturnType
       if (restoring && data.folderId === undefined) return res.status(400).json({ error: 'Wybierz kartotekę, do której przywrócić dokument.' });
       if (data.folderId !== undefined) {
         const destinationId = Number(data.folderId);
-        if (!await canAccessFolder(prisma, ownerId(res), destinationId)) return res.status(400).json({ error: 'Wybierz dostępną kartotekę docelową.' });
+        if (!await canAccessFolder(prisma, ownerId(res), destinationId) || !await isDocumentFolder(prisma, destinationId)) return res.status(400).json({ error: 'Wybierz dostępną kartotekę docelową.' });
         data.folderId = destinationId;
         const original = res.locals.currentDocument as { id: number; folderId: number; filePath: string };
         if (destinationId !== original.folderId || restoring) {

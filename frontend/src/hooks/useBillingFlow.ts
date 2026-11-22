@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { confirmCheckout, startCheckout, type BillingDetails, type BillingPlan, type BillingTransaction, type PaidBillingPlan } from '../services/billing';
+import { getElectronIpc } from '../services/electron';
 import { errorMessage } from '../utils/errors';
 
 export type CancelPreview = {
@@ -45,14 +46,24 @@ export function useBillingFlow({ apiUrl, fetcher: fetch, fetchData, showToast, c
 
   const openBillingCheckout = useCallback(async (plan: PaidBillingPlan, interval: 'monthly' | 'yearly', acceptReplacement = false, fromLimit = false) => {
     setBillingBusy(true);
+    const electronIpc = getElectronIpc();
+    // Open tab synchronously within user gesture so iOS Safari PWA does not block it after await.
+    const popup = electronIpc ? null : window.open('', '_blank', 'noopener,noreferrer');
     try {
       const checkout = await startCheckout(apiUrl, fetch, plan, interval, acceptReplacement);
       if (checkout.kind === 'upgrade') localStorage.setItem('eteczka_pending_upgrade', String(Date.now()));
       else localStorage.setItem('eteczka_pending_checkout', JSON.stringify({ sessionId: checkout.sessionId, startedAt: Date.now() }));
-      window.open(checkout.url, '_blank', 'noopener,noreferrer');
+      if (electronIpc) {
+        await electronIpc.invoke('eteczka-open-external', checkout.url);
+      } else if (popup) {
+        popup.location.href = checkout.url;
+      } else {
+        window.location.assign(checkout.url);
+      }
       closeUserMenu();
       showToast('Otworzono bezpieczną stronę płatności Stripe.', 'success');
     } catch (error: unknown) {
+      if (popup && !popup.closed) popup.close();
       const message = errorMessage(error, 'Nie udało się uruchomić płatności Stripe.');
       if (fromLimit) setPlanLimitMessage(message); else showToast(message, 'error');
     } finally {

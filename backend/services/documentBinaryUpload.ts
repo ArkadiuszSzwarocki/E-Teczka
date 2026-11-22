@@ -122,6 +122,7 @@ export async function saveBatchBinaryDocuments(
             dueDate: ksef?.dueDate ?? null,
             paymentStatus: ksef ? ksef.paymentStatus : eReceipt ? 'paid' : null,
             ocrText: ksef ? protectOcrText(ksef.summaryText) : eReceipt ? protectOcrText(eReceipt.summaryText) : null,
+            ...(ksef?.issueDate ? { createdAt: ksef.issueDate } : eReceipt?.issuedAt ? { createdAt: eReceipt.issuedAt } : {}),
           },
         });
         if (structuredItems.length > 0) {
