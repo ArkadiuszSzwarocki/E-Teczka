@@ -42,6 +42,7 @@ services:
       CENTRAL_PORT: 3001
       CENTRAL_MARIADB_HOST: mariadb
       CENTRAL_MARIADB_PORT: 3306
+      SHARE_DATA_DIR: /app/share-data
     ports:
       - "127.0.0.1:3001:3001"
     networks:
@@ -93,6 +94,10 @@ services:
 networks:
   internal:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+          gateway: 172.30.0.1
 
 volumes:
   mariadb_data:
