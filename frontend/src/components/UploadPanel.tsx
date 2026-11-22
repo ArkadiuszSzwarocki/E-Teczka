@@ -138,7 +138,7 @@ export default function UploadPanel({
               <div className="text-sm font-medium text-slate-400">{isMobile ? 'Wybierz pliki z telefonu lub zrób zdjęcie aparatem' : 'Przeciągnij pliki tutaj lub kliknij przycisk poniżej'}</div>
               <div className="text-xs text-slate-500">Obsługiwane: PDF, obrazy (PNG/JPG), faktury KSeF (.xml) oraz e-Paragony (.json)</div>
               <div className="flex flex-wrap items-center justify-center gap-3">
-                <input type="file" multiple accept=".png,.jpg,.jpeg,.pdf,.xml,.json" onChange={onFileSelect} className="max-w-full cursor-pointer text-sm text-slate-400 file:mr-3 file:rounded-md file:border-0 file:bg-blue-600 file:px-4 file:py-2 file:text-sm file:font-bold file:text-white hover:file:bg-blue-500" />
+                <input type="file" multiple accept=".png,.jpg,.jpeg,.webp,.pdf,.xml,.json" onChange={onFileSelect} className="max-w-full cursor-pointer text-sm text-slate-400 file:mr-3 file:rounded-md file:border-0 file:bg-blue-600 file:px-4 file:py-2 file:text-sm file:font-bold file:text-white hover:file:bg-blue-500" />
                 {isMobile && (
                   <label className="cursor-pointer rounded-md bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-500">
                     📷 Zrób zdjęcie
@@ -156,7 +156,7 @@ export default function UploadPanel({
                   {filesToUpload.map((item, idx) => (
                     <li key={idx} className="group flex items-center justify-between rounded-md border border-slate-600 bg-[#1f2937] px-4 py-3 shadow-sm transition-colors hover:border-blue-500/50">
                       <div className="flex items-center gap-3 overflow-hidden">
-                        <span className="text-2xl">{item.file.name.toLowerCase().endsWith('.pdf') ? '📄' : '🖼️'}</span>
+                        <span className="text-2xl">{/\.(pdf|xml|json)$/i.test(item.file.name) ? '📄' : '🖼️'}</span>
                         <div className="flex flex-col overflow-hidden">
                           <span className="truncate text-sm font-semibold text-slate-200" title={item.file.name}>{item.file.name}</span>
                           <span className="text-xs text-slate-400">{(item.file.size / 1024).toFixed(1)} KB</span>

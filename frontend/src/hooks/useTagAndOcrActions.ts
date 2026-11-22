@@ -98,7 +98,7 @@ export function useTagAndOcrActions({
         .catch(() => { if (active) setOcrSearchIds([]); });
     };
     const timer = window.setTimeout(search, 300);
-    const interval = window.setInterval(search, 5000);
+    const interval = window.setInterval(() => { if (document.visibilityState === 'visible') search(); }, 5000);
     return () => { active = false; window.clearTimeout(timer); window.clearInterval(interval); };
   }, [apiUrl, fetcher, searchQuery, billingPlan]);
 

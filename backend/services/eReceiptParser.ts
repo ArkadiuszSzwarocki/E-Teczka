@@ -42,7 +42,14 @@ function parseMoneyToCents(raw: unknown): number | null {
 
 function parseDateSafe(raw: unknown): Date | null {
   if (typeof raw !== 'string' || !raw.trim()) return null;
-  const d = new Date(raw.trim());
+  const trimmed = raw.trim();
+  const plMatch = /^(\d{2})[.\-/](\d{2})[.\-/](\d{4})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?$/.exec(trimmed);
+  if (plMatch) {
+    const [, dd, mm, yyyy, hh = '12', min = '00', sec = '00'] = plMatch;
+    const d = new Date(`${yyyy}-${mm}-${dd}T${hh}:${min}:${sec}.000Z`);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const d = new Date(trimmed);
   return Number.isNaN(d.getTime()) ? null : d;
 }
 

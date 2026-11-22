@@ -179,7 +179,8 @@ export async function buildAnalyticsSummary(
             kind: 'payment',
           });
         }
-      } else if (doc.retentionEnabled) {
+      }
+      if (doc.retentionEnabled) {
         const expiry = computeRetentionExpiry(doc.createdAt, doc.retentionValue, doc.retentionUnit);
         if (expiry) {
           const daysLeft = Math.ceil((expiry.getTime() - now.getTime()) / 86_400_000);

@@ -125,14 +125,17 @@ export async function scanWatchFolder(prisma: PrismaClient, ownerId: number, opt
 
   const folders = await loadOwnerFolders(prisma, ownerId);
 
+  const importedDir = path.join(cfg.folderPath, '_zaimportowane');
   let added = 0;
   for (const name of fs.readdirSync(cfg.folderPath)) {
+    if (name === '_zaimportowane') continue;
     const fullPath = path.join(cfg.folderPath, name);
     let stat: fs.Stats;
     try {
       stat = fs.statSync(fullPath);
     } catch { continue; }
-    if (!stat.isFile() || stat.size === 0 || stat.size > MAX_BYTES) continue;
+    // Skip files modified in the last 3s to avoid ingesting half-written scans/downloads.
+    if (!stat.isFile() || stat.size === 0 || stat.size > MAX_BYTES || Date.now() - stat.mtimeMs < 3000) continue;
 
     const ext = path.extname(name).toLowerCase();
     if (!ALLOWED_EXT.has(ext)) continue;
@@ -140,7 +143,13 @@ export async function scanWatchFolder(prisma: PrismaClient, ownerId: number, opt
     const buffer = fs.readFileSync(fullPath);
     const saved = await ingestWatchBuffer(ownerId, folders, name, buffer, cfg.folderPath, stat.mtime, added, Boolean(options?.allowKsef));
     if (!saved) continue;
-    fs.unlinkSync(fullPath);
+    try {
+      fs.mkdirSync(importedDir, { recursive: true });
+      const target = path.join(importedDir, fs.existsSync(path.join(importedDir, name)) ? `${Date.now()}_${name}` : name);
+      fs.renameSync(fullPath, target);
+    } catch {
+      // Leave original intact if move fails rather than deleting user files.
+    }
     added++;
   }
 

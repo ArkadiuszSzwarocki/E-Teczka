@@ -201,12 +201,15 @@ export function useBillingFlow({ apiUrl, fetcher: fetch, fetchData, showToast, c
       })();
     }
     const initialFetch = window.setTimeout(() => { void fetchData(); void confirmPendingCheckout(); }, 0);
-    const interval = window.setInterval(() => { void fetchData(); }, 5000);
-    const pendingInterval = window.setInterval(() => { void confirmPendingCheckout(); }, 10_000);
+    const pollIfVisible = () => { if (document.visibilityState === 'visible') void fetchData(); };
+    const interval = window.setInterval(pollIfVisible, 5000);
+    const pendingInterval = window.setInterval(() => { if (document.visibilityState === 'visible') void confirmPendingCheckout(); }, 10_000);
+    document.addEventListener('visibilitychange', pollIfVisible);
     return () => {
       window.clearTimeout(initialFetch);
       window.clearInterval(interval);
       window.clearInterval(pendingInterval);
+      document.removeEventListener('visibilitychange', pollIfVisible);
     };
   }, [apiUrl, fetch, fetchData, showToast]);
 

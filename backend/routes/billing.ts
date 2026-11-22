@@ -254,8 +254,11 @@ export function createBillingRouter(prisma: PrismaClient, getStripe: () => Strip
     catch { return response.status(503).json({ error: 'Nie udało się sprawdzić anulowania w Stripe. Spróbuj ponownie.' }); }
     if (existing?.cancelAtPeriodEnd && ['active', 'trialing'].includes(existing.status) && request.body?.acceptReplacement !== true) return response.status(409).json({ error: 'Przed nową płatnością potwierdź rozpoczęcie nowego planu i opłatę za niego.' });
 
-    const rawPlan = String(request.body?.plan || 'premium');
-    const plan = (['standard', 'premium', 'family', 'business'].includes(rawPlan) ? rawPlan : 'premium') as 'standard' | 'premium' | 'family' | 'business';
+    const rawPlan = String(request.body?.plan || '');
+    if (!['standard', 'premium', 'family', 'business'].includes(rawPlan)) {
+      return response.status(400).json({ error: 'Nieprawidłowa nazwa planu.' });
+    }
+    const plan = rawPlan as 'standard' | 'premium' | 'family' | 'business';
     const interval = request.body?.interval === 'yearly' ? 'yearly' : 'monthly';
     const envPrices: Record<typeof plan, { monthly?: string; yearly?: string; fallbackMonthly: number; fallbackYearly: number; label: string }> = {
       standard: { monthly: process.env.STRIPE_STANDARD_PRICE_MONTHLY, yearly: process.env.STRIPE_STANDARD_PRICE_YEARLY, fallbackMonthly: 499, fallbackYearly: 4990, label: 'Standard' },

@@ -98,9 +98,18 @@ ensureEntitlementsSchema(pool).then(()=>ensureCatalogSchema(pool)).then(()=>ensu
   rateLimit: createMariaRateLimiter({ pool }),
   accountRateLimit,
   handoffRateLimit: createMariaRateLimiter({ pool, namespace: 'handoff', limit: 1000, windowMs: 300000 }),
+  handoffStartRateLimit: createMariaRateLimiter({ pool, namespace: 'handoff-start', limit: 30, windowMs: 300000 }),
   cloudflareGate,
   turnstileGate,
   googleWebClientId,
   turnstileSiteKey,
   appUrl: process.env.CENTRAL_APP_URL || (listenHost === '127.0.0.1' ? 'http://127.0.0.1:5173/?account=login' : '')
-}).listen(port, listenHost, () => console.log(`Central account API (MariaDB) listening on ${listenHost}:${port}`));}).catch(error=>{console.error('Central account startup failed:',error.code||error.message);process.exit(1);});
+}).listen(port, listenHost, () => console.log(`Central account API (MariaDB) listening on ${listenHost}:${port}`));}).then((server) => {
+  const shutdown = (signal) => {
+    console.log(`[central-accounts] Received ${signal}, shutting down gracefully...`);
+    server.close(() => { void pool.end().finally(() => process.exit(0)); });
+    setTimeout(() => process.exit(1), 10000).unref();
+  };
+  process.once('SIGTERM', () => shutdown('SIGTERM'));
+  process.once('SIGINT', () => shutdown('SIGINT'));
+}).catch(error=>{console.error('Central account startup failed:',error.code||error.message);process.exit(1);});

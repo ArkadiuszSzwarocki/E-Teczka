@@ -5,7 +5,7 @@ const { renderDesktopDownloadPage } = require('./desktopDownload');
 
 // This API is not yet suitable for exposure to the Internet. Distributed rate
 // limiting, password recovery, and deployment-specific origin checks remain.
-function createHttpApp(accounts, { ledger, catalog, playBilling, entitlements, feedback, shareRouter, rateLimit, accountRateLimit, handoffRateLimit, cloudflareGate, turnstileGate, googleWebClientId = '', turnstileSiteKey = '', appUrl = '', desktopDownload } = {}) {
+function createHttpApp(accounts, { ledger, catalog, playBilling, entitlements, feedback, shareRouter, rateLimit, accountRateLimit, handoffRateLimit, handoffStartRateLimit, cloudflareGate, turnstileGate, googleWebClientId = '', turnstileSiteKey = '', appUrl = '', desktopDownload } = {}) {
   const app = express();
   app.disable('x-powered-by');
   app.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
@@ -13,6 +13,7 @@ function createHttpApp(accounts, { ledger, catalog, playBilling, entitlements, f
   if (cloudflareGate) app.use(cloudflareGate);
   if (shareRouter) app.use(shareRouter);
   if (rateLimit) app.use(['/register', '/login', '/google', '/google-challenge', '/link-google', '/verify-email', '/resend-verification', '/request-password-reset', '/reset-password', '/desktop-download/email'], rateLimit);
+  if (handoffStartRateLimit) app.use('/handoff/start', handoffStartRateLimit);
   if (handoffRateLimit) app.use('/handoff', handoffRateLimit);
   if (handoffRateLimit) app.use(['/entitlements','/devices','/billing','/feedback','/desktop-download/email'], handoffRateLimit);
   if (handoffRateLimit) app.use('/ledger', handoffRateLimit);

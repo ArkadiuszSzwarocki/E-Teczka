@@ -74,7 +74,7 @@ async function verifyWithWindowsHello(prompt = 'Odblokuj MojąTeczkę', options 
     }
   }
   if (platform !== 'win32') return { ok: false, error: 'Logowanie biometryczne jest obsługiwane w systemach Windows (Windows Hello) i macOS (Touch ID).' };
-  const safePrompt = String(prompt).replace(/'/g, "''").slice(0, 120);
+  const safePrompt = String(prompt).slice(0, 120).replace(/'/g, "''");
   const script = `
     Add-Type -AssemblyName System.Runtime.WindowsRuntime
     $asTask = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation\`1' })[0]

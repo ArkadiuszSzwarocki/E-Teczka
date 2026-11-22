@@ -109,8 +109,11 @@ export function parseReceiptFromOcr(text: string): ParsedReceipt {
   const merchant = detectMerchant(lines, text);
 
   let amountCents: number | null = null;
-  const sumMatch = text.match(/(?:suma\s*(?:pln)?|razem\s*(?:pln)?|do\s+zap[łl]aty(?:\s+pln)?)\s*[:\-\r\n]*\s*((?:\d{1,3}(?:[\s\u00A0]\d{3})+|\d{1,6})[.,]\d{2})/i);
-  if (sumMatch?.[1]) amountCents = parsePriceToCents(sumMatch[1]);
+  const sumMatches = Array.from(
+    text.matchAll(/\b(?:suma\s*(?:pln)?|razem\s*(?:pln)?|do\s+zap[łl]aty(?:\s+pln)?)\s*[:\-\r\n]*\s*((?:\d{1,3}(?:[\s\u00A0]\d{3})+|\d{1,6})[.,]\d{2})/gi),
+  );
+  const lastSum = sumMatches.length ? sumMatches[sumMatches.length - 1]?.[1] : undefined;
+  if (lastSum) amountCents = parsePriceToCents(lastSum);
 
   const items: ParsedReceiptItem[] = [];
   let inBody = !/paragon\s+fiskalny/i.test(text);

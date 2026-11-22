@@ -97,7 +97,14 @@ export function parseKsefXml(xmlText: string): ParsedKsefInvoice | null {
     if (!name) continue;
     const qtyNum = Number.parseFloat(String(row.P_8B || '1').replace(',', '.'));
     const quantity = Number.isFinite(qtyNum) && qtyNum > 0 && qtyNum <= 10000 ? qtyNum : 1;
-    const totalCents = parseMoneyToCents(row.P_11A ?? row.P_11);
+    const grossCents = parseMoneyToCents(row.P_11A);
+    const netCents = parseMoneyToCents(row.P_11);
+    let totalCents = grossCents;
+    if (totalCents === null && netCents !== null) {
+      const vatRaw = String(row.P_12 ?? '').trim().replace(',', '.');
+      const vatPct = /^\d+(?:\.\d+)?$/.test(vatRaw) ? Number.parseFloat(vatRaw) : 0;
+      totalCents = Math.round(netCents * (1 + vatPct / 100));
+    }
     if (totalCents === null) continue;
     items.push({
       name,

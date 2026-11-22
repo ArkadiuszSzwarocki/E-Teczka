@@ -110,8 +110,9 @@ app.get('/api/local-ca-info', (req, res) => {
 // Stripe verifies the signature against the original bytes of the request.
 // Register this route before the JSON parser consumes the request body.
 app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), createBillingWebhookHandler(prisma));
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(['/api/documents/upload-base64', '/api/documents/upload-resumable'], express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
 app.use('/api',async(_req,res,next)=>{try{await idlePolicyReady;next();}catch{res.status(503).json({error:'Nie udało się przygotować sesji.'});}});
 registerPairingRoutes(app, async owner => getCatalog().plans[await getPlan(prisma, owner)].mobileDevices);
@@ -149,7 +150,12 @@ if (hasFrontendBundle) {
 const verifyUploadAccess: express.RequestHandler = async (req, res, next) => {
   const userId = res.locals.userId ? Number(res.locals.userId) : null;
   if (!userId) return next();
-  const rel = decodeURIComponent(req.path.replace(/^\/+/, ''));
+  let rel = '';
+  try {
+    rel = decodeURIComponent(req.path.replace(/^\/+/, ''));
+  } catch {
+    return res.sendStatus(400);
+  }
   if (!rel || rel.includes('/') || rel.includes('\\') || rel.includes('..')) return res.sendStatus(404);
   try {
     const accessibleIds = await getAccessibleFolderIds(prisma, userId);
@@ -168,7 +174,15 @@ const verifyUploadAccess: express.RequestHandler = async (req, res, next) => {
 };
 
 app.use('/api', requireAccess, centralDeviceGate);
-app.use('/uploads', requireAccess, centralDeviceGate, verifyUploadAccess, express.static(uploadsDir));
+app.use('/uploads', requireAccess, centralDeviceGate, verifyUploadAccess, express.static(uploadsDir, {
+  setHeaders(res, filePath) {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', 'sandbox');
+    if (/\.(xml|svg|html|htm|xhtml)$/i.test(filePath)) {
+      res.setHeader('Content-Disposition', 'attachment');
+    }
+  },
+}));
 
 void applyRetentionPolicy(prisma).catch((error: unknown) => console.error('[retention] Błąd polityki terminu życia:', errorMessage(error)));
 setInterval(() => {
@@ -246,7 +260,7 @@ app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
 
 const httpBindHost = process.env.ETECZKA_PUBLIC_TEST_MODE === '1' ? '0.0.0.0' : '127.0.0.1';
 void prisma.$executeRawUnsafe("UPDATE Document SET filePath = substr(filePath, 9) WHERE filePath LIKE 'uploads/%'").catch(() => undefined);
-app.listen(3000, httpBindHost, () => { console.log(`${logStamp()} Serwer lokalny HTTP: port 3000 (${httpBindHost}).`); void ocrQueue.process().catch(() => console.error(`${logStamp()} [ocr] Nie udało się wznowić kolejki.`)); });
+const httpServer = app.listen(3000, httpBindHost, () => { console.log(`${logStamp()} Serwer lokalny HTTP: port 3000 (${httpBindHost}).`); void ocrQueue.process().catch(() => console.error(`${logStamp()} [ocr] Nie udało się wznowić kolejki.`)); });
 const httpsServer = https.createServer({ key: localTls.key, cert: localTls.cert, minVersion: 'TLSv1.2' }, app);
 httpsServer.on('error', (err: NodeJS.ErrnoException) => {
   if (err.code === 'EADDRINUSE' && process.env.ETECZKA_PUBLIC_TEST_MODE === '1') {
@@ -256,3 +270,13 @@ httpsServer.on('error', (err: NodeJS.ErrnoException) => {
   throw err;
 });
 httpsServer.listen(3443, '0.0.0.0', () => console.log(`${logStamp()} Bezpieczne połączenia HTTPS: port 3443.`));
+
+const shutdownBackend = (signal: string) => {
+  console.log(`${logStamp()} Otrzymano sygnał ${signal}, zamykanie serwerów…`);
+  httpServer.close(() => undefined);
+  httpsServer.close(() => undefined);
+  void prisma.$disconnect().finally(() => process.exit(0));
+  setTimeout(() => process.exit(1), 10_000).unref();
+};
+process.once('SIGTERM', () => shutdownBackend('SIGTERM'));
+process.once('SIGINT', () => shutdownBackend('SIGINT'));
