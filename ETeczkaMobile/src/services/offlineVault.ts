@@ -244,7 +244,8 @@ async function syncOfflineVaultLocked(onProgress?: (done: number, total: number,
 }
 async function offlineFileImpl(document: Pick<OfflineDocument, "id" | "filePath">) {
   const encrypted = `${ROOT()}${document.id}.enc`;
-  const extension = document.filePath?.split(".").pop() || "pdf";
+  const rawExt = document.filePath?.split(".").pop() || "pdf";
+  const extension = /^[a-z0-9]{1,8}$/i.test(rawExt) ? rawExt.toLowerCase() : "pdf";
   const target = `${profileCacheDirectory()}opened-${document.id}.${extension}`;
   const manifest = await readChunkManifest(ROOT(), document.id, chunkCodec);
   if (manifest) {

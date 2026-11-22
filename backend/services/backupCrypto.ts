@@ -10,7 +10,9 @@ export function encrypt(value: string) {
   return `${iv.toString('base64url')}.${cipher.getAuthTag().toString('base64url')}.${encrypted.toString('base64url')}`;
 }
 export function decrypt(value: string, decryptionKey: Buffer = key) {
-  const [iv, tag, data] = value.split('.');
+  const parts = typeof value === 'string' ? value.split('.') : [];
+  if (parts.length !== 3 || parts.some(p => !p)) throw new Error('Nieprawidłowy format zaszyfrowanych danych.');
+  const [iv, tag, data] = parts;
   const ivBuf = Buffer.from(iv, 'base64url');
   const tagBuf = Buffer.from(tag, 'base64url');
   if (ivBuf.length !== 12 || tagBuf.length !== 16) throw new Error('Nieprawidłowy nagłówek szyfrowania.');

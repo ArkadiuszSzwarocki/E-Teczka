@@ -113,11 +113,17 @@ export function registerPairingRoutes(app: express.Express, mobileLimit: (ownerK
   });
 
   app.get('/api/network-info', requireLocalDesktop, (_req, res) => {
-    const addresses = Object.values(os.networkInterfaces()).flat()
-      .filter((item): item is os.NetworkInterfaceInfo => item !== undefined && item.family === 'IPv4' && !item.internal)
-      .map(item => item.address)
-      .filter(address => { const [first = -1, second = -1] = address.split('.').map(Number); return first === 10 || (first === 172 && second >= 16 && second <= 31) || (first === 192 && second === 168); });
-    addresses.sort((a, b) => Number(b.startsWith('192.168.')) - Number(a.startsWith('192.168.')) || Number(a.startsWith('172.20.')) - Number(b.startsWith('172.20.')));
+    const virtualAdapterRe = /(vethernet|wsl|virtualbox|vmware|docker|tailscale|zerotier|hamachi|hyper-v|vbox|loopback|nordlynx|wireguard|tun\d|tap\d)/i;
+    const candidates = Object.entries(os.networkInterfaces())
+      .flatMap(([name, items]) => (items || []).map(item => ({ name, item })))
+      .filter(({ item }) => item.family === 'IPv4' && !item.internal)
+      .filter(({ item }) => { const [first = -1, second = -1] = item.address.split('.').map(Number); return first === 10 || (first === 172 && second >= 16 && second <= 31) || (first === 192 && second === 168); });
+    candidates.sort((a, b) =>
+      Number(virtualAdapterRe.test(a.name)) - Number(virtualAdapterRe.test(b.name))
+      || Number(b.item.address.startsWith('192.168.')) - Number(a.item.address.startsWith('192.168.'))
+      || Number(b.item.address.startsWith('172.20.')) - Number(a.item.address.startsWith('172.20.')),
+    );
+    const addresses = Array.from(new Set(candidates.map(c => c.item.address)));
     res.json({ addresses, port: 3443 });
   });
   app.get('/api/pairing-status', requireLocalDesktop, requireAccess, async (_req, res) => {

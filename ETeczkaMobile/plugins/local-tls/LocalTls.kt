@@ -104,8 +104,8 @@ object LocalTls {
               else -> "ECDHE_RSA"
             }
             try { X509TrustManagerExtensions(system).checkServerTrusted(certificates, authType, host) } catch (e: Exception) { throw javax.net.ssl.SSLPeerUnverifiedException("Niezaufany certyfikat serwera.") }
-          } else if (request.header("Authorization") != null) {
-            throw java.io.IOException("Wysyłanie tokenu przez HTTP jest zabronione.")
+          } else if (request.header("Authorization") != null || request.url.encodedPath == "/api/pair") {
+            throw java.io.IOException("Wysyłanie tokenu lub kodu parowania przez HTTP jest zabronione.")
           }
           chain.proceed(request)
         }.build()

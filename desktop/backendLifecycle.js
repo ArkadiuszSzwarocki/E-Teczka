@@ -6,6 +6,8 @@ const { spawn, execFile } = require('child_process');
 /** Manages the local backend child process, readiness polling, and DEV reload IPC. */
 function createBackendLifecycle({ ipcMain, BrowserWindow, ownRenderer, rootDir, resolveEnv }) {
   let backendProcess = null;
+  let stopping = false;
+  let crashRestarts = 0;
 
   function logStamp() {
     const d = new Date();
@@ -14,24 +16,36 @@ function createBackendLifecycle({ ipcMain, BrowserWindow, ownRenderer, rootDir, 
   }
 
   function startBackend() {
+    stopping = false;
     const backendDir = path.join(rootDir, 'backend');
     const tsNodeBin = path.join(backendDir, 'node_modules', 'ts-node', 'dist', 'bin.js');
     const useTsNode = Boolean(process.env.ETECZKA_DEV_URL) && fs.existsSync(tsNodeBin);
     const distEntry = path.join(backendDir, 'dist', 'index.js');
     const prodEntry = fs.existsSync(distEntry) ? distEntry : path.join(backendDir, 'index.js');
     const args = useTsNode ? [tsNodeBin, '--preferTsExts', path.join(backendDir, 'index.ts')] : [prodEntry];
-    backendProcess = spawn(process.execPath, args, {
+    const proc = spawn(process.execPath, args, {
       cwd: backendDir,
       env: { ...process.env, ...resolveEnv(), ELECTRON_RUN_AS_NODE: '1', PORT: '3000' },
     });
-    backendProcess.on('error', (err) => {
+    backendProcess = proc;
+    proc.on('error', (err) => {
       console.error(`${logStamp()} [BACKEND SPAWN ERR]: ${err.message}`);
     });
-    backendProcess.stdout.on('data', (data) => console.log(`${logStamp()} [BACKEND]: ${data}`));
-    backendProcess.stderr.on('data', (data) => console.error(`${logStamp()} [BACKEND ERR]: ${data}`));
+    proc.on('exit', (code, signal) => {
+      if (backendProcess === proc) backendProcess = null;
+      if (stopping || code === 0) return;
+      console.error(`${logStamp()} [BACKEND EXIT]: code=${code} signal=${signal}`);
+      if (crashRestarts < 5) {
+        crashRestarts += 1;
+        setTimeout(() => { if (!stopping && !backendProcess) startBackend(); }, 1500);
+      }
+    });
+    proc.stdout.on('data', (data) => console.log(`${logStamp()} [BACKEND]: ${data}`));
+    proc.stderr.on('data', (data) => console.error(`${logStamp()} [BACKEND ERR]: ${data}`));
   }
 
   function stopBackend() {
+    stopping = true;
     if (backendProcess) {
       try { backendProcess.kill(); } catch { /* ignore */ }
       backendProcess = null;

@@ -91,7 +91,7 @@ export function createOcrQueue(prisma: PrismaClient, options: Options) {
           const detectedCents = receipt.amountCents ?? extracted.amountCents;
           if (document.amountCents === null && detectedCents !== null) {
             financePatch.amountCents = detectedCents;
-            financePatch.currency = extracted.currency || 'PLN';
+            financePatch.currency = receipt.amountCents !== null ? 'PLN' : (extracted.currency || 'PLN');
             if (!document.paymentStatus) financePatch.paymentStatus = receipt.paymentStatus || 'unpaid';
           } else if (!document.paymentStatus && receipt.paymentStatus) {
             financePatch.paymentStatus = receipt.paymentStatus;

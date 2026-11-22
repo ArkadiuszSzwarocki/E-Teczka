@@ -36,12 +36,16 @@ export async function extractDocumentText(file: string, mimeType: string, option
   };
   const pdf = mimeType.toLowerCase() === 'application/pdf' || path.extname(file).toLowerCase() === '.pdf';
   try {
+    const fileBytes = await fs.promises.readFile(file);
     if (!pdf) {
       if (!/^image\/(jpeg|png|bmp|webp|gif)$/i.test(mimeType)) throw new Error('Ten format dokumentu nie jest obsługiwany przez OCR.');
-      return (await recognize(fs.readFileSync(file))).trim();
+      return (await recognize(fileBytes)).trim();
     }
-    const bytes = new Uint8Array(fs.readFileSync(file));
-    const task = pdfjs.getDocument({ data: bytes, useSystemFonts: true });
+    const bytes = new Uint8Array(fileBytes);
+    const pdfjsRoot = path.dirname(require.resolve('pdfjs-dist/package.json'));
+    const cMapUrl = `${path.join(pdfjsRoot, 'cmaps')}${path.sep}`;
+    const standardFontDataUrl = `${path.join(pdfjsRoot, 'standard_fonts')}${path.sep}`;
+    const task = pdfjs.getDocument({ data: bytes, useSystemFonts: true, cMapUrl, cMapPacked: true, standardFontDataUrl });
     const document = await task.promise;
     try {
       const maxPages = options.maxPages || 200;

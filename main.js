@@ -53,7 +53,7 @@ app.whenReady().then(async () => {
   if (process.env.ETECZKA_EXTERNAL_BACKEND !== '1' && !(await backend.backendAvailable())) {
     backend.startBackend();
   }
-  setTimeout(() => backend.waitForServer(windowCtrl.createWindow), 1000);
+  setTimeout(() => backend.waitForServer(windowCtrl.createWindow), 250);
 });
 
 app.on('activate', () => {

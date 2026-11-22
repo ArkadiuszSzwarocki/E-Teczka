@@ -263,8 +263,11 @@ export async function processStripeWebhookEvent(prisma: PrismaClient, stripe: St
   }
 
   if (event.type === 'invoice.payment_failed') {
-    const invoice = event.data.object as Stripe.Invoice & { subscription?: string | Stripe.Subscription | null };
-    const subscriptionReference = invoice.subscription;
+    const invoice = event.data.object as Stripe.Invoice & {
+      subscription?: string | Stripe.Subscription | null;
+      parent?: { subscription_details?: { subscription?: string | Stripe.Subscription | null } | null } | null;
+    };
+    const subscriptionReference = invoice.parent?.subscription_details?.subscription ?? invoice.subscription;
     const subscriptionId = typeof subscriptionReference === 'string' ? subscriptionReference : subscriptionReference?.id;
     if (!subscriptionId) return;
     const subscription = await stripe.subscriptions.retrieve(subscriptionId);

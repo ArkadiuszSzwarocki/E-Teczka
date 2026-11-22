@@ -8,7 +8,7 @@ const { renderDesktopDownloadPage } = require('./desktopDownload');
 function createHttpApp(accounts, { ledger, catalog, playBilling, entitlements, feedback, shareRouter, rateLimit, accountRateLimit, handoffRateLimit, handoffStartRateLimit, cloudflareGate, turnstileGate, googleWebClientId = '', turnstileSiteKey = '', appUrl = '', desktopDownload } = {}) {
   const app = express();
   app.disable('x-powered-by');
-  app.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+  app.use((_req, res, next) => { res.set({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); next(); });
   app.get('/health/live', (req, res) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress) ? res.json({ status: 'ok' }) : res.sendStatus(404));
   if (cloudflareGate) app.use(cloudflareGate);
   if (shareRouter) app.use(shareRouter);
