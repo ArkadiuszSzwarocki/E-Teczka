@@ -3,7 +3,7 @@ import { useState } from 'react';
 import type { BackupSection } from './BackupModal';
 import { useClassicIcons } from './FolderIconPicker';
 import { getEnvironmentLabel, isMobileBrowser } from '../services/platform';
-import eteczkaAppIcon from '../assets/eteczka-folder.png';
+import eteczkaAppIcon from '../assets/mojateczka-folder.png';
 import kartotekiIcon from '../assets/sidebar-icons/kartoteki.png';
 import dodajDokumentIcon from '../assets/sidebar-icons/dodaj-dokument.png';
 import skanujIcon from '../assets/sidebar-icons/skanuj.png';

@@ -203,7 +203,13 @@ export function createDocumentRouter(prisma: PrismaClient, ocrQueue?: ReturnType
         if (!await canAccessFolder(prisma, ownerId(res), destinationId)) return res.status(400).json({ error: 'Wybierz dostępną kartotekę docelową.' });
         data.folderId = destinationId;
         const original = res.locals.currentDocument as { id: number; folderId: number; filePath: string };
-        if (destinationId !== original.folderId || restoring) destinationDigest = await hashFile(path.join(uploadsDir, path.basename(original.filePath)));
+        if (destinationId !== original.folderId || restoring) {
+          try {
+            destinationDigest = await hashFile(path.join(uploadsDir, path.basename(original.filePath)));
+          } catch (err) {
+            if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') throw err;
+          }
+        }
       }
       if (data.isDeleted === true && data.deletedAt === undefined) data.deletedAt = new Date();
       if (data.isDeleted === false) data.deletedAt = null;

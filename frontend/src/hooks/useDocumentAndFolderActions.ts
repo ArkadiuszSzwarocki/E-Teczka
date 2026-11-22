@@ -184,10 +184,28 @@ export function useDocumentAndFolderActions({
       ? { folderId, isDeleted: false, isArchived: false, deletedAt: null, createdAt: new Date().toISOString(), retentionEnabled: retention.enabled, retentionValue: retention.value, retentionUnit: retention.unit }
       : { folderId };
     const results = await Promise.allSettled(selectedDocs.map(id => patchDocument(apiUrl, fetch, id, data)));
-    const failed = selectedDocs.filter((_, index) => results[index].status === 'rejected' || (results[index].status === 'fulfilled' && !results[index].value.ok));
+    const failed: number[] = [];
+    let firstReason = '';
+    for (let index = 0; index < selectedDocs.length; index++) {
+      const outcome = results[index];
+      if (outcome.status === 'rejected') {
+        failed.push(selectedDocs[index]);
+        if (!firstReason) firstReason = errorMessage(outcome.reason, '');
+      } else if (!outcome.value.ok) {
+        failed.push(selectedDocs[index]);
+        if (!firstReason) {
+          const payload = await outcome.value.json().catch(() => null) as { error?: string } | null;
+          if (payload?.error) firstReason = payload.error;
+        }
+      }
+    }
     setSelectedDocs(failed);
     try { await fetchData(); } catch { showToast('Zmiany zapisano, ale nie udało się odświeżyć listy.', 'error'); }
-    if (failed.length) { showToast(`Nie udało się przetworzyć ${failed.length} dokumentów. Pozostały zaznaczone.`, 'error'); return false; }
+    if (failed.length) {
+      const suffix = firstReason ? ` (${firstReason})` : ' Pozostały zaznaczone.';
+      showToast(`Nie udało się przetworzyć ${failed.length} dokumentów.${suffix}`, 'error');
+      return false;
+    }
     showToast(restoring ? 'Dokumenty przywrócono do wybranej podkartoteki.' : 'Dokumenty przeniesiono.', 'success');
     return true;
   };

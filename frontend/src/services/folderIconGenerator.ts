@@ -1,4 +1,4 @@
-import eteczkaFolderBlank from '../assets/eteczka-folder-blank.png';
+import eteczkaFolderBlank from '../assets/mojateczka-folder-blank.png';
 
 export const GENERATOR_BADGE_PRESETS = [
   '⚡', '🐾', '🎮', '📷', '🎵', '⚖️', '🌱', '🛠️',

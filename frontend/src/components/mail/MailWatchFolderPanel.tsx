@@ -150,7 +150,7 @@ export function MailWatchFolderPanel({ watchPath, watchAllowed, watchBusy, pendi
         onPathChange(selected.trim());
       }
     } catch {
-      setPickError('Zrestartuj okno desktopowe (E-Teczka-dev-desktop.ps1), aby wczytać nową funkcję wyboru folderu w Electronie.');
+      setPickError('Zrestartuj okno desktopowe (MojaTeczka-dev-desktop.ps1), aby wczytać nową funkcję wyboru folderu w Electronie.');
     } finally {
       setPicking(false);
     }

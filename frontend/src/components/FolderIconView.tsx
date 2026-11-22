@@ -1,4 +1,4 @@
-import eteczkaFolderIcon from '../assets/eteczka-folder.png';
+import eteczkaFolderIcon from '../assets/mojateczka-folder.png';
 import { useClassicIcons } from '../hooks/useIconStyle';
 import { PRESET_ICON_MAP, VAULT_ICON_ID } from '../utils/folderIconCatalog';
 
