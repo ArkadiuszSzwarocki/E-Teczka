@@ -12,12 +12,12 @@ COPY backend/package*.json ./
 RUN npm ci || npm install --no-audit --no-fund
 COPY backend/ ./
 ENV NODE_ENV=test
-ENV ETECZKA_PUBLIC_TEST_MODE=1
+ENV MOJATECZKA_PUBLIC_TEST_MODE=1
 ENV DATABASE_URL=file:/app/backend/prisma/data/eteczka.db
 RUN npx prisma generate && npm run build && npm prune --omit=dev && cp /app/backend/security/authSecret.js /app/backend/authSecret.js.bak
 COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist
 COPY docs/ /app/docs/
-COPY ETeczkaMobile/android/app/build/outputs/apk/debug/app-debug.apk /app/ETeczkaMobile/android/app/build/outputs/apk/debug/app-debug.apk
+COPY MojaTeczkaMobile/android/app/build/outputs/apk/debug/app-debug.apk /app/MojaTeczkaMobile/android/app/build/outputs/apk/debug/app-debug.apk
 RUN mkdir -p /app/backend/uploads /app/backend/security /app/backend/prisma/data
 EXPOSE 3000 3443
 CMD ["sh", "-c", "cp -f /app/backend/authSecret.js.bak /app/backend/security/authSecret.js && if [ ! -s /app/backend/prisma/data/eteczka.db ]; then npx prisma db push --skip-generate; fi && exec node index.js"]

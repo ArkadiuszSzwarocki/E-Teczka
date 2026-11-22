@@ -11,7 +11,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 $source = Join-Path $projectRoot 'central-accounts'
-$remoteBase = '/share/Container/eteczka-accounts'
+$remoteBase = '/share/Container/mojateczka-accounts'
 $releaseId = (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N').Substring(0,8)
 $workRoot = Join-Path $projectRoot '.local\nas-deploy'
 $work = Join-Path $workRoot $releaseId
@@ -77,7 +77,7 @@ try {
             # No PTY: the remote terminal cannot echo the supplied password.
             $plainPassword | & $plink -batch -ssh -T -P $SshPort -pwfile $passwordFile $remote "${prefix}sh '$remoteBase/incoming/$releaseId.sh' '$remoteBase' '$releaseId' '$hash' '$update'"
             if ($LASTEXITCODE -ne 0) { throw 'Wdrozenie nie powiodlo sie. Sprawdz komunikaty powyzej.' }
-            Write-Host 'Gotowe. Zaktualizowano kontener eteczka-accounts i konfiguracje kont.' -ForegroundColor Green
+            Write-Host 'Gotowe. Zaktualizowano kontener mojateczka-accounts i konfiguracje kont.' -ForegroundColor Green
             return
         } finally {
             $OutputEncoding = $previousOutputEncoding
@@ -102,7 +102,7 @@ try {
     & ssh @sshArgs -t $remote "${prefix}sh '$remoteBase/incoming/$releaseId.sh' '$remoteBase' '$releaseId' '$hash' '$update'"
     if ($LASTEXITCODE -ne 0) { throw 'Wdrozenie nie powiodlo sie. Przeczytaj komunikat powyzej; poprzednie wydania pozostaly na NAS-ie.' }
     Write-Host 'Gotowe. Kontener dziala w sieci proxy_shared.' -ForegroundColor Green
-    Write-Host 'W NPM ustaw konto.arecki.pl -> http://eteczka-accounts:3001 i certyfikat SSL.'
+    Write-Host 'W NPM ustaw konto.arecki.pl -> http://mojateczka-accounts:3001 i certyfikat SSL.'
 } finally {
     # Resolve and verify the target before any recursive local cleanup.
     $resolvedWork = [System.IO.Path]::GetFullPath($work)

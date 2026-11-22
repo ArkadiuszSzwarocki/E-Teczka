@@ -63,7 +63,7 @@ export function createBillingRouter(prisma: PrismaClient, getStripe: () => Strip
   const router = express.Router();
 
   router.get('/catalog', async (_request, response) => {
-    const centralOrigin = centralAccountOrigin(process.env.ETECZKA_CENTRAL_ACCOUNT_URL);
+    const centralOrigin = centralAccountOrigin(process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL);
     if (centralOrigin && Date.now() - lastCentralCatalogFetchAt > CENTRAL_CATALOG_TTL_MS) {
       lastCentralCatalogFetchAt = Date.now();
       try {
@@ -276,7 +276,7 @@ export function createBillingRouter(prisma: PrismaClient, getStripe: () => Strip
     const lineItem = price ? { price, quantity: 1 } : { price_data: { currency: 'pln', unit_amount: fallbackAmount, recurring: { interval: interval === 'yearly' ? 'year' as const : 'month' as const }, product_data: { name: `MojaTeczka ${planCfg.label}` } }, quantity: 1 };
     const returnBase = billingReturnBase(request.socket.localAddress);
     const replacesSubscriptionId = existing?.cancelAtPeriodEnd && ['active', 'trialing'].includes(existing.status) ? existing.providerSubscriptionId || '' : '';
-    const checkoutParams = { mode: 'subscription', line_items: [lineItem], success_url: process.env.ETECZKA_BILLING_SUCCESS_URL || `${returnBase}/api/billing/confirm?session_id={CHECKOUT_SESSION_ID}`, cancel_url: process.env.ETECZKA_BILLING_CANCEL_URL || `${returnBase}/api/billing/cancel`, metadata: { ownerKey: ownerKey(request), plan, replacesSubscriptionId }, subscription_data: { metadata: { ownerKey: ownerKey(request), plan } } } as Stripe.Checkout.SessionCreateParams & { managed_payments?: { enabled: boolean } };
+    const checkoutParams = { mode: 'subscription', line_items: [lineItem], success_url: process.env.MOJATECZKA_BILLING_SUCCESS_URL || `${returnBase}/api/billing/confirm?session_id={CHECKOUT_SESSION_ID}`, cancel_url: process.env.MOJATECZKA_BILLING_CANCEL_URL || `${returnBase}/api/billing/cancel`, metadata: { ownerKey: ownerKey(request), plan, replacesSubscriptionId }, subscription_data: { metadata: { ownerKey: ownerKey(request), plan } } } as Stripe.Checkout.SessionCreateParams & { managed_payments?: { enabled: boolean } };
     checkoutParams.managed_payments = { enabled: false };
     const session = await stripe.checkout.sessions.create(checkoutParams);
     return response.json({ url: session.url, sessionId: session.id });

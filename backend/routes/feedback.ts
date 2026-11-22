@@ -26,7 +26,7 @@ const ALLOWED_STATUSES = new Set<FeedbackStatus>(['new', 'in_progress', 'resolve
 export function createFeedbackRouter() {
   const router = express.Router();
   router.post('/', (req, res, next) => {
-    if (process.env.ETECZKA_PUBLIC_TEST_MODE === '1' && process.env.NODE_ENV !== 'production') { next(); return; }
+    if (process.env.MOJATECZKA_PUBLIC_TEST_MODE === '1' && process.env.NODE_ENV !== 'production') { next(); return; }
     requireLocalDesktop(req, res, next);
   }, async (req, res) => {
     const category = String(req.body?.category || 'bug') as FeedbackCategory;
@@ -68,7 +68,7 @@ export function createFeedbackRouter() {
   });
 
   router.post('/:id/reply', (req, res, next) => {
-    if (process.env.ETECZKA_PUBLIC_TEST_MODE === '1' && process.env.NODE_ENV !== 'production') { next(); return; }
+    if (process.env.MOJATECZKA_PUBLIC_TEST_MODE === '1' && process.env.NODE_ENV !== 'production') { next(); return; }
     requireLocalDesktop(req, res, next);
   }, (req, res) => {
     const id = Number(req.params.id);

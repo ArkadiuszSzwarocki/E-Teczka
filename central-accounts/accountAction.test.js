@@ -14,7 +14,7 @@ test('email link confirms automatically with token alone and leaves no additiona
   const token = 'a'.repeat(43); const { element, calls, stored } = await page('/verify', '#' + token);
   assert.deepEqual(calls, [{ url: '/verify-email', body: { token } }]);
   assert.equal(element('form').hidden, true); assert.match(element('title').textContent, /potwierdzony/);
-  assert.match(element('hint').textContent, /aplikacji/); assert.equal(stored.get('eteczka_email_verified'), 'yes');
+  assert.match(element('hint').textContent, /aplikacji/); assert.equal(stored.get('mojateczka_email_verified'), 'yes');
 });
 test('reset link waits for the user to choose a new password and malformed links do not send requests', async () => {
   const reset = await page('/reset', '#' + 'a'.repeat(43)); assert.equal(reset.calls.length, 0); assert.equal(reset.element('form').hidden, false);

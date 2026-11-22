@@ -122,7 +122,7 @@ export function useFeedbackReport({
     setCapturing(true);
     setError('');
     try {
-      const result = await ipc.invoke('eteczka-capture-screenshot') as {
+      const result = await ipc.invoke('mojateczka-capture-screenshot') as {
         dataUrl?: string;
         appVersion?: string;
         platform?: string;

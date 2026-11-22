@@ -182,7 +182,7 @@ export function useBackupManager({ apiUrl, fetcher: fetch, onDone }: UseBackupMa
       const url = URL.createObjectURL(await response.blob());
       const link = document.createElement('a');
       link.href = url;
-      link.download = `eteczka-backup-${new Date().toISOString().slice(0, 19).replace('T', '_').replace(/:/g, '-')}.zip`;
+      link.download = `mojateczka-backup-${new Date().toISOString().slice(0, 19).replace('T', '_').replace(/:/g, '-')}.zip`;
       link.click();
       URL.revokeObjectURL(url);
       const successText = 'Lokalna kopia ZIP została utworzona i pobrana.';

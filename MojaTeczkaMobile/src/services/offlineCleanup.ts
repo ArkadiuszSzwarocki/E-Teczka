@@ -1,5 +1,5 @@
 type LocalFiles = Pick<typeof import('expo-file-system/legacy'), 'getInfoAsync' | 'readDirectoryAsync' | 'deleteAsync'>;
-const isOfflineCacheFile = (name: string) => /^vault-\d+(?:-\d+)?(?:\.download)?$/.test(name) || /^opened-\d+\.[a-z0-9]{1,16}(?:\.\d+\.partial)?$/i.test(name) || /^eteczka(?:_v2)?_\d+\.[a-z0-9]{1,16}(?:\.[a-z0-9.-]+\.download)?$/i.test(name);
+const isOfflineCacheFile = (name: string) => /^vault-\d+(?:-\d+)?(?:\.download)?$/.test(name) || /^opened-\d+\.[a-z0-9]{1,16}(?:\.\d+\.partial)?$/i.test(name) || /^(?:mojateczka|eteczka)(?:_v2)?_\d+\.[a-z0-9]{1,16}(?:\.[a-z0-9.-]+\.download)?$/i.test(name);
 
 export async function getOfflineCacheBytes(fs: LocalFiles, cacheRoot: string | null) {
   if (!cacheRoot || !(await fs.getInfoAsync(cacheRoot)).exists) return 0;

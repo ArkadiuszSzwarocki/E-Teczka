@@ -6,7 +6,7 @@
   const verifying = location.pathname === '/verify';
   const title = document.getElementById('title'), button = document.getElementById('submit');
   const password = document.getElementById('password'), confirmation = document.getElementById('confirmation');
-  const receiptKey = 'eteczka_email_verified';
+  const receiptKey = 'mojateczka_email_verified';
   let busy = false;
   function success() {
     form.hidden = true; password.value = ''; confirmation.value = '';

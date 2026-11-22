@@ -7,7 +7,7 @@ const { PrismaClient } = require('@prisma/client');
 const { withSyncReceipt } = require('../services/syncReceipt.js');
 
 test('SQLite receipt and operation commit together and replay safely', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eteczka-sync-test-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mojateczka-sync-test-'));
   const db = path.join(dir, 'test.db').replace(/\\/g, '/');
   const prisma = new PrismaClient({ datasources: { db: { url: `file:${db}` } } });
   try {

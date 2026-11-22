@@ -12,7 +12,7 @@ type IpcRenderer = {
 };
 
 type ElectronWindow = Window & {
-  eteczkaElectron?: {
+  mojateczkaElectron?: {
     ipcRenderer?: IpcRenderer;
     getZoomFactor?: () => number;
     openExternal?: (url: string) => Promise<boolean>;
@@ -22,7 +22,7 @@ type ElectronWindow = Window & {
 
 export function getElectronIpc(): IpcRenderer | null {
   const win = window as ElectronWindow;
-  if (win.eteczkaElectron?.ipcRenderer) return win.eteczkaElectron.ipcRenderer;
+  if (win.mojateczkaElectron?.ipcRenderer) return win.mojateczkaElectron.ipcRenderer;
   const electron = win.require?.('electron') as { ipcRenderer?: IpcRenderer } | undefined;
   return electron?.ipcRenderer ?? null;
 }
@@ -32,7 +32,7 @@ let activeAccountPopup: Window | null = null;
 export function closeExternalAccountPopup(): void {
   const ipc = getElectronIpc();
   if (ipc) {
-    void ipc.invoke('eteczka-close-external-account').catch(() => undefined);
+    void ipc.invoke('mojateczka-close-external-account').catch(() => undefined);
   }
   try {
     if (activeAccountPopup && !activeAccountPopup.closed) activeAccountPopup.close();
@@ -49,7 +49,7 @@ export function getScaledElementBounds(element: HTMLElement | null): AccountEmbe
   if (rect.width < 100 || rect.height < 100) return undefined;
   const win = window as ElectronWindow;
   const electron = win.require?.('electron') as { webFrame?: { getZoomFactor: () => number } } | undefined;
-  const zoom = win.eteczkaElectron?.getZoomFactor?.() || electron?.webFrame?.getZoomFactor?.() || 1;
+  const zoom = win.mojateczkaElectron?.getZoomFactor?.() || electron?.webFrame?.getZoomFactor?.() || 1;
   return {
     x: Math.round(rect.left * zoom),
     y: Math.round(rect.top * zoom),
@@ -61,7 +61,7 @@ export function getScaledElementBounds(element: HTMLElement | null): AccountEmbe
 export async function updateExternalAccountBounds(bounds: AccountEmbedBounds): Promise<void> {
   const ipc = getElectronIpc();
   if (ipc) {
-    await ipc.invoke('eteczka-resize-external-account', bounds).catch(() => undefined);
+    await ipc.invoke('mojateczka-resize-external-account', bounds).catch(() => undefined);
   }
 }
 
@@ -70,19 +70,19 @@ export async function openExternalAccountUrl(raw: string, origin: string, bounds
   if (!(url.protocol === 'https:' || (url.protocol === 'http:' && url.hostname === '127.0.0.1')) || url.origin !== origin || url.pathname !== '/account' || !/^#[A-Za-z0-9_-]{43}$/.test(url.hash)) throw new Error('Nieprawidłowy adres konta.');
   const ipc = getElectronIpc();
   if (ipc) {
-    try { await ipc.invoke('eteczka-open-external-account', url.href, bounds); return; }
+    try { await ipc.invoke('mojateczka-open-external-account', url.href, bounds); return; }
     catch { /* fall back to direct shell/window open */ }
   }
   const win = window as ElectronWindow;
-  if (win.eteczkaElectron?.openExternal) {
-    await win.eteczkaElectron.openExternal(url.href);
+  if (win.mojateczkaElectron?.openExternal) {
+    await win.mojateczkaElectron.openExternal(url.href);
     return;
   }
   const electron = win.require?.('electron') as { shell?: { openExternal: (url: string, options?: { activate?: boolean }) => Promise<void> } } | undefined;
   if (electron?.shell) { await electron.shell.openExternal(url.href, { activate: true }); return; }
   const left = Math.max(0, Math.round((window.screenX || 0) + ((window.outerWidth || 1024) - 520) / 2));
   const top = Math.max(0, Math.round((window.screenY || 0) + ((window.outerHeight || 768) - 680) / 2));
-  activeAccountPopup = window.open(url.href, 'eteczka_account_auth', `popup=yes,width=520,height=680,left=${left},top=${top}`);
+  activeAccountPopup = window.open(url.href, 'mojateczka_account_auth', `popup=yes,width=520,height=680,left=${left},top=${top}`);
 }
 
 type NodeFileSystem = {
@@ -93,7 +93,7 @@ type NodeFileSystem = {
 export async function readScanFileBase64(path: string): Promise<string> {
   const ipc = getElectronIpc();
   if (ipc) {
-    return await ipc.invoke('eteczka-read-temp-scan', path) as string;
+    return await ipc.invoke('mojateczka-read-temp-scan', path) as string;
   }
   const fileSystem = (window as ElectronWindow).require?.('fs') as NodeFileSystem | undefined;
   if (!fileSystem) throw new Error('System plików jest dostępny tylko w aplikacji desktopowej.');
@@ -103,7 +103,7 @@ export async function readScanFileBase64(path: string): Promise<string> {
 export function removeTemporaryScan(path: string): void {
   const ipc = getElectronIpc();
   if (ipc) {
-    void ipc.invoke('eteczka-remove-temp-scan', path).catch(() => undefined);
+    void ipc.invoke('mojateczka-remove-temp-scan', path).catch(() => undefined);
     return;
   }
   const fileSystem = (window as ElectronWindow).require?.('fs') as NodeFileSystem | undefined;
@@ -132,7 +132,7 @@ export async function devReloadApp(): Promise<void> {
   const ipc = getElectronIpc();
   if (ipc) {
     try {
-      const reloaded = await ipc.invoke('eteczka-dev-reload');
+      const reloaded = await ipc.invoke('mojateczka-dev-reload');
       if (reloaded) return;
     } catch { /* fall back to window reload */ }
   }

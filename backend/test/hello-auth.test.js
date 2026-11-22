@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict'),express=require('express'),crypto=require('node:crypto'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
-process.chdir(fs.mkdtempSync(path.join(os.tmpdir(),'eteczka-hello-auth-')));process.env.AUTH_SECRET='isolated-hello-test-secret-not-production';
+process.chdir(fs.mkdtempSync(path.join(os.tmpdir(),'mojateczka-hello-auth-')));process.env.AUTH_SECRET='isolated-hello-test-secret-not-production';
 const {createSession}=require('../routes/auth');
 const {createHelloAuthRouter}=require('../routes/helloAuth');
 const {accountMfa}=require('../services/accountMfa');const {generateSync}=require('otplib');

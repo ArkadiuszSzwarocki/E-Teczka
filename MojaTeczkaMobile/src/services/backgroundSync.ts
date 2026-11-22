@@ -19,7 +19,7 @@ export function registerBackgroundSync() {
   if (registered) return;
   registered = true;
 
-  AppRegistry.registerHeadlessTask('ETeczkaBackgroundSync', () => async () => {
+  AppRegistry.registerHeadlessTask('MojaTeczkaBackgroundSync', () => async () => {
     if(!currentMobileAccount()){const session=await getCentralSession(process.env.EXPO_PUBLIC_CENTRAL_ACCOUNT_URL||'');if(!session)return;await selectMobileProfile(session.user.id,session.user.email);}
     await runPendingSync();
   });

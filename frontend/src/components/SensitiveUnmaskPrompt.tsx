@@ -21,7 +21,7 @@ export default function SensitiveUnmaskPrompt({ apiUrl, fetcher, onUnlocked, onC
   useEffect(() => {
     const ipc = getElectronIpc();
     if (!ipc) return;
-    void ipc.invoke('eteczka-access-status').then(status => {
+    void ipc.invoke('mojateczka-access-status').then(status => {
       if (isAccessStatus(status) && status.configured) {
         setHasLocalAccess(true);
         setMethod('local');
@@ -42,7 +42,7 @@ export default function SensitiveUnmaskPrompt({ apiUrl, fetcher, onUnlocked, onC
       if (method === 'local') {
         const ipc = getElectronIpc();
         if (!ipc) throw new Error('Lokalny PIN jest dostępny tylko w aplikacji desktopowej.');
-        const res = await ipc.invoke('eteczka-access-verify', trimmed);
+        const res = await ipc.invoke('mojateczka-access-verify', trimmed);
         if (!isAccessResult(res) || !res.ok) {
           throw new Error((isAccessResult(res) && res.error) || 'Nieprawidłowy kod PIN lub hasło lokalne.');
         }

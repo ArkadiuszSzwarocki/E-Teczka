@@ -31,13 +31,13 @@ export function exportRecoveryKey(passphrase: string): string {
   const wrappingKey = crypto.scryptSync(passphrase, salt, 32);
   const cipher = crypto.createCipheriv('aes-256-gcm', wrappingKey, iv);
   const encrypted = Buffer.concat([cipher.update(key), cipher.final()]);
-  return JSON.stringify({ type: 'eteczka-backup-recovery', version: 1, salt: salt.toString('base64'), iv: iv.toString('base64'), tag: cipher.getAuthTag().toString('base64'), key: encrypted.toString('base64') });
+  return JSON.stringify({ type: 'mojateczka-backup-recovery', version: 1, salt: salt.toString('base64'), iv: iv.toString('base64'), tag: cipher.getAuthTag().toString('base64'), key: encrypted.toString('base64') });
 }
 export function importRecoveryKey(contents: string, passphrase: string): Buffer {
   try {
     if (contents.length > 4096 || passphrase.length > 1024) throw new Error();
     const value = JSON.parse(contents) as { type?: string; version?: number; salt?: string; iv?: string; tag?: string; key?: string };
-    if (value.type !== 'eteczka-backup-recovery' || value.version !== 1 || !value.salt || !value.iv || !value.tag || !value.key) throw new Error();
+    if ((value.type !== 'mojateczka-backup-recovery' && value.type !== 'eteczka-backup-recovery') || value.version !== 1 || !value.salt || !value.iv || !value.tag || !value.key) throw new Error();
     const salt = Buffer.from(value.salt, 'base64'); const iv = Buffer.from(value.iv, 'base64'); const tag = Buffer.from(value.tag, 'base64'); const encrypted = Buffer.from(value.key, 'base64');
     if (salt.length !== 16 || iv.length !== 12 || tag.length !== 16 || encrypted.length !== 32) throw new Error();
     const decipher = crypto.createDecipheriv('aes-256-gcm', crypto.scryptSync(passphrase, salt, 32), iv, { authTagLength: 16 }); decipher.setAuthTag(tag);

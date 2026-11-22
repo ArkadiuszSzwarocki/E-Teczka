@@ -15,7 +15,7 @@ const KEY = "eteczka.vault.key";
 const PIN_HASH = "eteczka.vault.pin";
 const MODE = "eteczka.vault.mode";
 const BACKUP_MODE = "eteczka.vault.backup-mode";
-const ROOT = () => profileDirectory(`${FileSystem.documentDirectory}eteczka-vault/`);
+const ROOT = () => profileDirectory(`${FileSystem.documentDirectory}mojateczka-vault/`);
 const INDEX = () => `${ROOT()}index.enc`;
 const SELECTED_FOLDERS = "eteczka.vault.offline-folders";
 const { decryptFileInChunks, encryptFileInChunks, readChunkManifest } = createOfflineChunkStore(FileSystem, Crypto.getRandomBytesAsync);

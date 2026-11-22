@@ -2,7 +2,7 @@ import CryptoJS from 'crypto-js';
 
 /** Store encrypted binary chunks in Base64, without encoding the source twice. */
 export function createOfflineChunkCodec(getKey: () => Promise<CryptoJS.lib.WordArray>, randomBytes: (length: number) => Promise<Uint8Array>) {
-  const macKey = (key: CryptoJS.lib.WordArray) => CryptoJS.HmacSHA256('eteczka-offline-chunk-v3', key);
+  const macKey = (key: CryptoJS.lib.WordArray) => CryptoJS.HmacSHA256('mojateczka-offline-chunk-v3', key);
   return {
     async encryptChunk(base64: string): Promise<string> {
       const key = await getKey();

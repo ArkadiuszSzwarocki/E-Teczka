@@ -6,7 +6,7 @@ const path = require('node:path');
 const express = require('express');
 
 test('route downloads the newest WebDAV backup using only its file name', async () => {
-  const previous = process.cwd(); const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eteczka-webdav-test-')); process.chdir(dir);
+  const previous = process.cwd(); const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mojateczka-webdav-test-')); process.chdir(dir);
   process.env.AUTH_SECRET = 'isolated-webdav-test-secret';
   const { createBackupRouter } = require('../../routes/backup');
   const destination = { enabled: true, provider: 'webdav', endpoint: 'https://nas.example/dav', remoteFolder: 'Kopie domowe' };

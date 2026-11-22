@@ -17,7 +17,7 @@ function read():Journal{try{const text=fs.readFileSync(filename(),'utf8');return
 function save(data:Journal){const file=filename();fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file+'.tmp',require('./backupCrypto').encrypt(JSON.stringify(data)),{mode:0o600});fs.renameSync(file+'.tmp',file);}
 const key=(op:Operation)=>`${op.userId}:${op.operationId}`;
 export function centralOwner(ownerKey:string){if(devPlan(ownerKey)!==undefined)return null;const match=/^user:(\d+)$/.exec(ownerKey);const id=match?Number(match[1]):null;return id&&centralDeviceRegistered(id)?id:null;}
-export function requireCentralPlanOwner(ownerKey:string){const user=centralOwner(ownerKey);if(!user&&devPlan(ownerKey)===undefined&&centralAccountOrigin(process.env.ETECZKA_CENTRAL_ACCOUNT_URL))throw new Error('Zaloguj się na konto E‑Teczki, aby pobrać wspólne limity z serwera.');return user;}
+export function requireCentralPlanOwner(ownerKey:string){const user=centralOwner(ownerKey);if(!user&&devPlan(ownerKey)===undefined&&centralAccountOrigin(process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL))throw new Error('Zaloguj się na konto E‑Teczki, aby pobrać wspólne limity z serwera.');return user;}
 export function markCentralInventoryDirty(){const ctx=context.getStore();if(ctx)ctx.dirty=true;}
 export async function reserveCentralPlan(tx:Prisma.TransactionClient,userId:number,feature:string,operationId:string,amount:number){
  const ctx=context.getStore();if(!ctx)throw new Error('Operacja planu wymaga bezpiecznej transakcji.');

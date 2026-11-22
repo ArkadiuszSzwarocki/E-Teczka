@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict'),crypto=require('node:crypto'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
-process.chdir(fs.mkdtempSync(path.join(os.tmpdir(),'eteczka-entitlement-')));process.env.AUTH_SECRET='isolated-entitlement-test-key-not-production';
+process.chdir(fs.mkdtempSync(path.join(os.tmpdir(),'mojateczka-entitlement-')));process.env.AUTH_SECRET='isolated-entitlement-test-key-not-production';
 const {verifyEntitlement,registerCentralDevice,centralEntitlement}=require('../services/centralEntitlements');
 test('entitlements bind account, device and key; offline use expires and explicit revocation invalidates the cache',async()=>{
  const keys=crypto.generateKeyPairSync('ed25519'),publicKey=keys.publicKey.export({type:'spki',format:'der'}).toString('base64');

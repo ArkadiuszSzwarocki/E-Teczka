@@ -5,8 +5,8 @@ import RetentionBadge from './RetentionBadge';
 import RodoUnlockBadge from './RodoUnlockBadge';
 import DocumentTagCorner, { getTagTileStyle } from './DocumentTagCorner';
 
-const VIEW_KEY = 'eteczka_trash_view_mode_v1';
-const ORDER_KEY = 'eteczka_trash_order_v1';
+const VIEW_KEY = 'mojateczka_trash_view_mode_v1';
+const ORDER_KEY = 'mojateczka_trash_order_v1';
 
 function loadOrder(): number[] {
   try { return JSON.parse(localStorage.getItem(ORDER_KEY) || '[]') as number[]; } catch { return []; }

@@ -74,9 +74,9 @@ export default function App() {
   const [backupSection, setBackupSection] = useState<BackupSection | null>(null);
   const [secureShareId, setSecureShareId] = useState<number | null>(null);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  const [notificationsInTopBar, setNotificationsInTopBar] = useState(() => localStorage.getItem('eteczka_notifications_topbar') === 'true');
+  const [notificationsInTopBar, setNotificationsInTopBar] = useState(() => localStorage.getItem('mojateczka_notifications_topbar') === 'true');
   const setNotificationsDockMode = useCallback((inTopBar: boolean) => {
-    localStorage.setItem('eteczka_notifications_topbar', String(inTopBar));
+    localStorage.setItem('mojateczka_notifications_topbar', String(inTopBar));
     setNotificationsInTopBar(inTopBar);
     setIsNotificationsOpen(false);
   }, []);
@@ -140,7 +140,7 @@ export default function App() {
 
   const fetchData = useCallback(async () => {
     if (testerBlockedRef.current) return;
-    const sessionAtStart = localStorage.getItem('eteczka_auth_token');
+    const sessionAtStart = localStorage.getItem('mojateczka_auth_token');
     try {
       const fetchList = async (path: string): Promise<unknown[] | null> => {
         try {
@@ -158,7 +158,7 @@ export default function App() {
         fetchList('/api/tags'),
         getBillingStatus(API_URL, fetch).catch(() => null),
       ]);
-      if (localStorage.getItem('eteczka_auth_token') !== sessionAtStart) return;
+      if (localStorage.getItem('mojateczka_auth_token') !== sessionAtStart) return;
       if (resDocs) setDocuments(resDocs as DocumentRecord[]);
       if (resFolders) setFolders(resFolders as FolderRecord[]);
       setFoldersUnavailable(resFolders === null);
@@ -307,7 +307,7 @@ export default function App() {
         onToggleSettings={() => { setBackupSection(null); setIsBackupSecurityOpen(false); setIsSettingsMenuOpen(true); }}
         onOpenBackup={section => { setIsSettingsMenuOpen(false); setIsBackupSecurityOpen(false); setBackupSection(section); }}
         userFeedbackReplyCount={feedback.userFeedbackReplyCount}
-        onOpenFeedback={() => { void (async () => { const ipc = getElectronIpc(); const shot = ipc ? await ipc.invoke('eteczka-capture-screenshot').catch(() => null) as { dataUrl?: string; appVersion?: string; platform?: string } | null : null; setFeedbackDraft({ screenshot: shot?.dataUrl || null, appVersion: shot?.appVersion, platform: shot?.platform }); })(); }}
+        onOpenFeedback={() => { void (async () => { const ipc = getElectronIpc(); const shot = ipc ? await ipc.invoke('mojateczka-capture-screenshot').catch(() => null) as { dataUrl?: string; appVersion?: string; platform?: string } | null : null; setFeedbackDraft({ screenshot: shot?.dataUrl || null, appVersion: shot?.appVersion, platform: shot?.platform }); })(); }}
       />
 
       <div className="cyber-dashboard-bg flex flex-1 flex-col overflow-hidden bg-[#0f172a]">
@@ -380,7 +380,7 @@ export default function App() {
               folderOptions={folderOptions} pages={scanner.wiaPages} title={scanner.wiaTitle}
               retentionValue={scanner.wiaRetentionValue} retentionUnit={scanner.wiaRetentionUnit} retentionEnabled={scanner.wiaRetentionEnabled}
               stage={scanner.wiaStage} busy={scanner.isWiaScanning} pendingScan={Boolean(scanner.wiaPendingScanPath)}
-              onDeviceChange={id => { scanner.setWiaDeviceId(id); localStorage.setItem('eteczka_default_scanner', id); }}
+              onDeviceChange={id => { scanner.setWiaDeviceId(id); localStorage.setItem('mojateczka_default_scanner', id); }}
               onFolderChange={scanner.setWiaFolderId} onTitleChange={scanner.setWiaTitle}
               onRetentionValueChange={scanner.setWiaRetentionValue} onRetentionUnitChange={scanner.setWiaRetentionUnit} onRetentionEnabledChange={scanner.setWiaRetentionEnabled}
               onScan={() => void scanner.scanFromPrinter()} onAddCameraPage={scanner.addCameraPage}

@@ -57,7 +57,7 @@ export default function DocumentListScreen({ mode }: { mode: Mode }) {
   const refresh = useCallback(() => { setLoading(true); void load().catch(error => Alert.alert("Nie udało się pobrać dokumentów", error instanceof Error ? error.message : "Sprawdź połączenie z komputerem.")); }, [load]);
   useEffect(() => { if (isFocused) refresh(); }, [isFocused, refresh]);
   useEffect(() => {
-    const sub = DeviceEventEmitter.addListener("eteczka-sync-completed", () => { void load().catch(() => undefined); });
+    const sub = DeviceEventEmitter.addListener("mojateczka-sync-completed", () => { void load().catch(() => undefined); });
     return () => sub.remove();
   }, [load]);
   useEffect(() => { setSelectedIds([]); }, [mode]);

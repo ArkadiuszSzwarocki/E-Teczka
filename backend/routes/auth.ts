@@ -11,7 +11,7 @@ import { devPlan } from '../services/devPlans';
 
 const AUTH_SECRET = authSecret();
 const DUMMY_HASH = `00000000000000000000000000000000:${'0'.repeat(128)}`;
-const TRIVIAL_PASSWORDS = new Set(['12345678', '123456789', '1234567890', 'password', 'password1', 'qwerty123', 'admin123', 'eteczka123']);
+const TRIVIAL_PASSWORDS = new Set(['12345678', '123456789', '1234567890', 'password', 'password1', 'qwerty123', 'admin123', 'eteczka123', 'mojateczka123']);
 
 type AttemptBucket = { count: number; lockedUntil: number; resetAt: number };
 const loginAttempts = new Map<string, AttemptBucket>();

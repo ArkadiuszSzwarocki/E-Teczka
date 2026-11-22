@@ -30,7 +30,7 @@ export default function DocumentViewerScreen() {
   const downloadDocument = profileOperation(async () => {
     const extension = document.filePath?.split(".").pop() || "pdf";
     // Do not reuse files saved by older versions which cached HTTP error pages.
-    const target = `${profileCacheDirectory()}eteczka_v2_${document.id}.${extension}`;
+    const target = `${profileCacheDirectory()}mojateczka_v2_${document.id}.${extension}`;
     const cached = await FileSystem.getInfoAsync(target);
     if (cached.exists) return { uri: target };
     const temporary = `${target}.${Date.now()}-${Math.random().toString(36).slice(2)}.download`;

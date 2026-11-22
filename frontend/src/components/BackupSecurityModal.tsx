@@ -18,7 +18,7 @@ export default function BackupSecurityModal({ embedded = false, apiUrl, fetcher:
   const pendingMfa = useRef<{ resolve: (code: string) => void; reject: (err: Error) => void } | null>(null);
 
   const authHeaders = (): Record<string, string> => {
-    const token = localStorage.getItem('eteczka_auth_token');
+    const token = localStorage.getItem('mojateczka_auth_token');
     return token ? { Authorization: `Bearer ${token}` } : {};
   };
 

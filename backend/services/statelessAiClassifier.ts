@@ -11,14 +11,14 @@ export type SuggestionResponse = DocumentClassificationResult & {
 
 /**
  * Classifies a scanned document using the self-hosted stateless AI server ONLY when
- * the user explicitly opted in and ETECZKA_AI_OCR_URL is configured; otherwise falls back to offline rules.
+ * the user explicitly opted in and MOJATECZKA_AI_OCR_URL is configured; otherwise falls back to offline rules.
  */
 export async function suggestFolderForDocument(
   ocrText: string,
   folders: FolderCandidate[],
   options: { allowServerAi: boolean; learnedBoosts?: Map<number, LearnedBoost> },
 ): Promise<SuggestionResponse> {
-  const aiUrl = process.env.ETECZKA_AI_OCR_URL?.trim();
+  const aiUrl = process.env.MOJATECZKA_AI_OCR_URL?.trim();
   if (!options.allowServerAi || !aiUrl) {
     return { mode: 'offline', ...classifyDocumentOffline(ocrText, folders, options.learnedBoosts) };
   }

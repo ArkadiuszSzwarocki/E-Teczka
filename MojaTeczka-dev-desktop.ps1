@@ -1,5 +1,5 @@
 $ErrorActionPreference = 'Stop'
-$env:ETECZKA_DEV_PLANS = '1'
+$env:MOJATECZKA_DEV_PLANS = '1'
 $env:NODE_ENV = 'development'
 $projectDir = $PSScriptRoot
 Set-Location -LiteralPath $projectDir

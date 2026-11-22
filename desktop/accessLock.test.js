@@ -6,7 +6,7 @@ const path = require('node:path');
 const { createAccessLock } = require('./accessLock');
 
 function fixture() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eteczka-lock-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mojateczka-lock-'));
   const file = path.join(dir, 'access-lock.json');
   let clock = 1_000_000;
   const mail = [];

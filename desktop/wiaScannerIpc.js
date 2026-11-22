@@ -21,7 +21,7 @@ function registerWiaScannerIpc({ app, ipcMain, ownRenderer, platform = process.p
   }
 
   function acquireWithWia(deviceId, onStage) {
-    const outputPath = path.join(app.getPath('temp'), `eteczka_wia_${Date.now()}.jpg`);
+    const outputPath = path.join(app.getPath('temp'), `mojateczka_wia_${Date.now()}.jpg`);
     const escapedPath = outputPath.replace(/'/g, "''");
     const escapedDeviceId = String(deviceId).replace(/'/g, "''");
     const script = `$ErrorActionPreference = 'Stop'; $manager = New-Object -ComObject WIA.DeviceManager; $info = @($manager.DeviceInfos | Where-Object { $_.DeviceID -eq '${escapedDeviceId}' })[0]; if ($null -eq $info) { throw 'Wybrane urządzenie nie jest już dostępne.' }; $device = $info.Connect(); $item = $device.Items.Item(1); $image = $item.Transfer('{B96B3CAE-0728-11D3-9D7B-0000F81EF32E}'); $image.SaveFile('${escapedPath}'); Write-Output '${escapedPath}'`;
@@ -39,13 +39,13 @@ function registerWiaScannerIpc({ app, ipcMain, ownRenderer, platform = process.p
     if (typeof rawPath !== 'string' || !rawPath) throw new Error('Nieprawidłowa ścieżka skanu.');
     const tmpBase = path.resolve(os.tmpdir());
     const target = path.resolve(rawPath);
-    if (path.dirname(target) !== tmpBase || !/^eteczka_wia_\d+\.jpg$/i.test(path.basename(target))) {
+    if (path.dirname(target) !== tmpBase || !/^mojateczka_wia_\d+\.jpg$/i.test(path.basename(target))) {
       throw new Error('Odmowa dostępu poza plikami tymczasowymi skanera.');
     }
     return target;
   }
 
-  ipcMain.handle('eteczka-wia-devices', async (event) => {
+  ipcMain.handle('mojateczka-wia-devices', async (event) => {
     if (!ownRenderer(event)) throw new Error('Brak uprawnień.');
     if (platform !== 'win32') return [];
     const script = "$ErrorActionPreference = 'Stop'; $manager = New-Object -ComObject WIA.DeviceManager; $devices = @($manager.DeviceInfos | Where-Object { $_.Type -eq 1 } | ForEach-Object { [PSCustomObject]@{ id = $_.DeviceID; name = [string]$_.Properties.Item('Name').Value; manufacturer = try { [string]$_.Properties.Item('Manufacturer').Value } catch { '' } } }); $devices | ConvertTo-Json -Compress";
@@ -55,7 +55,7 @@ function registerWiaScannerIpc({ app, ipcMain, ownRenderer, platform = process.p
     return Array.isArray(parsed) ? parsed : [parsed];
   });
 
-  ipcMain.handle('eteczka-default-printer', async (event) => {
+  ipcMain.handle('mojateczka-default-printer', async (event) => {
     if (!ownRenderer(event)) throw new Error('Brak uprawnień.');
     if (platform !== 'win32') return '';
     try {
@@ -65,20 +65,20 @@ function registerWiaScannerIpc({ app, ipcMain, ownRenderer, platform = process.p
     }
   });
 
-  ipcMain.handle('eteczka-wia-scan', async (event, deviceId) => {
+  ipcMain.handle('mojateczka-wia-scan', async (event, deviceId) => {
     if (!ownRenderer(event)) throw new Error('Brak uprawnień.');
     if (platform !== 'win32') {
       throw new Error('Skaner WIA jest obsługiwany w systemie Windows. Na macOS użyj aparatu lub Folderu obserwowanego.');
     }
-    return acquireWithWia(deviceId, (stage) => event.sender.send('eteczka-wia-status', stage));
+    return acquireWithWia(deviceId, (stage) => event.sender.send('mojateczka-wia-status', stage));
   });
 
-  ipcMain.handle('eteczka-read-temp-scan', (event, rawPath) => {
+  ipcMain.handle('mojateczka-read-temp-scan', (event, rawPath) => {
     if (!ownRenderer(event)) throw new Error('Brak uprawnień.');
     return fs.readFileSync(resolveTempScanPath(rawPath)).toString('base64');
   });
 
-  ipcMain.handle('eteczka-remove-temp-scan', (event, rawPath) => {
+  ipcMain.handle('mojateczka-remove-temp-scan', (event, rawPath) => {
     if (!ownRenderer(event)) return false;
     try {
       const target = resolveTempScanPath(rawPath);

@@ -12,7 +12,7 @@ import { applyWatermarkToDocument } from '../services/documentWatermark';
 export function createSecureShareRouter(prisma: PrismaClient) {
   const router=express.Router();
   const table = () => prisma.$executeRawUnsafe('CREATE TABLE IF NOT EXISTS SecureShare (id TEXT PRIMARY KEY, ownerId INTEGER NOT NULL, documentId INTEGER NOT NULL, expiresAt TEXT NOT NULL, createdAt TEXT NOT NULL)');
-  const config = () => { const base=process.env.ETECZKA_SHARE_SERVICE_URL, secret=process.env.ETECZKA_SHARE_SERVICE_SECRET; if (!base || !secret || secret.length<32) return null; try { const url=new URL(base); if(url.protocol!=='https:' || url.username || url.password || url.search || url.hash || !['','/'].includes(url.pathname)) return null; return {base:url.origin,secret}; } catch { return null; } };
+  const config = () => { const base=process.env.MOJATECZKA_SHARE_SERVICE_URL, secret=process.env.MOJATECZKA_SHARE_SERVICE_SECRET; if (!base || !secret || secret.length<32) return null; try { const url=new URL(base); if(url.protocol!=='https:' || url.username || url.password || url.search || url.hash || !['','/'].includes(url.pathname)) return null; return {base:url.origin,secret}; } catch { return null; } };
   router.get('/', async (_req,res)=>{try{await table();const owner=Number(res.locals.userId||1);const shares=await prisma.$queryRaw<Array<{id:string;documentId:number;expiresAt:string;createdAt:string}>>`SELECT id, documentId, expiresAt, createdAt FROM SecureShare WHERE ownerId=${owner} ORDER BY createdAt DESC`;res.setHeader('Cache-Control','no-store');res.json(shares);}catch{res.status(500).json({error:'Nie udało się pobrać linków.'});}});
   router.post('/', async (req,res)=>{
     try {

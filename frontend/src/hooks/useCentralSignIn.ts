@@ -105,12 +105,12 @@ export function useCentralSignIn(apiUrl: string, origin: string, deviceId: strin
 
   function finishSession(payload: { token?: string; user?: CentralUser }) {
     if (typeof payload.token !== 'string' || !payload.user?.email) throw new Error('Serwer zwrócił nieprawidłową sesję.');
-    try { sessionStorage.removeItem('eteczka_hide_hello_signin'); } catch { /* ignore */ }
-    localStorage.setItem('eteczka_auth_token', payload.token);
+    try { sessionStorage.removeItem('mojateczka_hide_hello_signin'); } catch { /* ignore */ }
+    localStorage.setItem('mojateczka_auth_token', payload.token);
     setPassword('');
     setCentralPassword('');
     onAuthenticated(payload.user);
-    void getElectronIpc()?.invoke('eteczka-show-main-window').catch(() => undefined);
+    void getElectronIpc()?.invoke('mojateczka-show-main-window').catch(() => undefined);
   }
 
   async function submitDirect() {
@@ -173,7 +173,7 @@ export function useCentralSignIn(apiUrl: string, origin: string, deviceId: strin
         if (active && payload.status === 'approved' && payload.user?.email) {
           setUser(payload.user);
           closeExternalAccountPopup();
-          void getElectronIpc()?.invoke('eteczka-show-main-window').catch(() => undefined);
+          void getElectronIpc()?.invoke('mojateczka-show-main-window').catch(() => undefined);
         }
       } catch {
         if (active) setMessage('Nie udało się sprawdzić logowania. Próba zostanie ponowiona.');

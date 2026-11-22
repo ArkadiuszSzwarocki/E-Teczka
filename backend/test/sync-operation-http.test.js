@@ -8,7 +8,7 @@ const { PrismaClient } = require('@prisma/client');
 const { createSyncRouter } = require('../routes/sync.js');
 
 test('folder sync endpoint safely replays an operation and rejects a foreign parent', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eteczka-http-test-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mojateczka-http-test-'));
   const db = path.join(dir, 'test.db').replace(/\\/g, '/');
   const prisma = new PrismaClient({ datasources: { db: { url: `file:${db}` } } });
   let server;

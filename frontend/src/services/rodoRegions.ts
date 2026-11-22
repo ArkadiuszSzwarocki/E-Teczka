@@ -8,9 +8,9 @@ export type RodoRegion = {
   page?: number;
 };
 
-export const RODO_REGIONS_KEY = 'eteczka_rodo_regions_v1';
-export const RODO_PHRASES_KEY = 'eteczka_rodo_phrases_v1';
-export const RODO_UNLOCK_EVENT = 'eteczka-rodo-unlock-changed';
+export const RODO_REGIONS_KEY = 'mojateczka_rodo_regions_v1';
+export const RODO_PHRASES_KEY = 'mojateczka_rodo_phrases_v1';
+export const RODO_UNLOCK_EVENT = 'mojateczka-rodo-unlock-changed';
 export const RODO_UNLOCK_DURATION_MS = 180_000;
 
 const unlockExpirations = new Map<number, number>();

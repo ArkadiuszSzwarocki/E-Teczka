@@ -17,7 +17,7 @@ import { countFolderTreeStats } from '../utils/folderTree';
 import { collectDocumentTags, DEFAULT_DOC_FILTER, filterAndSortDocuments, type DocFilterState } from '../utils/documentFilterSort';
 import { isMobileBrowser } from '../services/platform';
 
-const VIEW_KEY = 'eteczka_folders_view_mode_v1';
+const VIEW_KEY = 'mojateczka_folders_view_mode_v1';
 
 /** Folder and document desktop view with icon/list modes, drag-and-drop, and Safe Vault protection. */
 export default function FoldersDesktop({

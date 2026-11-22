@@ -10,7 +10,7 @@ export default function BackupRecoveryKey({ apiUrl, mode, authorize, disabled, o
     try {
       const response = await fetch(`${apiUrl}/api/backup/recovery-key`, { method: 'POST', headers: { ...await authorize('recoveryKey'), 'Content-Type': 'application/json' }, body: JSON.stringify({ passphrase: password }) });
       if (!response.ok) { const error = await response.json(); throw new Error(error.error || 'Nie udało się przygotować klucza.'); }
-      const url = URL.createObjectURL(await response.blob()); const a = document.createElement('a'); a.href = url; a.download = 'eteczka-klucz-odzyskiwania.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+      const url = URL.createObjectURL(await response.blob()); const a = document.createElement('a'); a.href = url; a.download = 'mojateczka-klucz-odzyskiwania.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
       setMessage('Zapisz plik i hasło oddzielnie, poza tym komputerem. Będą potrzebne do odzyskania zaszyfrowanej kopii.');
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Nie udało się przygotować klucza.'); } finally { setBusy(false); }
   };

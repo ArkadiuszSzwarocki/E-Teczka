@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const express = require('express');
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eteczka-pair-owner-'));
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mojateczka-pair-owner-'));
 process.chdir(dir);
 process.env.AUTH_SECRET = 'test-secret-for-pair-owner';
 const { registerPairingRoutes, requireAccess, configureAccountSessionValidator } = require('../middleware/accessControl');

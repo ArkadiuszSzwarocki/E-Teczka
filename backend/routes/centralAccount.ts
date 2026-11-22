@@ -27,7 +27,7 @@ export function createCentralAccountRouter(prisma: PrismaClient, verify = verify
   });
   const router = express.Router(); const links = createCentralAccountLinks(prisma);
   let desktopFailures = 0; let desktopBlockedUntil = 0;
-  const origin = () => centralAccountOrigin(process.env.ETECZKA_CENTRAL_ACCOUNT_URL);
+  const origin = () => centralAccountOrigin(process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL);
   const bearer = (req: express.Request) => req.header('authorization')?.replace(/^Bearer\s+/i, '') || '';
   router.get('/status', async (_req, res) => {
     const base = origin(); let googleEnabled = false;

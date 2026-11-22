@@ -16,7 +16,7 @@ export const defaultCatalog: Catalog = { version: 1, usageDays: 7, ocrTrialDays:
 }, promotions: [] };
 const catalogDirectory = () => securityDir;
 const catalogFile = () => path.join(catalogDirectory(), 'developer-plan-catalog.json');
-export function catalogEnabled() { return process.env.ETECZKA_DEV_PLANS === '1' && process.env.NODE_ENV !== 'production'; }
+export function catalogEnabled() { return process.env.MOJATECZKA_DEV_PLANS === '1' && process.env.NODE_ENV !== 'production'; }
 export function validateCatalog(value: unknown): Catalog {
  const raw = value as Partial<Catalog>;
  const data = (raw && raw.plans ? {

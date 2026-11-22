@@ -1,6 +1,6 @@
 import { decrypt, encrypt } from './backupCrypto';
 
-const prefix = 'eteczka-ocr-v1:';
+const prefix = 'mojateczka-ocr-v1:';
 
 /** New OCR text is encrypted at rest; pre-existing text remains readable for migration. */
 export function protectOcrText(text: string): string { return prefix + encrypt(text); }

@@ -15,7 +15,7 @@ Mobilny ekran konta jest ukryty, dopóki nie ustawiono `EXPO_PUBLIC_CENTRAL_ACCO
 
 ## Lokalne połączenie z aplikacją
 
-Usługa kont korzysta teraz z MariaDB (`CENTRAL_MARIADB_*` w `.env`). Uruchomienie `npm start` lub `npm run dev:desktop` w katalogu głównym uruchamia również konta na porcie 3001. Backend wczytuje `backend/.env`; ustaw `ETECZKA_CENTRAL_ACCOUNT_URL=http://127.0.0.1:3001`. Lokalny link potwierdzenia wymaga `CENTRAL_VERIFY_URL=http://127.0.0.1:3001/verify` w `central-accounts/.env` oraz działającego SMTP. Po zmianie konfiguracji uruchom usługę ponownie.
+Usługa kont korzysta teraz z MariaDB (`CENTRAL_MARIADB_*` w `.env`). Uruchomienie `npm start` lub `npm run dev:desktop` w katalogu głównym uruchamia również konta na porcie 3001. Backend wczytuje `backend/.env`; ustaw `MOJATECZKA_CENTRAL_ACCOUNT_URL=http://127.0.0.1:3001`. Lokalny link potwierdzenia wymaga `CENTRAL_VERIFY_URL=http://127.0.0.1:3001/verify` w `central-accounts/.env` oraz działającego SMTP. Po zmianie konfiguracji uruchom usługę ponownie.
 
 Ekran startowy aplikacji zawiera rejestrację konta centralnego. Po potwierdzeniu adresu w wiadomości wróć do zakładki logowania. Logowanie otwiera przeglądarkę i wymaga porównania kodu urządzenia, a następnie jawnego połączenia z danymi lokalnymi lub utworzenia nowego konta lokalnego. Można też przejść od razu do dokumentów na komputerze.
 

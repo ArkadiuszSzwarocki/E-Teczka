@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict'),express=require('express'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
-const root=fs.mkdtempSync(path.join(os.tmpdir(),'eteczka-document-restore-'));process.chdir(root);process.env.ETECZKA_CENTRAL_ACCOUNT_URL='';
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'mojateczka-document-restore-'));process.chdir(root);process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL='';
 const {createDocumentRouter}=require('../routes/documents');
 test('restore accepts the desktop payload and resets retention while validating dates and destination ownership',async()=>{
  let current={id:1,folderId:2,filePath:'restore.pdf',title:'Restore',isDeleted:true,isArchived:false,deletedAt:new Date(),createdAt:new Date('2000-01-01')};

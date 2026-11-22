@@ -14,14 +14,14 @@ export default function AuthModal({ onClose, onAuthenticated }: Props) {
   const [showCentral, setShowCentral] = useState(false);
   const apiUrl = resolveApiBase(window.location, import.meta.env.VITE_API_URL);
   useEffect(() => { let active = true; void fetch(`${apiUrl}/api/central-account/status`).then(response => response.ok ? response.json() : null).then(data => { if (active && data?.configured && typeof data.origin === 'string') setCentralOrigin(data.origin); }).catch(() => undefined); return () => { active = false; }; }, [apiUrl]);
-  const deviceId = localStorage.getItem('eteczka_device_id') || (() => { const value = crypto.randomUUID(); localStorage.setItem('eteczka_device_id', value); return value; })();
+  const deviceId = localStorage.getItem('mojateczka_device_id') || (() => { const value = crypto.randomUUID(); localStorage.setItem('mojateczka_device_id', value); return value; })();
   const submit = async () => {
     setBusy(true); setError('');
     try {
       const response = await fetch(`${apiUrl}/api/auth/${mode}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password, deviceId, deviceName: 'MojaTeczka Desktop' }) });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || typeof payload.token !== 'string') throw new Error(payload.error || 'Nie udało się zalogować.');
-      localStorage.setItem('eteczka_auth_token', payload.token);
+      localStorage.setItem('mojateczka_auth_token', payload.token);
       onAuthenticated(payload.user);
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Nie udało się wykonać operacji.'); }
     finally { setBusy(false); }

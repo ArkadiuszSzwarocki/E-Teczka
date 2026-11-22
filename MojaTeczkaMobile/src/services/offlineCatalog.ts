@@ -3,7 +3,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import type { FolderSummary } from "../types/navigation";
 import type { RetentionDocument } from "./retentionNotifications";
 
-const ROOT = () => profileDirectory(`${FileSystem.documentDirectory || ""}eteczka-catalog-cache`);
+const ROOT = () => profileDirectory(`${FileSystem.documentDirectory || ""}mojateczka-catalog-cache`);
 const foldersFile = () => `${ROOT()}/folders.json`;
 const documentsFile = (folderId: number) => `${ROOT()}/documents-${folderId}.json`;
 

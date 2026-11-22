@@ -45,7 +45,7 @@ export async function eraseLocalAccountCompletely(
   let centralNote: string | undefined;
 
   if (options?.deleteCentral) {
-    const base = centralAccountOrigin(process.env.ETECZKA_CENTRAL_ACCOUNT_URL);
+    const base = centralAccountOrigin(process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL);
     if (base && options.centralPassword) {
       try {
         const login = await fetch(`${base}/login`, {

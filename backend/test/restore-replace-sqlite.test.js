@@ -14,7 +14,7 @@ function archive(title = 'Przywrócony') {
 }
 
 test('restore replaces only the owner snapshot, remains idempotent and rolls back on failure', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eteczka-restore-sqlite-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mojateczka-restore-sqlite-'));
   const prisma = new PrismaClient({ datasources: { db: { url: `file:${path.join(dir, 'test.db').replace(/\\/g, '/')}` } } });
   try {
     await prisma.$executeRawUnsafe('CREATE TABLE Folder (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, parentId INTEGER, ownerId INTEGER NOT NULL, createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, "order" INTEGER NOT NULL DEFAULT 0, updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(parentId) REFERENCES Folder(id) ON DELETE SET NULL)');

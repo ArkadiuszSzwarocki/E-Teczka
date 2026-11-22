@@ -24,7 +24,7 @@ Administratorem Twoich danych osobowych jest:
 Aplikacja E-Teczka działa w modelu **Local-First (prywatność przede wszystkim)**:
 - **W aplikacji desktopowej (Windows):** Twoje dokumenty, kartoteki i pliki są przechowywane lokalnie na Twoim komputerze (baza SQLite + lokalny folder plików + szyfrowane pliki konfiguracyjne Sejfu).
 - **W publicznej wersji testowej WWW (`e-teczkatest.arecki.pl`):**
-  - domyślnie (po wyrażeniu zgody w pierwszym oknie) Twoje dokumenty i kartoteki zapisywane są **bezpośrednio we wskazanym przez Ciebie folderze na Twoim dysku** (`eteczka-db.json` + podfolder `uploads/`) i nie są wysyłane na serwer QNAP;
+  - domyślnie (po wyrażeniu zgody w pierwszym oknie) Twoje dokumenty i kartoteki zapisywane są **bezpośrednio we wskazanym przez Ciebie folderze na Twoim dysku** (`mojateczka-db.json` + podfolder `uploads/`) i nie są wysyłane na serwer QNAP;
   - jeśli dobrowolnie wybierzesz **tryb serwerowy QNAP** (np. do testów Pakietu Rodzinnego między urządzeniami), dokumenty zapisywane są w testowej bazie SQLite na serwerze QNAP wyłącznie na czas testów.
 - **W aplikacji mobilnej (Android):** skany mogą być zapisywane offline w zaszyfrowanym magazynie urządzenia lub przesyłane bezpośrednio w sieci lokalnej Wi-Fi (HTTPS) na Twój komputer.
 

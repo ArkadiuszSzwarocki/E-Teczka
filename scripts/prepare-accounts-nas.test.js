@@ -6,7 +6,7 @@ const path = require('node:path');
 const { prepare } = require('./prepare-accounts-nas');
 
 test('deployment bundle contains runtime sources and a separate env file, with no local dependencies or tests', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'eteczka-nas-package-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mojateczka-nas-package-'));
   const source = path.join(root, 'source'), target = path.join(root, 'bundle');
   fs.mkdirSync(path.join(source, 'mariadb'), { recursive: true });
   const runtime = path.resolve(__dirname, '../central-accounts');
@@ -33,6 +33,6 @@ test('deployment bundle contains runtime sources and a separate env file, with n
     assert.equal(fs.existsSync(path.join(target, 'accountAction.html')), true);
   } finally {
     const resolved = fs.realpathSync(root);
-    if (path.dirname(resolved) === fs.realpathSync(os.tmpdir()) && path.basename(resolved).startsWith('eteczka-nas-package-')) fs.rmSync(resolved, { recursive: true, force: true });
+    if (path.dirname(resolved) === fs.realpathSync(os.tmpdir()) && path.basename(resolved).startsWith('mojateczka-nas-package-')) fs.rmSync(resolved, { recursive: true, force: true });
   }
 });

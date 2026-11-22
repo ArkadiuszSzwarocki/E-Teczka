@@ -98,13 +98,13 @@ function registerAccountEmbedIpc({ ipcMain, BrowserWindow, WebContentsView, ownR
     return { x, y, width, height };
   }
 
-  ipcMain.handle('eteczka-close-external-account', async (event) => {
+  ipcMain.handle('mojateczka-close-external-account', async (event) => {
     if (!ownRenderer(event)) return false;
     closeAccountViews();
     return true;
   });
 
-  ipcMain.handle('eteczka-resize-external-account', async (event, rawBounds) => {
+  ipcMain.handle('mojateczka-resize-external-account', async (event, rawBounds) => {
     if (!ownRenderer(event) || !accountEmbedView) return false;
     const bounds = sanitizeBounds(rawBounds);
     if (bounds) {
@@ -117,7 +117,7 @@ function registerAccountEmbedIpc({ ipcMain, BrowserWindow, WebContentsView, ownR
     return true;
   });
 
-  ipcMain.handle('eteczka-open-external-account', async (event, rawUrl, rawBounds) => {
+  ipcMain.handle('mojateczka-open-external-account', async (event, rawUrl, rawBounds) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win || !ownRenderer(event) || typeof rawUrl !== 'string') return false;
     const url = new URL(rawUrl);

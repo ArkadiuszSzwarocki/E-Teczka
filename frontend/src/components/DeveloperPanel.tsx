@@ -83,7 +83,7 @@ export default function DeveloperPanel({
   }, [initialSection]);
 
   async function request(method: string, body?: Catalog) {
-    const token = localStorage.getItem('eteczka_auth_token');
+    const token = localStorage.getItem('mojateczka_auth_token');
     const response = await fetch(`${api}/api/dev/catalog`, {
       method,
       headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },

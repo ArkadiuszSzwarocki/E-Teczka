@@ -4,8 +4,8 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 const source = fs.readFileSync(require.resolve('./accountUi'), 'utf8');
 async function page({ hash = '', search = '', storedHandoff, inspectFails = false, google = false, approvalFails = false } = {}) {
-  const storage = new Map([['eteczka_central_session', 'test-session']]);
-  if (storedHandoff) storage.set('eteczka_central_handoff', storedHandoff);
+  const storage = new Map([['mojateczka_central_session', 'test-session']]);
+  if (storedHandoff) storage.set('mojateczka_central_handoff', storedHandoff);
   const elements = new Map(); const calls = [];
   let googleCallback;
   const googleApi = { initialize(options) { googleCallback = options.callback; }, renderButton() {}, prompt() {} };
@@ -44,7 +44,7 @@ test('fresh Google login automatically completes handoff without a code confirma
   assert.equal(p.calls.includes('/handoff/approve'), false);
   await p.signInGoogle();
   assert.equal(p.calls.filter(path => path === '/handoff/approve').length, 1);
-  assert.equal(p.storage.has('eteczka_central_handoff'), false);
+  assert.equal(p.storage.has('mojateczka_central_handoff'), false);
   assert.equal(p.element('credentials').hidden, true);
   assert.match(p.element('nextMessage').textContent, /zamknąć tę kartę/);
 });
@@ -52,18 +52,18 @@ test('fresh Google login automatically completes handoff without a code confirma
 test('failed desktop handoff retains the request for retry and does not display completion', async () => {
   const p = await page({ search: '?login=google', hash: '#' + 'a'.repeat(43), google: true, approvalFails: true });
   await p.signInGoogle();
-  assert.equal(p.storage.has('eteczka_central_handoff'), true);
+  assert.equal(p.storage.has('mojateczka_central_handoff'), true);
   assert.equal(p.element('status').textContent, 'Expired');
   assert.doesNotMatch(p.element('nextMessage').textContent, /zamknąć tę kartę/);
 });
 test('device request survives refresh and is discarded after expiry', async () => {
   const request = 'a'.repeat(43);
   const initial = await page({ hash: '#' + request });
-  assert.equal(initial.storage.get('eteczka_central_handoff'), request);
+  assert.equal(initial.storage.get('mojateczka_central_handoff'), request);
   const refreshed = await page({ storedHandoff: request });
   assert.ok(refreshed.calls.includes('/handoff/inspect'));
   assert.equal(refreshed.element('handoff').hidden, false);
   const expired = await page({ storedHandoff: request, inspectFails: true });
-  assert.equal(expired.storage.has('eteczka_central_handoff'), false);
+  assert.equal(expired.storage.has('mojateczka_central_handoff'), false);
   assert.equal(expired.element('approveHandoff').disabled, true);
 });

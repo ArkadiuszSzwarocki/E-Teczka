@@ -8,14 +8,14 @@ import { createFolderVaultStore, type VaultLoginMethod } from '../services/folde
 const store = createFolderVaultStore(path.join(securityDir, 'folder-vaults.enc'));
 
 async function sendVaultRecoveryEmail(to: string, code: string) {
-  const host = process.env.ETECZKA_SMTP_HOST;
-  const user = process.env.ETECZKA_SMTP_USER;
-  const pass = process.env.ETECZKA_SMTP_PASSWORD;
-  const from = process.env.ETECZKA_SMTP_FROM;
+  const host = process.env.MOJATECZKA_SMTP_HOST;
+  const user = process.env.MOJATECZKA_SMTP_USER;
+  const pass = process.env.MOJATECZKA_SMTP_PASSWORD;
+  const from = process.env.MOJATECZKA_SMTP_FROM;
   if (!host || !user || !pass || !from) {
     throw new Error('Wysyłka e-mail (SMTP) nie jest skonfigurowana w pliku backend/.env.');
   }
-  const port = Number(process.env.ETECZKA_SMTP_PORT || 465);
+  const port = Number(process.env.MOJATECZKA_SMTP_PORT || 465);
   const transport = nodemailer.createTransport({ host, port, secure: port === 465, auth: { user, pass } });
   await transport.sendMail({
     from,

@@ -16,7 +16,7 @@ export async function verifyBackupPrimary(prisma: PrismaClient, owner: string, p
   }
   if (owner !== 'desktop-local' || !process.env.APPDATA) return false;
   try {
-    const lock = JSON.parse(fs.readFileSync(path.join(process.env.APPDATA, 'eteczka-master', 'access-lock.json'), 'utf8')) as { salt?: string; hash?: string };
+    const lock = JSON.parse(fs.readFileSync(path.join(process.env.APPDATA, 'mojateczka', 'access-lock.json'), 'utf8')) as { salt?: string; hash?: string };
     return matches(password, lock.salt || '', lock.hash || '');
   } catch { return false; }
 }

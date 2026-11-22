@@ -3,7 +3,7 @@ import type { FolderRecord } from '../types/domain';
 import { getVaultStatus, type VaultLoginMethod } from '../services/folderVaultApi';
 import { VAULT_ICON_ID } from '../utils/folderIconCatalog';
 
-const ICONS_KEY = 'eteczka_folder_icons_v1';
+const ICONS_KEY = 'mojateczka_folder_icons_v1';
 
 function loadIcons(): Record<number, string> {
   try { return JSON.parse(localStorage.getItem(ICONS_KEY) || '{}') as Record<number, string>; } catch { return {}; }

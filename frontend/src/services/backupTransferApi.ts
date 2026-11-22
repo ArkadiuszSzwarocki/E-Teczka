@@ -68,6 +68,6 @@ export async function downloadCloudBackupFile(
     throw err;
   }
   const disposition = response.headers.get('Content-Disposition') || '';
-  const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || 'eteczka-cloud-backup.zip.enc';
+  const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || 'mojateczka-cloud-backup.zip.enc';
   return new File([await response.blob()], filename, { type: 'application/octet-stream' });
 }

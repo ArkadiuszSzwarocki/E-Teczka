@@ -1,6 +1,6 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),express=require('express');
 const {PrismaClient}=require('@prisma/client');
-const dir=fs.mkdtempSync(path.join(os.tmpdir(),'eteczka-trash-'));process.chdir(dir);
+const dir=fs.mkdtempSync(path.join(os.tmpdir(),'mojateczka-trash-'));process.chdir(dir);
 const {createDocumentRouter}=require('../routes/documents');
 test('empty trash removes only owned deleted records and unshared files',async()=>{const p=new PrismaClient({datasources:{db:{url:`file:${path.join(dir,'test.db').replace(/\\/g,'/')}`}}});let server;try{
 await p.$executeRawUnsafe('CREATE TABLE Folder (id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,parentId INTEGER,ownerId INTEGER NOT NULL,createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,"order" INTEGER NOT NULL DEFAULT 0,updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)');

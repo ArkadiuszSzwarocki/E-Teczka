@@ -9,8 +9,8 @@ const { generateSync } = require('otplib');
 
 test('backup operations require Microsoft Authenticator and recovery codes cannot be reused', async () => {
   const originalDirectory = process.cwd(); const originalAppdata = process.env.APPDATA;
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eteczka-mfa-test-')); process.chdir(dir); process.env.APPDATA = dir; process.env.AUTH_SECRET = 'test-only-mfa-secret';
-  const lockDir = path.join(dir, 'eteczka-master'); fs.mkdirSync(lockDir);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mojateczka-mfa-test-')); process.chdir(dir); process.env.APPDATA = dir; process.env.AUTH_SECRET = 'test-only-mfa-secret';
+  const lockDir = path.join(dir, 'mojateczka'); fs.mkdirSync(lockDir);
   const salt = crypto.randomBytes(16).toString('hex'); const hash = crypto.scryptSync('haslo-testowe', salt, 64).toString('hex');
   fs.writeFileSync(path.join(lockDir, 'access-lock.json'), JSON.stringify({ salt, hash }));
   const { createBackupMfaRouter, requireBackupMfa } = require('../../routes/backupMfa');

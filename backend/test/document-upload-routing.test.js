@@ -23,7 +23,7 @@ test('upload route is not mistaken for a document identifier', async () => {
 });
 
 test('upload writes the original bytes in an isolated directory', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eteczka-upload-test-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mojateczka-upload-test-'));
   try {
     const child = spawnSync(process.execPath, [path.join(__dirname, 'upload-child.js')], { cwd: dir, encoding: 'utf8', timeout: 30000 });
     assert.equal(child.status, 0, child.stderr || child.stdout);
@@ -36,9 +36,9 @@ test('upload writes the original bytes in an isolated directory', () => {
 });
 
 test('upload rolls back the whole batch on a real SQLite constraint failure', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eteczka-upload-db-test-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mojateczka-upload-db-test-'));
   try {
-    const child = spawnSync(process.execPath, [path.join(__dirname, 'upload-child.js')], { cwd: dir, encoding: 'utf8', timeout: 30000, env: { ...process.env, ETECZKA_UPLOAD_TEST_SQLITE: '1' } });
+    const child = spawnSync(process.execPath, [path.join(__dirname, 'upload-child.js')], { cwd: dir, encoding: 'utf8', timeout: 30000, env: { ...process.env, MOJATECZKA_UPLOAD_TEST_SQLITE: '1' } });
     assert.equal(child.status, 0, child.stderr || child.stdout);
   } finally {
     const db = path.join(dir, 'test.db'); if (fs.existsSync(db)) fs.unlinkSync(db);

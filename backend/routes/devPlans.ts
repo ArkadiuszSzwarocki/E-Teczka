@@ -9,7 +9,7 @@ export function createDevPlanRouter() {
   router.use((req, res, next) => {
     if (!devPlansEnabled()) return res.status(404).json({ error: 'Tryb testowania planów jest wyłączony.' });
     const origin = req.header('origin');
-    const isPublicTest = process.env.ETECZKA_PUBLIC_TEST_MODE === '1' && process.env.NODE_ENV !== 'production';
+    const isPublicTest = process.env.MOJATECZKA_PUBLIC_TEST_MODE === '1' && process.env.NODE_ENV !== 'production';
     const isAllowedOrigin = Boolean(origin && (/^https?:\/\/(localhost|127\.0\.0\.1):(5173|3000)$/.test(origin) || (isPublicTest && origin === 'https://e-teczkatest.arecki.pl')));
     if (!isAllowedOrigin && !(isPublicTest && !origin)) return res.status(403).json({ error: 'Przyciski są dostępne tylko w lokalnym interfejsie deweloperskim lub trybie testowym.' });
     const token = req.header('authorization')?.replace(/^Bearer\s+/i, '');

@@ -5,7 +5,7 @@ import { getWatchFolderConfig, saveWatchFolderConfig } from './watchFolderServic
 
 export type SystemSettingsBackup = {
   version: 1;
-  kind: 'eteczka-settings-backup';
+  kind: 'mojateczka-settings-backup';
   exportedAt: string;
   mailAccounts: Array<{
     id: string;
@@ -49,7 +49,7 @@ export async function exportSystemSettings(
 
   return {
     version: 1,
-    kind: 'eteczka-settings-backup',
+    kind: 'mojateczka-settings-backup',
     exportedAt: new Date().toISOString(),
     mailAccounts: getPublicMailAccounts(ownerId),
     mailFilters: getMailFilters(ownerId),
@@ -71,7 +71,7 @@ export async function restoreSystemSettings(
     throw new Error('Nieprawidłowy format pliku kopii ustawień.');
   }
   const payload = rawPayload as Partial<SystemSettingsBackup>;
-  if (payload.version !== 1 || payload.kind !== 'eteczka-settings-backup') {
+  if (payload.version !== 1 || payload.kind !== 'mojateczka-settings-backup') {
     throw new Error('Ten plik nie jest prawidłową kopią ustawień E‑Teczki (wersja 1).');
   }
 

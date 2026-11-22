@@ -14,10 +14,10 @@ export const oauthConfig: Record<string, { authorize: string; token: string; sco
   onedrive: { authorize: 'https://login.microsoftonline.com/common/v2.0/authorize', token: 'https://login.microsoftonline.com/common/v2.0/token', scope: 'Files.ReadWrite.AppFolder offline_access', clientId: process.env.ONEDRIVE_CLIENT_ID, clientSecret: process.env.ONEDRIVE_CLIENT_SECRET },
 };
 
-export const oauthCallbackUrl = () => process.env.ETECZKA_OAUTH_CALLBACK_URL || 'http://localhost:3000/api/backup/oauth/callback';
+export const oauthCallbackUrl = () => process.env.MOJATECZKA_OAUTH_CALLBACK_URL || 'http://localhost:3000/api/backup/oauth/callback';
 
 export function backupFilename(now = new Date()) {
-  return `eteczka-${now.toISOString().slice(0, 19).replace('T', '_').replace(/:/g, '-')}.zip.enc`;
+  return `mojateczka-${now.toISOString().slice(0, 19).replace('T', '_').replace(/:/g, '-')}.zip.enc`;
 }
 
 export function backupFiles(documents: Array<{ id: number; filePath: string }>) {
@@ -91,7 +91,7 @@ export async function uploadEncryptedBackupToCloud(destination: DestinationRecor
     return fetch(`https://graph.microsoft.com/v1.0/me/drive/special/approot:/${folder ? `${folder}/` : ''}${filename}:/content`, { method: 'PUT', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Content-Type': 'application/zip' }, body: payloadBody });
   }
   const metadata = JSON.stringify({ name: filename, mimeType: 'application/zip', ...(destination.remoteFolder ? { parents: [destination.remoteFolder] } : {}) });
-  const multipart = `----EtecZkaBoundary${Date.now()}`;
+  const multipart = `----MojaTeczkaBoundary${Date.now()}`;
   const body = Buffer.concat([Buffer.from(`--${multipart}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${multipart}\r\nContent-Type: application/zip\r\n\r\n`), data, Buffer.from(`\r\n--${multipart}--`)]);
   return fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', { method: 'POST', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Content-Type': `multipart/related; boundary=${multipart}` }, body: new Uint8Array(body) });
 }

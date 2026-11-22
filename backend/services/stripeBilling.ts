@@ -193,7 +193,7 @@ export async function cancelStripeSubscription(prisma: PrismaClient, stripe: Str
     if (!details.paymentIntentId) throw new BillingHttpError(409, 'Nie znaleziono płatności do zwrotu.');
     const refund = await stripe.refunds.create(
       { payment_intent: details.paymentIntentId, amount: refundAmount, reason: 'requested_by_customer' },
-      { idempotencyKey: `eteczka-refund-${subscription.id}-${details.invoice.id}` },
+      { idempotencyKey: `mojateczka-refund-${subscription.id}-${details.invoice.id}` },
     );
     refundId = refund.id;
     await recordBillingTransaction(prisma, {

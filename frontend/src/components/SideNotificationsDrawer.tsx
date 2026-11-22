@@ -3,7 +3,7 @@ import bellIdleIcon from '../assets/sidebar-icons/bell-idle.png';
 import bellAlertIcon from '../assets/sidebar-icons/bell-alert.png';
 import { useClassicIcons } from './FolderIconPicker';
 
-const SIDE_TOP_STORAGE_KEY = 'eteczka_notifications_side_top';
+const SIDE_TOP_STORAGE_KEY = 'mojateczka_notifications_side_top';
 const clampTopPercent = (value: number) => Math.min(90, Math.max(10, value));
 const readInitialTopPercent = (): number => {
   const raw = Number(localStorage.getItem(SIDE_TOP_STORAGE_KEY));

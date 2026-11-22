@@ -3,7 +3,7 @@ import MobileAppDownload from './MobileAppDownload';
 type Choice = 'new' | 'later' | 'dismissed' | 'paired';
 type Props = { email: string; phoneConnected: boolean; onPair: () => void };
 export default function MobileOnboarding({ email, phoneConnected, onPair }: Props) {
-  const storageKey = `eteczka_mobile_onboarding_v1:${email.trim().toLowerCase()}`;
+  const storageKey = `mojateczka_mobile_onboarding_v1:${email.trim().toLowerCase()}`;
   const [choice, setChoice] = useState<Choice>(() => {
     const stored = localStorage.getItem(storageKey);
     return stored === 'later' || stored === 'dismissed' || stored === 'paired' ? stored : 'new';

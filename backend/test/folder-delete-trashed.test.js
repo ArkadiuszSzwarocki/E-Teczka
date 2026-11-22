@@ -8,7 +8,7 @@ const { PrismaClient } = require('@prisma/client');
 const { createFolderRouter } = require('../routes/folders');
 
 test('deleting folders preserves trashed and archived documents and protects other accounts', async () => {
-  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'eteczka-folders-'));
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'mojateczka-folders-'));
   const prisma=new PrismaClient({datasources:{db:{url:`file:${path.join(dir,'test.db').replace(/\\/g,'/')}`}}}); let server;
   try {
     await prisma.$executeRawUnsafe('CREATE TABLE Folder (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, parentId INTEGER, ownerId INTEGER NOT NULL, createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, "order" INTEGER NOT NULL DEFAULT 0, updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(parentId) REFERENCES Folder(id) ON DELETE SET NULL)');

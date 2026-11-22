@@ -14,7 +14,7 @@ async function main() {
     document: { findMany: async () => [], count: async () => 0, create: async ({ data }) => { if (data.title === 'fail.pdf') throw new Error('simulated database failure'); return { id: 1, ...data }; } },
   };
   prisma.$transaction = async fn => fn(prisma);
-  if (process.env.ETECZKA_UPLOAD_TEST_SQLITE === '1') {
+  if (process.env.MOJATECZKA_UPLOAD_TEST_SQLITE === '1') {
     prisma = new PrismaClient({ datasources: { db: { url: `file:${path.join(process.cwd(), 'test.db').replace(/\\/g, '/')}` } } });
     await prisma.$executeRawUnsafe('CREATE TABLE Folder (id INTEGER PRIMARY KEY, name TEXT NOT NULL, parentId INTEGER, ownerId INTEGER NOT NULL, createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, "order" INTEGER NOT NULL DEFAULT 0, updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)');
     await prisma.$executeRawUnsafe('CREATE TABLE Subscription (id INTEGER PRIMARY KEY, ownerKey TEXT NOT NULL UNIQUE, provider TEXT NOT NULL DEFAULT \'stripe\', providerCustomerId TEXT, providerSubscriptionId TEXT, plan TEXT NOT NULL DEFAULT \'free\', status TEXT NOT NULL DEFAULT \'inactive\', currentPeriodEnd DATETIME, cancelAtPeriodEnd BOOLEAN NOT NULL DEFAULT 0, createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)');
@@ -36,13 +36,13 @@ async function main() {
     const failedBatch = await fetch(`http://127.0.0.1:${server.address().port}/api/documents/upload-base64`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ files: ['good.pdf', 'fail.pdf'].map(name => ({ name, data: `data:application/pdf;base64,${Buffer.from(name).toString('base64')}` })), folderId: 2, retentions: [] }) });
     assert.equal(failedBatch.status, 500);
     assert.deepEqual(fs.readdirSync(path.join(process.cwd(), 'uploads')).filter(name => name !== '.scan-drafts'), []);
-    if (process.env.ETECZKA_UPLOAD_TEST_SQLITE === '1') assert.equal(await prisma.document.count(), 0);
+    if (process.env.MOJATECZKA_UPLOAD_TEST_SQLITE === '1') assert.equal(await prisma.document.count(), 0);
     const response = await fetch(`http://127.0.0.1:${server.address().port}/api/documents/upload-base64`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ files: [{ name: 'test.pdf', data: `data:application/pdf;base64,${bytes.toString('base64')}` }], folderId: 2, retentions: [] }) });
     assert.equal(response.status, 200);
     const data = await response.json();
     assert.equal(data.savedDocs.length, 1);
     assert.deepEqual(fs.readFileSync(path.join(process.cwd(), 'uploads', data.savedDocs[0].filePath)), bytes);
-    if (process.env.ETECZKA_UPLOAD_TEST_SQLITE === '1') {
+    if (process.env.MOJATECZKA_UPLOAD_TEST_SQLITE === '1') {
       const post = (items, folderId=2) => fetch(`http://127.0.0.1:${server.address().port}/api/documents/upload-base64`, {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({files:items,folderId,retentions:[]})});
       const item = (name, value=bytes) => ({name,data:`data:application/pdf;base64,${value.toString('base64')}`});
       let duplicate=await post([item('inna-nazwa.pdf')]); assert.equal(duplicate.status,200); let report=await duplicate.json(); assert.equal(report.savedDocs.length,0); assert.equal(report.skippedDuplicates.length,1); assert.equal(await prisma.document.count(),1);
@@ -62,13 +62,13 @@ async function main() {
     const mergedPath = path.join(process.cwd(), 'uploads', merged.savedDocs[0].filePath);
     assert.equal((await PDFDocument.load(fs.readFileSync(mergedPath))).getPageCount(), 2);
 
-    if (process.env.ETECZKA_UPLOAD_TEST_SQLITE === '1') {
+    if (process.env.MOJATECZKA_UPLOAD_TEST_SQLITE === '1') {
       fs.writeFileSync(path.join(process.cwd(),'uploads','quota.pdf'),'quota');
       for (let i = 0; i < 198; i++) await prisma.$executeRaw`INSERT INTO Document(title,filePath,mimeType,folderId) VALUES (${'quota'},${'quota.pdf'},${'application/pdf'},${2})`;
       const blocked = await fetch(`http://127.0.0.1:${server.address().port}/api/documents/upload-base64`, { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({files:[{name:'overflow.pdf',data:`data:application/pdf;base64,${Buffer.from('unique-overflow').toString('base64')}`}],folderId:2,retentions:[]}) });
       assert.equal(blocked.status,403); assert.equal((await blocked.json()).code,'PLAN_LIMIT_REACHED'); assert.equal(await prisma.document.count(),200); fs.unlinkSync(path.join(process.cwd(),'uploads','quota.pdf'));
     }
     fs.unlinkSync(path.join(process.cwd(), 'uploads', data.savedDocs[0].filePath)); fs.unlinkSync(mergedPath);
-  } finally { await new Promise(resolve => server.close(resolve)); if (process.env.ETECZKA_UPLOAD_TEST_SQLITE === '1') await prisma.$disconnect(); }
+  } finally { await new Promise(resolve => server.close(resolve)); if (process.env.MOJATECZKA_UPLOAD_TEST_SQLITE === '1') await prisma.$disconnect(); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

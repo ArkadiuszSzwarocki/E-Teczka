@@ -8,7 +8,7 @@ const { PDFDocument, StandardFonts } = require('pdf-lib');
 const { extractDocumentText } = require('../services/ocrEngine');
 
 test('extracts embedded text on each PDF page without initializing OCR', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eteczka-ocr-test-')); const file = path.join(dir, 'text.pdf');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mojateczka-ocr-test-')); const file = path.join(dir, 'text.pdf');
   try {
     const pdf = await PDFDocument.create(); const font = await pdf.embedFont(StandardFonts.Helvetica);
     pdf.addPage().drawText('FAKTURA PIERWSZA', { x: 70, y: 700, font, size: 24 });
@@ -20,7 +20,7 @@ test('extracts embedded text on each PDF page without initializing OCR', async (
 });
 
 test('recognizes an image and a scanned PDF using local language files', { timeout: 60000 }, async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eteczka-ocr-image-')); const imagePath = path.join(dir, 'scan.png'); const pdfPath = path.join(dir, 'scan.pdf');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mojateczka-ocr-image-')); const imagePath = path.join(dir, 'scan.png'); const pdfPath = path.join(dir, 'scan.pdf');
   try {
     const canvas = createCanvas(1200, 280); const context = canvas.getContext('2d'); context.fillStyle = 'white'; context.fillRect(0, 0, 1200, 280); context.fillStyle = 'black'; context.font = '80px Arial'; context.fillText('FAKTURA TESTOWA 12345', 30, 150);
     const bytes = canvas.toBuffer('image/png'); fs.writeFileSync(imagePath, bytes);
@@ -31,7 +31,7 @@ test('recognizes an image and a scanned PDF using local language files', { timeo
 });
 
 test('hybrid and scanned PDF pages retain embedded and recognized text', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eteczka-ocr-hybrid-')); const file = path.join(dir, 'hybrid.pdf');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mojateczka-ocr-hybrid-')); const file = path.join(dir, 'hybrid.pdf');
   try {
     const canvas = createCanvas(400, 100); const png = canvas.toBuffer('image/png'); const pdf = await PDFDocument.create();
     const font = await pdf.embedFont(StandardFonts.Helvetica); const image = await pdf.embedPng(png);

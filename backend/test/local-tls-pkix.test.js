@@ -9,7 +9,7 @@ const { makeLocalTls } = require('../services/localTls');
 test('PKIX validates the server against the paired CA and rejects another CA', t => {
   const java = process.env.JAVA_HOME ? path.join(process.env.JAVA_HOME, 'bin', process.platform === 'win32' ? 'java.exe' : 'java') : (process.platform === 'win32' ? 'C:\\Program Files\\Android\\Android Studio\\jbr\\bin\\java.exe' : 'java');
   if (path.isAbsolute(java) && !fs.existsSync(java)) return t.skip('Java runtime not installed');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eteczka-pkix-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mojateczka-pkix-'));
   try {
     const paired = makeLocalTls(path.join(dir, 'one'), ['127.0.0.1']);
     const other = makeLocalTls(path.join(dir, 'two'), ['127.0.0.1']);

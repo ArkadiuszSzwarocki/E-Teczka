@@ -1,7 +1,7 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),crypto=require('node:crypto');
 const {createShareApp}=require('../server');
 test('encrypted links require authorization, respect PIN, expiry, single-use and revocation',async()=>{
- const dir=fs.mkdtempSync(path.join(os.tmpdir(),'eteczka-share-'));const secret=crypto.randomBytes(32).toString('base64url'), key=crypto.randomBytes(32).toString('hex');let time=Date.now();
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'mojateczka-share-'));const secret=crypto.randomBytes(32).toString('base64url'), key=crypto.randomBytes(32).toString('hex');let time=Date.now();
  const app=createShareApp({dataDir:dir,masterKey:key,publisherSecret:secret,publicBase:'https://shares.example.test',now:()=>time});const server=await new Promise(resolve=>{const s=app.listen(0,'127.0.0.1',()=>resolve(s));});const base=`http://127.0.0.1:${server.address().port}`;
  const publish=async body=>fetch(base+'/admin/shares',{method:'POST',headers:{Authorization:`Bearer ${secret}`,'content-type':'application/json'},body:JSON.stringify(body)});const body={content:Buffer.from('private test data').toString('base64'),mimeType:'application/pdf',expiresInSeconds:3600,pin:'123456'};
  const redeem=(token,pin)=>fetch(base+'/public/redeem',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token,pin})});

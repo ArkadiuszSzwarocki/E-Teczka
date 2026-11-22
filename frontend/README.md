@@ -2,7 +2,7 @@
 
 ## Panel deweloperski E-Teczki
 
-Adres: http://127.0.0.1:5173/developer. Backend wymaga ETECZKA_DEV_PLANS=1 i środowiska innego niż production. Dostęp tylko z lokalnego komputera i interfejsu na porcie 5173.
+Adres: http://127.0.0.1:5173/developer. Backend wymaga MOJATECZKA_DEV_PLANS=1 i środowiska innego niż production. Dostęp tylko z lokalnego komputera i interfejsu na porcie 5173.
 
 Panel zapisuje konfigurację w backend/security/developer-plan-catalog.json. Limity i uprawnienia obowiązują lokalnie w trybie deweloperskim. Puste pole oznacza brak limitu, zero oznacza zerową pulę. Zmiana okresu próbnego wpływa też na koniec rozpoczętej próby. Zmniejszenie liczby urządzeń blokuje nowe połączenia; nie wylogowuje wcześniej połączonych urządzeń. Limit telefonów jest ustalany przy pobraniu nowego kodu parowania.
 

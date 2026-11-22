@@ -15,7 +15,7 @@ async function waitFor(check) {
 }
 
 test('premium OCR is serialized, stored encrypted and duplicate jobs are not run', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eteczka-queue-test-')); let recognized = 0; let stored;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mojateczka-queue-test-')); let recognized = 0; let stored;
   const prisma = { subscription: { findUnique: async () => ({ plan: 'premium', status: 'active' }) }, document: { findUnique: async ({ where }) => ({ id: where.id, filePath: 'document.png', mimeType: 'image/png', isDeleted: false }), updateMany: async ({ data }) => { stored = data.ocrText; return { count: 1 }; } } };
   const queue = createOcrQueue(prisma, { file: path.join(dir, 'queue.enc'), uploadsDirectory: dir, extract: async () => { recognized++; await new Promise(resolve => setTimeout(resolve, 20)); return 'Prywatny tekst FAKTURA'; } });
   try {
@@ -28,7 +28,7 @@ test('premium OCR is serialized, stored encrypted and duplicate jobs are not run
 });
 
 test('non-premium OCR stays paused and does not read documents', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eteczka-queue-free-')); let called = false;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mojateczka-queue-free-')); let called = false;
   const prisma = { $executeRawUnsafe: async () => 0, $queryRaw: async () => [], subscription: { findUnique: async () => ({ plan: 'standard', status: 'active' }) }, document: { findUnique: async () => { called = true; } } };
   const queue = createOcrQueue(prisma, { file: path.join(dir, 'queue.enc'), uploadsDirectory: dir, extract: async () => '' });
   try { queue.enqueue(8, 'desktop-local'); await waitFor(() => queue.status(8, 'desktop-local').state === 'paused'); assert.equal(called, false); }

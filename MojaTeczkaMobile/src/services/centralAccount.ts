@@ -3,9 +3,9 @@ import { DeviceEventEmitter } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
 
-const SESSION_KEY = 'eteczka_central_account_session_v1';
-const DEVICE_KEY = 'eteczka_central_device_v1';
-const PLAN_KEY = 'eteczka_central_plan_v1';
+const SESSION_KEY = 'mojateczka_central_account_session_v1';
+const DEVICE_KEY = 'mojateczka_central_device_v1';
+const PLAN_KEY = 'mojateczka_central_plan_v1';
 export type CentralPlanName = 'free' | 'standard' | 'premium' | 'family' | 'business';
 export type CentralPlan = { accountId:string;deviceId:string;kind:'mobile';plan:CentralPlanName;expiresAt:number;validUntil:number|null };
 export type CentralPlanUsage={plan:CentralPlanName;documents:{used:number;reservedOffline?:number;limit:number|null};tags:{used:number;reservedOffline?:number;limit:number|null};cameraScan:{used:number;reservedOffline?:number;limit:number|null};printerScan:{used:number;reservedOffline?:number;limit:number|null};merge:{used:number;reservedOffline?:number;limit:number|null}};
@@ -33,7 +33,7 @@ async function savePlan(origin:string,userId:string,signed:{payload:string}) {
 }
 export async function refreshCentralPlan(origin:string):Promise<CentralPlan|null>{
   const session=await getCentralSession(origin);if(!session)return null;const device=await mobileDevice(session.user.id);
-  try{return await savePlan(origin,session.user.id,await post(origin,'/entitlements/refresh',{},device.credential));}catch(error){if([401,403].includes(Number((error as Error&{status?:number}).status))){await closeMobileProfile().catch(()=>undefined);await SecureStore.deleteItemAsync(`${PLAN_KEY}_${session.user.id}`);await SecureStore.deleteItemAsync(SESSION_KEY);DeviceEventEmitter.emit('eteczka-central-logout');}throw error;}
+  try{return await savePlan(origin,session.user.id,await post(origin,'/entitlements/refresh',{},device.credential));}catch(error){if([401,403].includes(Number((error as Error&{status?:number}).status))){await closeMobileProfile().catch(()=>undefined);await SecureStore.deleteItemAsync(`${PLAN_KEY}_${session.user.id}`);await SecureStore.deleteItemAsync(SESSION_KEY);DeviceEventEmitter.emit('mojateczka-central-logout');}throw error;}
 }
 export async function getCachedCentralPlan(origin:string):Promise<CentralPlan|null>{const session=await getCentralSession(origin);if(!session)return null;try{const raw=await SecureStore.getItemAsync(`${PLAN_KEY}_${session.user.id}`);const cached=raw?JSON.parse(raw):null;return cached?.origin===centralAccountOrigin(origin)&&cached.lease?.expiresAt>Date.now()&&cached.lease?.accountId===session.user.id?cached.lease:null;}catch{return null;}}
 export type CentralAccountUser = { id: string; email: string; name: string | null };
@@ -63,9 +63,9 @@ async function saveSession(origin: string, session: Omit<CentralSession, 'origin
   if (!/^[A-Za-z0-9_-]{43}$/.test(session.token) || !Number.isFinite(session.expiresAt) || !session.user?.id || !session.user.email) throw new Error('Serwer zwrócił nieprawidłową sesję.');
   const device=await mobileDevice(session.user.id);
   try{await savePlan(origin,session.user.id,await post(origin,'/entitlements/register',{...device,kind:'mobile',name:'MojaTeczka Mobile'},session.token));}catch(error){throw error;}
-  if(currentMobileAccount()!==session.user.id)DeviceEventEmitter.emit('eteczka-account-switch-start');
-  try{await selectMobileProfile(session.user.id,session.user.email);await SecureStore.setItemAsync(SESSION_KEY,JSON.stringify({...session,origin:centralAccountOrigin(origin)}));}catch(error){DeviceEventEmitter.emit('eteczka-account-switch-failed',error instanceof Error?error.message:'Nie udało się zmienić konta.');throw error;}
-  DeviceEventEmitter.emit('eteczka-central-session-changed');
+  if(currentMobileAccount()!==session.user.id)DeviceEventEmitter.emit('mojateczka-account-switch-start');
+  try{await selectMobileProfile(session.user.id,session.user.email);await SecureStore.setItemAsync(SESSION_KEY,JSON.stringify({...session,origin:centralAccountOrigin(origin)}));}catch(error){DeviceEventEmitter.emit('mojateczka-account-switch-failed',error instanceof Error?error.message:'Nie udało się zmienić konta.');throw error;}
+  DeviceEventEmitter.emit('mojateczka-central-session-changed');
   return session.user;
 }
 
@@ -94,7 +94,7 @@ export async function refreshCentralUser(origin: string): Promise<CentralAccount
     if (response.status === 401) {
       await closeMobileProfile().catch(() => undefined);
       await SecureStore.deleteItemAsync(SESSION_KEY);
-      DeviceEventEmitter.emit('eteczka-central-logout');
+      DeviceEventEmitter.emit('mojateczka-central-logout');
       return null;
     }
     if (!response.ok) throw new Error('Nie udało się sprawdzić sesji.');
@@ -107,10 +107,10 @@ export async function refreshCentralUser(origin: string): Promise<CentralAccount
 
 export async function logoutCentralAccount(origin: string) {
   const session = await getCentralSession(origin);
-  DeviceEventEmitter.emit('eteczka-account-switch-start');
+  DeviceEventEmitter.emit('mojateczka-account-switch-start');
   await closeMobileProfile().catch(() => undefined);
   await SecureStore.deleteItemAsync(SESSION_KEY);
-  DeviceEventEmitter.emit('eteczka-central-logout');
+  DeviceEventEmitter.emit('mojateczka-central-logout');
   if (session) {
     void post(origin, '/logout', {}, session.token).catch(() => undefined);
   }
@@ -120,10 +120,10 @@ export async function deleteCentralAccount(origin: string) {
   const session = await getCentralSession(origin);
   if (!session) throw new Error('Najpierw zaloguj się na konto MojejTeczki.');
   await post(origin, '/delete-account', {}, session.token);
-  DeviceEventEmitter.emit('eteczka-account-switch-start');
+  DeviceEventEmitter.emit('mojateczka-account-switch-start');
   await closeMobileProfile();
   await SecureStore.deleteItemAsync(SESSION_KEY);
-  DeviceEventEmitter.emit('eteczka-central-logout');
+  DeviceEventEmitter.emit('mojateczka-central-logout');
 }
 
 export function privacyPolicyUrl(origin: string): string {
@@ -167,9 +167,9 @@ export function activePromotions(catalog: CentralCatalog, now = Date.now()): Cen
 
 /** Changing accounts preserves encrypted vaults and does not require the old vault PIN. */
 export async function chooseAnotherMobileAccount(origin:string){
- const session=await getCentralSession(origin);DeviceEventEmitter.emit('eteczka-account-switch-start');
- try{await closeMobileProfile();await SecureStore.deleteItemAsync(SESSION_KEY);DeviceEventEmitter.emit('eteczka-central-logout');}
- catch(error){DeviceEventEmitter.emit('eteczka-account-switch-failed',error instanceof Error?error.message:'Nie udało się zmienić konta.');throw error;}
+ const session=await getCentralSession(origin);DeviceEventEmitter.emit('mojateczka-account-switch-start');
+ try{await closeMobileProfile();await SecureStore.deleteItemAsync(SESSION_KEY);DeviceEventEmitter.emit('mojateczka-central-logout');}
+ catch(error){DeviceEventEmitter.emit('mojateczka-account-switch-failed',error instanceof Error?error.message:'Nie udało się zmienić konta.');throw error;}
  if(session)void post(origin,'/logout',{},session.token).catch(()=>undefined);
 }
 

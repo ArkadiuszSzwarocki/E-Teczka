@@ -9,16 +9,16 @@ export default function HelloSignIn({ onAuthenticated }: { onAuthenticated: (use
   const [needsMfa, setNeedsMfa] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
-  useEffect(() => { let active=true;void getElectronIpc()?.invoke('eteczka-hello-accounts').then(value=>{if(active&&Array.isArray(value)){const items=value.filter(item=>typeof item?.email==='string');setAccounts(items);setEmail(items[0]?.email||'');}}).catch(()=>undefined);return()=>{active=false;}; }, []);
+  useEffect(() => { let active=true;void getElectronIpc()?.invoke('mojateczka-hello-accounts').then(value=>{if(active&&Array.isArray(value)){const items=value.filter(item=>typeof item?.email==='string');setAccounts(items);setEmail(items[0]?.email||'');}}).catch(()=>undefined);return()=>{active=false;}; }, []);
   if (!accounts.length) return null;
   async function login() {
     setBusy(true);setMessage('');
     try {
-      const result = await getElectronIpc()?.invoke('eteczka-hello-login',{email,mfaCode:code}) as {ok?:boolean;code?:string;error?:string;token?:string;user?:CentralUser}|undefined;
+      const result = await getElectronIpc()?.invoke('mojateczka-hello-login',{email,mfaCode:code}) as {ok?:boolean;code?:string;error?:string;token?:string;user?:CentralUser}|undefined;
       if(result?.code==='MFA_REQUIRED'){setNeedsMfa(true);setMessage(result.error||'Podaj kod Authenticatora.');return;}
       if(!result?.ok||!result.token||!result.user?.email)throw new Error(result?.error||'Nie udało się zalogować.');
-      localStorage.setItem('eteczka_auth_token',result.token);setCode('');onAuthenticated(result.user);
-      void getElectronIpc()?.invoke('eteczka-show-main-window').catch(()=>undefined);
+      localStorage.setItem('mojateczka_auth_token',result.token);setCode('');onAuthenticated(result.user);
+      void getElectronIpc()?.invoke('mojateczka-show-main-window').catch(()=>undefined);
     }catch(error){setMessage(error instanceof Error?error.message:'Błąd Windows Hello.');}finally{setBusy(false);}
   }
   return <section className="mt-4 rounded-xl border border-blue-500/40 bg-blue-950/20 p-4">

@@ -9,7 +9,7 @@ import {
 } from '../services/localTesterStore';
 import { isAndroidBrowser, isIosBrowser } from '../services/platform';
 
-const TRUSTED_WEB_COPY_KEY = 'eteczka_trusted_local_copy_v1';
+const TRUSTED_WEB_COPY_KEY = 'mojateczka_trusted_local_copy_v1';
 
 type TrustedDbStatus = {
   trustedDataDir: string | null;
@@ -47,7 +47,7 @@ export function TrustedDatabaseCard({ accountEmail = '' }: { accountEmail?: stri
   const refresh = async () => {
     if (ipc) {
       try {
-        const res = await ipc.invoke('eteczka-trusted-db-get') as TrustedDbStatus | null;
+        const res = await ipc.invoke('mojateczka-trusted-db-get') as TrustedDbStatus | null;
         if (res) setStatus(res);
       } catch { /* ignore */ }
       return;
@@ -196,7 +196,7 @@ export function TrustedDatabaseCard({ accountEmail = '' }: { accountEmail?: stri
     setBusy(true);
     setMessage('');
     try {
-      const res = await ipc.invoke('eteczka-trusted-db-pick') as PickedDb | null;
+      const res = await ipc.invoke('mojateczka-trusted-db-pick') as PickedDb | null;
       if (res) setPicked(res);
     } catch {
       setMessage('Zrestartuj okno desktopowe, aby aktywować wybór zaufanej bazy.');
@@ -210,7 +210,7 @@ export function TrustedDatabaseCard({ accountEmail = '' }: { accountEmail?: stri
     setBusy(true);
     setMessage('');
     try {
-      const res = await ipc.invoke('eteczka-trusted-db-trust', { dir: picked.dir, dbFile: picked.dbFile }) as { ok?: boolean; error?: string };
+      const res = await ipc.invoke('mojateczka-trusted-db-trust', { dir: picked.dir, dbFile: picked.dbFile }) as { ok?: boolean; error?: string };
       if (!res?.ok) throw new Error(res?.error || 'Nie udało się zapisać zaufanej bazy.');
       setPicked(null);
       await refresh();
@@ -226,7 +226,7 @@ export function TrustedDatabaseCard({ accountEmail = '' }: { accountEmail?: stri
     setBusy(true);
     setMessage('');
     try {
-      await ipc.invoke('eteczka-trusted-db-clear');
+      await ipc.invoke('mojateczka-trusted-db-clear');
       setPicked(null);
       await refresh();
       setMessage('Przywrócono domyślną bazę aplikacji (zacznie działać po restarcie).');
@@ -288,7 +288,7 @@ export function TrustedDatabaseCard({ accountEmail = '' }: { accountEmail?: stri
           <p>
             Plik bazy: <span className="font-mono">{picked.dbFile}</span>{' '}
             ({picked.isJsonDb
-              ? 'znaleziono eteczka-db.json z trybu lokalnego/web ⚠️ — baza desktopowa wymaga pliku .db (SQLite)'
+              ? 'znaleziono mojateczka-db.json z trybu lokalnego/web ⚠️ — baza desktopowa wymaga pliku .db (SQLite)'
               : picked.existingDb
                 ? 'znaleziono istniejącą bazę .db ✓'
                 : 'nowa baza .db'})

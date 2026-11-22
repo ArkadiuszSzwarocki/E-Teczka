@@ -3,7 +3,7 @@ import { useState } from 'react';
 import type { BackupSection } from './BackupModal';
 import { useClassicIcons } from './FolderIconPicker';
 import { getEnvironmentLabel, isMobileBrowser } from '../services/platform';
-import eteczkaAppIcon from '../assets/mojateczka-folder.png';
+import mojateczkaAppIcon from '../assets/mojateczka-folder.png';
 import kartotekiIcon from '../assets/sidebar-icons/kartoteki.png';
 import dodajDokumentIcon from '../assets/sidebar-icons/dodaj-dokument.png';
 import skanujIcon from '../assets/sidebar-icons/skanuj.png';
@@ -49,7 +49,7 @@ export default function DesktopSidebar({
     <div className="flex h-16 items-center gap-3 border-b border-slate-700 bg-[#111827]/50 px-4">
       {classicIcons
         ? <span aria-hidden="true" className="inline-flex h-9 w-9 shrink-0 items-center justify-center text-2xl">📁</span>
-        : <img src={eteczkaAppIcon} alt="MojaTeczka" className="cyber-icon-glow h-9 w-9 shrink-0 object-contain" />}
+        : <img src={mojateczkaAppIcon} alt="MojaTeczka" className="cyber-icon-glow h-9 w-9 shrink-0 object-contain" />}
       <div className="min-w-0 flex-1 leading-tight">
         <h1 className="text-lg font-bold tracking-wide text-white">MOJATECZKA</h1>
         <span className={`inline-block rounded border px-1.5 py-0.5 text-[10px] font-bold tracking-wider ${isDev ? 'border-amber-500/40 bg-amber-500/15 text-amber-300' : 'border-sky-500/40 bg-sky-500/15 text-sky-300'}`}>

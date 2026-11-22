@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { getElectronIpc } from '../../services/electron';
 import { isIosBrowser, isMobileBrowser } from '../../services/platform';
 
-const MOBILE_WATCH_FOLDER_KEY = 'eteczka_mobile_watch_folder_v1';
+const MOBILE_WATCH_FOLDER_KEY = 'mojateczka_mobile_watch_folder_v1';
 
 type Props = {
   watchPath: string;
@@ -145,7 +145,7 @@ export function MailWatchFolderPanel({ watchPath, watchAllowed, watchBusy, pendi
     setPicking(true);
     setPickError('');
     try {
-      const selected = await ipc.invoke('eteczka-pick-directory', watchPath);
+      const selected = await ipc.invoke('mojateczka-pick-directory', watchPath);
       if (typeof selected === 'string' && selected.trim()) {
         onPathChange(selected.trim());
       }

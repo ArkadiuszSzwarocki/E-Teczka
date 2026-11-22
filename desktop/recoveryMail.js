@@ -6,15 +6,15 @@ function createRecoveryMailer(backendDirectory) {
   } catch {
     // The desktop lock must remain usable when mail dependencies are unavailable.
   }
-  const host = process.env.ETECZKA_SMTP_HOST;
-  const user = process.env.ETECZKA_SMTP_USER;
-  const password = process.env.ETECZKA_SMTP_PASSWORD;
-  const from = process.env.ETECZKA_SMTP_FROM;
+  const host = process.env.MOJATECZKA_SMTP_HOST;
+  const user = process.env.MOJATECZKA_SMTP_USER;
+  const password = process.env.MOJATECZKA_SMTP_PASSWORD;
+  const from = process.env.MOJATECZKA_SMTP_FROM;
   if (!host || !user || !password || !from) return { configured: false, send: async () => { throw new Error('SMTP is not configured'); } };
   let nodemailer;
   try { nodemailer = require(path.join(backendDirectory, 'node_modules', 'nodemailer')); }
   catch { return { configured: false, send: async () => { throw new Error('Mail transport is unavailable'); } }; }
-  const port = Number(process.env.ETECZKA_SMTP_PORT || 465);
+  const port = Number(process.env.MOJATECZKA_SMTP_PORT || 465);
   const transport = nodemailer.createTransport({ host, port, secure: port === 465, auth: { user, pass: password } });
   return {
     configured: true,

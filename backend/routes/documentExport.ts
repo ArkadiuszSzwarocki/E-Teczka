@@ -32,7 +32,7 @@ export function createDocumentExportRouter(prisma: PrismaClient, ownerId: (res: 
         bytes = await applyWatermarkToPdf(bytes, ownerEmail);
       }
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="eteczka-eksport-${Date.now()}.pdf"`);
+      res.setHeader('Content-Disposition', `attachment; filename="mojateczka-eksport-${Date.now()}.pdf"`);
       res.send(bytes);
     } catch (error: unknown) {
       console.error('[POST /api/documents/export-pdf]', error);

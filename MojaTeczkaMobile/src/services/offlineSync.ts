@@ -13,7 +13,7 @@ export type PendingChange = { entity: Entity; operation: "created" | "updated" |
 export type ConflictItem = PendingChange & { reason: string; detectedAt: string };
 export type PendingUploadTask = { uploadId: string; documentId?: number; fileName: string; folderId: number; queuedAt: string };
 type SyncState = { lastPulledAt: number; queue: PendingChange[]; conflicts: number; conflictItems?: ConflictItem[]; pendingUploads?: PendingUploadTask[] };
-const ROOT = () => profileDirectory(`${FileSystem.documentDirectory || ""}eteczka-sync`);
+const ROOT = () => profileDirectory(`${FileSystem.documentDirectory || ""}mojateczka-sync`);
 const STATE = () => `${ROOT()}/state.json`;
 const ensure = () => FileSystem.makeDirectoryAsync(ROOT(), { intermediates: true });
 async function readState(): Promise<SyncState> {
@@ -183,7 +183,7 @@ async function resolveConflictKeepServerImpl(queuedAt: string) {
     state.conflictItems = (state.conflictItems || []).filter(item => item.queuedAt !== queuedAt);
     state.conflicts = state.conflictItems.length;
     await writeState(state);
-    DeviceEventEmitter.emit('eteczka-sync-completed');
+    DeviceEventEmitter.emit('mojateczka-sync-completed');
     return { pending: state.queue.length, conflicts: state.conflicts };
   });
 }
@@ -211,7 +211,7 @@ async function resolveConflictOverwriteFromPhoneImpl(queuedAt: string) {
     state.conflictItems = (state.conflictItems || []).filter(item => item.queuedAt !== queuedAt);
     state.conflicts = state.conflictItems.length;
     await writeState(state);
-    DeviceEventEmitter.emit('eteczka-sync-completed');
+    DeviceEventEmitter.emit('mojateczka-sync-completed');
     return { pending: state.queue.length, conflicts: state.conflicts };
   });
 }
@@ -388,7 +388,7 @@ async function syncNowLocked() {
     throw new Error('Nie udało się zsynchronizować usunięcia dokumentu. Zmiana pozostała w kolejce.');
   }
   if (state.queue.length) throw new Error("Część zmian oczekuje na obsługę synchronizacji. Pozostały bezpiecznie w kolejce.");
-  state.lastPulledAt = Number(pulled.timestamp || Date.now()); await writeState(state); DeviceEventEmitter.emit('eteczka-sync-completed'); return { pending: 0, conflicts: state.conflicts };
+  state.lastPulledAt = Number(pulled.timestamp || Date.now()); await writeState(state); DeviceEventEmitter.emit('mojateczka-sync-completed'); return { pending: 0, conflicts: state.conflicts };
 }
 
 export const pendingChangeCount = profileOperation(pendingChangeCountImpl);

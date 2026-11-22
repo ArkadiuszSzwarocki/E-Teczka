@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict'),express=require('express'),crypto=require('node:crypto'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
-const dir=fs.mkdtempSync(path.join(os.tmpdir(),'eteczka-idle-session-'));process.chdir(dir);
+const dir=fs.mkdtempSync(path.join(os.tmpdir(),'mojateczka-idle-session-'));process.chdir(dir);
 const {activeSessionWhere,effectiveSessionExpiry,SESSION_DURATION_MS,ensureIdleSessionPolicy}=require('../services/sessionPolicy');
 const {createSession,createAuthRouter}=require('../routes/auth');
 

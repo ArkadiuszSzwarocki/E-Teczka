@@ -28,7 +28,7 @@ export async function ensureTesterConsentSchema(prisma: PrismaClient): Promise<v
 }
 
 export function isTesterConsentRequired(): boolean {
-  return process.env.ETECZKA_PUBLIC_TEST_MODE === '1' && process.env.NODE_ENV !== 'production';
+  return process.env.MOJATECZKA_PUBLIC_TEST_MODE === '1' && process.env.NODE_ENV !== 'production';
 }
 
 /** Reads stored tester consent for a user from the QNAP/server database. */

@@ -35,7 +35,7 @@ else {
 
 try {
   Write-Host 'Serwer testowy WWW dziala pod adresem: https://e-teczkatest.arecki.pl' -ForegroundColor Green
-  $env:ETECZKA_PUBLIC_TEST_MODE = '1'
+  $env:MOJATECZKA_PUBLIC_TEST_MODE = '1'
   node backend/index.js
 }
 finally {

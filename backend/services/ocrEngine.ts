@@ -27,7 +27,7 @@ async function localRecognizer(languageDirectory?: string): Promise<Recognizer> 
 
 /** Extract text on this machine. The document is never sent to a remote service. */
 export async function extractDocumentText(file: string, mimeType: string, options: OcrOptions = {}): Promise<string> {
-  const recognizerFactory = options.createRecognizer || (() => localRecognizer(options.languageDirectory || process.env.ETECZKA_OCR_LANG_PATH));
+  const recognizerFactory = options.createRecognizer || (() => localRecognizer(options.languageDirectory || process.env.MOJATECZKA_OCR_LANG_PATH));
   let recognizer: Recognizer | undefined;
   const recognize = async (image: Buffer) => {
     if (!recognizer) recognizer = await recognizerFactory();

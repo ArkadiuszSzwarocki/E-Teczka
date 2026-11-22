@@ -17,9 +17,9 @@ export default function WelcomeScreen({ onAuthenticated }: Props) {
   const [connection, setConnection] = useState('Sprawdzanie usługi kont…');
   const apiUrl = resolveApiBase(window.location, import.meta.env.VITE_API_URL);
   const [deviceId] = useState(() => {
-    const existing = localStorage.getItem('eteczka_device_id');
+    const existing = localStorage.getItem('mojateczka_device_id');
     if (existing) return existing;
-    const value = crypto.randomUUID(); localStorage.setItem('eteczka_device_id', value); return value;
+    const value = crypto.randomUUID(); localStorage.setItem('mojateczka_device_id', value); return value;
   });
   useEffect(() => {
     let active = true;

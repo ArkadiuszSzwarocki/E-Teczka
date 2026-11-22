@@ -30,10 +30,10 @@ export const RODO_CATEGORIES: readonly RodoCategoryMeta[] = [
   { id: 'medical', label: 'Dane medyczne (art. 9)', tag: 'DANE MEDYCZNE', description: 'Rozpoznanie, recepta, skierowanie, ICD-10, leczenie' },
 ] as const;
 
-export const RODO_CATEGORIES_KEY = 'eteczka_rodo_categories_v1';
-export const RODO_SMART_KEY = 'eteczka_rodo_smart_v1';
-const RODO_OVERRIDES_KEY = 'eteczka_rodo_doc_overrides_v1';
-export const RODO_CHANGED_EVENT = 'eteczka-masking-changed';
+export const RODO_CATEGORIES_KEY = 'mojateczka_rodo_categories_v1';
+export const RODO_SMART_KEY = 'mojateczka_rodo_smart_v1';
+const RODO_OVERRIDES_KEY = 'mojateczka_rodo_doc_overrides_v1';
+export const RODO_CHANGED_EVENT = 'mojateczka-masking-changed';
 
 const ALL_CATEGORY_IDS: RodoCategory[] = RODO_CATEGORIES.map(c => c.id);
 const CATEGORY_TAG_MAP = new Map<RodoCategory, string>(RODO_CATEGORIES.map(c => [c.id, c.tag]));

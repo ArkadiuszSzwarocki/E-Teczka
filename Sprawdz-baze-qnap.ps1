@@ -2,12 +2,12 @@ param(
   [string]$Email = 'urszulaszwarocka@gmail.com',
   [string]$NasHost = '192.168.0.12',
   [string]$NasUser = 'Arecki',
-  [string]$Container = 'eteczka-test'
+  [string]$Container = 'mojateczka-test'
 )
 
 $ErrorActionPreference = 'Stop'
 $normalizedEmail = $Email.Trim().ToLower()
-$keyPath = Join-Path $env:USERPROFILE '.ssh\id_ed25519_eteczka_qnap'
+$keyPath = Join-Path $env:USERPROFILE '.ssh\id_ed25519_mojateczka_qnap'
 
 $nodeScript = @'
 const { PrismaClient } = require('@prisma/client');

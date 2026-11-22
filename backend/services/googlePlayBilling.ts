@@ -12,11 +12,11 @@ export type GooglePlayVerifyResult = {
 
 /**
  * Verifies a Google Play subscription purchase token via Android Publisher API v3.
- * Requires ETECZKA_GOOGLE_PLAY_ACCESS_TOKEN (or a custom verifyFetch in tests).
+ * Requires MOJATECZKA_GOOGLE_PLAY_ACCESS_TOKEN (or a custom verifyFetch in tests).
  */
 export async function verifyGooglePlaySubscription(
   input: GooglePlayVerifyInput,
-  accessToken = process.env.ETECZKA_GOOGLE_PLAY_ACCESS_TOKEN || '',
+  accessToken = process.env.MOJATECZKA_GOOGLE_PLAY_ACCESS_TOKEN || '',
   request: typeof fetch = fetch
 ): Promise<GooglePlayVerifyResult> {
   if (!input.packageName || !input.subscriptionId || !input.purchaseToken) {

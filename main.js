@@ -9,10 +9,10 @@ const { createBackendLifecycle } = require('./desktop/backendLifecycle');
 const { createWindowAndTrayController } = require('./desktop/windowAndTray');
 
 // Isolated first-run testing keeps the real profile, PIN and sessions intact.
-if (process.env.ETECZKA_PROFILE_DIR) {
-  if (!path.isAbsolute(process.env.ETECZKA_PROFILE_DIR)) throw new Error('The test profile path must be absolute.');
-  fs.mkdirSync(process.env.ETECZKA_PROFILE_DIR, { recursive: true });
-  app.setPath('userData', process.env.ETECZKA_PROFILE_DIR);
+if (process.env.MOJATECZKA_PROFILE_DIR) {
+  if (!path.isAbsolute(process.env.MOJATECZKA_PROFILE_DIR)) throw new Error('The test profile path must be absolute.');
+  fs.mkdirSync(process.env.MOJATECZKA_PROFILE_DIR, { recursive: true });
+  app.setPath('userData', process.env.MOJATECZKA_PROFILE_DIR);
 }
 
 const windowCtrl = createWindowAndTrayController({
@@ -50,7 +50,7 @@ if (!gotSingleInstanceLock) {
 app.whenReady().then(async () => {
   if (!gotSingleInstanceLock) return;
   await windowCtrl.createTray();
-  if (process.env.ETECZKA_EXTERNAL_BACKEND !== '1' && !(await backend.backendAvailable())) {
+  if (process.env.MOJATECZKA_EXTERNAL_BACKEND !== '1' && !(await backend.backendAvailable())) {
     backend.startBackend();
   }
   setTimeout(() => backend.waitForServer(windowCtrl.createWindow), 250);

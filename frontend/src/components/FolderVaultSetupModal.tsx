@@ -35,7 +35,7 @@ export default function FolderVaultSetupModal({ apiUrl, fetcher, folderId, folde
       .catch(e => { if (active) setError(e instanceof Error ? e.message : 'Błąd konfiguracji sejfu.'); });
     const ipc = getElectronIpc();
     if (ipc) {
-      void ipc.invoke('eteczka-hello-available')
+      void ipc.invoke('mojateczka-hello-available')
         .then(res => {
           if (!active || !res || typeof res !== 'object') return;
           const payload = res as { available?: boolean; ok?: boolean };
@@ -51,7 +51,7 @@ export default function FolderVaultSetupModal({ apiUrl, fetcher, folderId, folde
     const ipc = getElectronIpc();
     if (!ipc) { setError('Biometria Windows Hello działa w aplikacji desktopowej.'); return; }
     try {
-      const res = await ipc.invoke('eteczka-hello-verify');
+      const res = await ipc.invoke('mojateczka-hello-verify');
       if (isAccessResult(res) && res.ok) setBiometricVerified(true);
       else setError((isAccessResult(res) && res.error) || 'Nie udało się potwierdzić biometrii.');
     } catch {

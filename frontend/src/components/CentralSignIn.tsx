@@ -39,7 +39,7 @@ export default function CentralSignIn({ apiUrl, origin, deviceId, onAuthenticate
   const input = 'mt-2 w-full rounded-lg border border-slate-600 bg-[#111827] p-3 text-white';
   const button = 'mt-3 w-full rounded-lg bg-blue-600 px-4 py-3 font-bold text-white disabled:opacity-50';
 
-  const hideHello = s.deviceLimitReached || (() => { try { return sessionStorage.getItem('eteczka_hide_hello_signin') === '1'; } catch { return false; } })();
+  const hideHello = s.deviceLimitReached || (() => { try { return sessionStorage.getItem('mojateczka_hide_hello_signin') === '1'; } catch { return false; } })();
 
   return (
     <div>

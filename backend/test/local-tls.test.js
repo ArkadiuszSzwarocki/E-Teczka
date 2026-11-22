@@ -7,7 +7,7 @@ const https = require('node:https');
 const { makeLocalTls } = require('../services/localTls');
 
 test('local HTTPS uses persistent CA and validates certificate and hostname', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eteczka-tls-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mojateczka-tls-'));
   let server;
   try {
     const first = makeLocalTls(dir, ['127.0.0.1']);
@@ -24,7 +24,7 @@ test('local HTTPS uses persistent CA and validates certificate and hostname', as
 });
 
 test('incomplete CA is rejected without overwriting the private key', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eteczka-tls-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mojateczka-tls-'));
   try { const key = path.join(dir, 'local-ca-key.pem'); fs.writeFileSync(key, 'do not overwrite'); assert.throws(() => makeLocalTls(dir), /Niekompletny/); assert.equal(fs.readFileSync(key, 'utf8'), 'do not overwrite'); }
   finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

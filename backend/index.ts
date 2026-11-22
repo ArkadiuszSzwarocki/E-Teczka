@@ -63,7 +63,7 @@ const ocrQueue = createOcrQueue(prisma, { file: path.join(securityDir, 'ocr-queu
 
 const localTls = makeLocalTls(securityDir);
 const extraCorsOrigins = new Set(
-  (process.env.ETECZKA_CORS_ORIGINS || (process.env.NODE_ENV === 'production' ? '' : 'https://e-teczkatest.arecki.pl'))
+  (process.env.MOJATECZKA_CORS_ORIGINS || (process.env.NODE_ENV === 'production' ? '' : 'https://e-teczkatest.arecki.pl'))
     .split(',')
     .map(origin => origin.trim())
     .filter(Boolean),
@@ -129,8 +129,8 @@ app.use('/api/dev/catalog', createDeveloperCatalogRouter(prisma));
 app.use('/api/dev/feedback', createDeveloperFeedbackRouter(prisma));
 app.use('/api/legal', createLegalRouter());
 app.use('/api/app-version', createAppVersionRouter());
-const mobileTestApkPath = path.resolve(__dirname, '../ETeczkaMobile/android/app/build/outputs/apk/debug/app-debug.apk');
-const mobileTestApkAllowed = () => (process.env.ETECZKA_PUBLIC_TEST_MODE === '1' || process.env.ETECZKA_DEV_PLANS === '1') && process.env.NODE_ENV !== 'production' && fs.existsSync(mobileTestApkPath);
+const mobileTestApkPath = path.resolve(__dirname, '../MojaTeczkaMobile/android/app/build/outputs/apk/debug/app-debug.apk');
+const mobileTestApkAllowed = () => (process.env.MOJATECZKA_PUBLIC_TEST_MODE === '1' || process.env.MOJATECZKA_DEV_PLANS === '1') && process.env.NODE_ENV !== 'production' && fs.existsSync(mobileTestApkPath);
 app.get('/api/mobile-app/status', (_req, res) => {
   if (!mobileTestApkAllowed()) return res.json({ available: false });
   const sizeMb = Math.round((fs.statSync(mobileTestApkPath).size / (1024 * 1024)) * 10) / 10;
@@ -258,7 +258,7 @@ app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
   });
 });
 
-const httpBindHost = process.env.ETECZKA_PUBLIC_TEST_MODE === '1' ? '0.0.0.0' : '127.0.0.1';
+const httpBindHost = process.env.MOJATECZKA_PUBLIC_TEST_MODE === '1' ? '0.0.0.0' : '127.0.0.1';
 void prisma.$executeRawUnsafe("UPDATE Document SET filePath = substr(filePath, 9) WHERE filePath LIKE 'uploads/%'").catch(() => undefined);
 const pruneTechnicalTables = async () => {
   const now = new Date();
@@ -272,7 +272,7 @@ setInterval(() => { void pruneTechnicalTables(); }, 6 * 3_600_000).unref();
 const httpServer = app.listen(3000, httpBindHost, () => { console.log(`${logStamp()} Serwer lokalny HTTP: port 3000 (${httpBindHost}).`); void ocrQueue.process().catch(() => console.error(`${logStamp()} [ocr] Nie udało się wznowić kolejki.`)); });
 const httpsServer = https.createServer({ key: localTls.key, cert: localTls.cert, minVersion: 'TLSv1.2' }, app);
 httpsServer.on('error', (err: NodeJS.ErrnoException) => {
-  if (err.code === 'EADDRINUSE' && process.env.ETECZKA_PUBLIC_TEST_MODE === '1') {
+  if (err.code === 'EADDRINUSE' && process.env.MOJATECZKA_PUBLIC_TEST_MODE === '1') {
     console.warn(`${logStamp()} [tls] Port 3443 zajęty — w trybie testowym WWW ruch idzie przez port 3000.`);
     return;
   }

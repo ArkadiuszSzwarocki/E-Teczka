@@ -1,4 +1,4 @@
-import eteczkaFolderBlank from '../assets/mojateczka-folder-blank.png';
+import mojateczkaFolderBlank from '../assets/mojateczka-folder-blank.png';
 
 export const GENERATOR_BADGE_PRESETS = [
   '⚡', '🐾', '🎮', '📷', '🎵', '⚖️', '🌱', '🛠️',
@@ -28,7 +28,7 @@ export async function generateHolographicFolderIcon(symbolOrText: string): Promi
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Brak kontekstu graficznego Canvas.');
 
-  const baseImg = await loadImage(eteczkaFolderBlank);
+  const baseImg = await loadImage(mojateczkaFolderBlank);
   ctx.clearRect(0, 0, size, size);
   ctx.drawImage(baseImg, 0, 0, size, size);
 

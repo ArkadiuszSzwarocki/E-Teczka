@@ -142,7 +142,7 @@ export function useBatchUpload({
     const isFiles = (event: DragEvent) => {
       if (internalDrag) return false;
       const types = Array.from(event.dataTransfer?.types || []);
-      return types.includes('Files') && !types.includes('application/x-eteczka-drag');
+      return types.includes('Files') && !types.includes('application/x-mojateczka-drag');
     };
     const over = (event: DragEvent) => {
       if (isFiles(event)) {

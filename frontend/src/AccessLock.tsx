@@ -31,9 +31,9 @@ export default function AccessLock({ children, optionalSetup = false }: { childr
         return;
       }
       try {
-        const token = localStorage.getItem('eteczka_auth_token');
-        if (token && optionalSetup) { const selected = await api.invoke('eteczka-access-use-account', token); if (!isAccessResult(selected) || !selected.ok) throw new Error('Nie udało się wybrać blokady konta.'); }
-        const response = await api.invoke('eteczka-access-status');
+        const token = localStorage.getItem('mojateczka_auth_token');
+        if (token && optionalSetup) { const selected = await api.invoke('mojateczka-access-use-account', token); if (!isAccessResult(selected) || !selected.ok) throw new Error('Nie udało się wybrać blokady konta.'); }
+        const response = await api.invoke('mojateczka-access-status');
         if (!isAccessStatus(response)) throw new Error('Nieprawidłowa odpowiedź blokady.');
         const status = response;
         setConfigured(status.configured);
@@ -58,8 +58,8 @@ export default function AccessLock({ children, optionalSetup = false }: { childr
     setError('');
     try {
       const response = configured
-        ? await api.invoke('eteczka-access-verify', secret)
-        : await api.invoke('eteczka-access-configure', { mode, secret, ...(recoveryEmail ? { recoveryEmail, recoveryCode } : {}) });
+        ? await api.invoke('mojateczka-access-verify', secret)
+        : await api.invoke('mojateczka-access-configure', { mode, secret, ...(recoveryEmail ? { recoveryEmail, recoveryCode } : {}) });
       if (!isAccessResult(response)) { setError('Nieprawidłowa odpowiedź blokady.'); return; }
       if (!response.ok) { setError(response.error ?? 'Nieprawidłowy PIN lub hasło.'); return; }
       setSecret('');
@@ -74,8 +74,8 @@ export default function AccessLock({ children, optionalSetup = false }: { childr
     setRecoveryBusy(true); setError(''); setRecoveryMessage('');
     try {
       const result = purpose === 'reset'
-        ? await api.invoke('eteczka-recovery-reset-request')
-        : await api.invoke('eteczka-recovery-enroll-request', recoveryEmail);
+        ? await api.invoke('mojateczka-recovery-reset-request')
+        : await api.invoke('mojateczka-recovery-enroll-request', recoveryEmail);
       if (!isAccessResult(result) || !result.ok) setError(isAccessResult(result) ? result.error || 'Nie udało się wysłać kodu.' : 'Nieprawidłowa odpowiedź.');
       else setRecoveryMessage('Kod wysłany na adres odzyskiwania. Jest ważny 10 minut.');
     } catch { setError('Nie udało się wysłać kodu.'); }
@@ -87,7 +87,7 @@ export default function AccessLock({ children, optionalSetup = false }: { childr
     const api = getElectronIpc(); if (!api) return;
     setRecoveryBusy(true); setError('');
     try {
-      const result = await api.invoke('eteczka-recovery-reset-complete', { code: recoveryCode, mode: newMode, secret: newSecret });
+      const result = await api.invoke('mojateczka-recovery-reset-complete', { code: recoveryCode, mode: newMode, secret: newSecret });
       if (!isAccessResult(result) || !result.ok) { setError(isAccessResult(result) ? result.error || 'Nie udało się zmienić hasła.' : 'Nieprawidłowa odpowiedź.'); return; }
       setRecoveryCode(''); setNewSecret(''); setUnlocked(true);
     } catch { setError('Nie udało się zmienić hasła.'); }
@@ -96,7 +96,7 @@ export default function AccessLock({ children, optionalSetup = false }: { childr
 
   if (loading) return <div className="min-h-screen bg-[#0f172a]" />;
   if (unlocked) return <>{children}</>;
-  if (helloEnabled) return <main className="min-h-screen bg-[#0f172a] text-white flex items-center justify-center p-6"><section className="w-full max-w-md rounded-2xl border border-slate-700 bg-[#1e293b] p-8 shadow-2xl"><h1 className="text-2xl font-bold">Odblokuj MojąTeczkę</h1><p className="mt-3 text-sm leading-6 text-slate-400">Potwierdź tożsamość za pomocą Windows Hello.</p><button onClick={() => void (async () => { setError(''); try { const result = await getElectronIpc()?.invoke('eteczka-hello-verify'); if (isAccessResult(result) && result.ok) setUnlocked(true); else setError(isAccessResult(result) ? result.error || 'Weryfikacja nie została ukończona.' : 'Windows Hello jest niedostępne.'); } catch { setError('Nie udało się uruchomić Windows Hello.'); } })()} className="mt-6 w-full rounded-lg bg-blue-600 py-3 font-semibold hover:bg-blue-500">Odblokuj przez Windows Hello</button>{error && <p role="alert" className="mt-4 text-sm text-red-300">{error}</p>}</section></main>;
+  if (helloEnabled) return <main className="min-h-screen bg-[#0f172a] text-white flex items-center justify-center p-6"><section className="w-full max-w-md rounded-2xl border border-slate-700 bg-[#1e293b] p-8 shadow-2xl"><h1 className="text-2xl font-bold">Odblokuj MojąTeczkę</h1><p className="mt-3 text-sm leading-6 text-slate-400">Potwierdź tożsamość za pomocą Windows Hello.</p><button onClick={() => void (async () => { setError(''); try { const result = await getElectronIpc()?.invoke('mojateczka-hello-verify'); if (isAccessResult(result) && result.ok) setUnlocked(true); else setError(isAccessResult(result) ? result.error || 'Weryfikacja nie została ukończona.' : 'Windows Hello jest niedostępne.'); } catch { setError('Nie udało się uruchomić Windows Hello.'); } })()} className="mt-6 w-full rounded-lg bg-blue-600 py-3 font-semibold hover:bg-blue-500">Odblokuj przez Windows Hello</button>{error && <p role="alert" className="mt-4 text-sm text-red-300">{error}</p>}</section></main>;
 
   const title = configured ? 'MojaTeczka jest zablokowana' : 'Zabezpiecz MojąTeczkę';
   const subtitle = configured
@@ -136,7 +136,7 @@ export default function AccessLock({ children, optionalSetup = false }: { childr
         <button
           onClick={() => void (async () => {
             setError('');
-            const res = await getElectronIpc()?.invoke('eteczka-hello-verify');
+            const res = await getElectronIpc()?.invoke('mojateczka-hello-verify');
             if (isAccessResult(res) && res.ok) setUnlocked(true);
             else setError(isAccessResult(res) && res.error ? res.error : 'Weryfikacja Windows Hello nie powiodła się.');
           })()}

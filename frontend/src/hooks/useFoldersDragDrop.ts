@@ -73,7 +73,7 @@ export function useFoldersDragDrop({
       slotRectsRef.current = [];
     }
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('application/x-eteczka-drag', `${item.kind}:${item.id}`);
+    e.dataTransfer.setData('application/x-mojateczka-drag', `${item.kind}:${item.id}`);
     e.dataTransfer.setDragImage(e.currentTarget, Math.round(e.currentTarget.clientWidth / 2), 28);
   };
 

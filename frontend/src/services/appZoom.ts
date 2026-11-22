@@ -1,4 +1,4 @@
-const APP_ZOOM_STORAGE_KEY = 'eteczka_app_zoom';
+const APP_ZOOM_STORAGE_KEY = 'mojateczka_app_zoom';
 export const APP_ZOOM_PRESETS = [80, 90, 100, 110, 125] as const;
 
 export function clampAppZoom(value: number): number {
@@ -14,11 +14,11 @@ export function getAppZoom(): number {
 export function applyAppZoom(percent: number): number {
   const safe = clampAppZoom(percent);
   const win = window as {
-    eteczkaElectron?: { setZoomFactor?: (factor: number) => void };
+    mojateczkaElectron?: { setZoomFactor?: (factor: number) => void };
     require?: (id: string) => unknown;
   };
   const electron = win.require?.('electron') as { webFrame?: { setZoomFactor: (factor: number) => void } } | undefined;
-  const setNativeZoom = win.eteczkaElectron?.setZoomFactor || electron?.webFrame?.setZoomFactor;
+  const setNativeZoom = win.mojateczkaElectron?.setZoomFactor || electron?.webFrame?.setZoomFactor;
   if (setNativeZoom) {
     document.documentElement.style.zoom = '';
     setNativeZoom(safe / 100);

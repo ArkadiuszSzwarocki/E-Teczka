@@ -6,12 +6,12 @@ Repozytorium utrzymuje wszystkie moduły ekosystemu **MojaTeczka** w jednym miej
 
 | Katalog | Rola | Cel wdrożenia |
 |---|---|---|
-| `frontend/` | Interfejs Web + PWA (React, Vite, Tailwind) — obsługuje Windows, macOS, Android i iOS Safari PWA | Obraz Docker `eteczka-test` + paczka Electron |
-| `backend/` | Lokalny i serwerowy backend dokumentów, OCR, paragonów, kopii zapasowych (Express + Prisma SQLite) | Obraz Docker `eteczka-test` + wbudowany serwer Electron |
+| `frontend/` | Interfejs Web + PWA (React, Vite, Tailwind) — obsługuje Windows, macOS, Android i iOS Safari PWA | Obraz Docker `mojateczka-test` + paczka Electron |
+| `backend/` | Lokalny i serwerowy backend dokumentów, OCR, paragonów, kopii zapasowych (Express + Prisma SQLite) | Obraz Docker `mojateczka-test` + wbudowany serwer Electron |
 | `desktop/` + `main.js` + `preload.js` | Powłoka desktopowa Electron (Windows Hello + macOS Touch ID, WIA na Windows, zasobnik, zaufana baza) | Instalator Windows (`nsis`) i macOS (`dmg`/`zip`) |
-| `central-accounts/` | Serwis centralnych kont, urządzeń, planów i rozliczeń (MariaDB) | Kontener `eteczka-accounts` na QNAP |
-| `share-service/` | Niezależny serwis bezpiecznego udostępniania linków | Kontener `eteczka-share-test` na QNAP |
-| `ETeczkaMobile/` | Natywna aplikacja mobilna (Expo / React Native) | Android APK / Google Play (i docelowo iOS App Store) |
+| `central-accounts/` | Serwis centralnych kont, urządzeń, planów i rozliczeń (MariaDB) | Kontener `mojateczka-accounts` na QNAP |
+| `share-service/` | Niezależny serwis bezpiecznego udostępniania linków | Kontener `mojateczka-share-test` na QNAP |
+| `MojaTeczkaMobile/` | Natywna aplikacja mobilna (Expo / React Native) | Android APK / Google Play (i docelowo iOS App Store) |
 | `packages/shared/` | Wspólne kontrakty domeny (`@mojateczka/shared`): kody błędów API, identyfikatory planów i stałe marki | Współdzielone między modułami |
 
 ## Komendy weryfikacyjne (z katalogu głównego)

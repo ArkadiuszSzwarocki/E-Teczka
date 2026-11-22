@@ -109,10 +109,10 @@ export async function sendFeedbackEmailCopy(input: {
   category: string;
   description: string;
 }): Promise<{ sent: boolean; message: string }> {
-  const host = process.env.ETECZKA_SMTP_HOST;
-  const user = process.env.ETECZKA_SMTP_USER;
-  const pass = process.env.ETECZKA_SMTP_PASSWORD;
-  const from = process.env.ETECZKA_SMTP_FROM;
+  const host = process.env.MOJATECZKA_SMTP_HOST;
+  const user = process.env.MOJATECZKA_SMTP_USER;
+  const pass = process.env.MOJATECZKA_SMTP_PASSWORD;
+  const from = process.env.MOJATECZKA_SMTP_FROM;
   if (!host || !user || !pass || !from) {
     return {
       sent: false,
@@ -124,7 +124,7 @@ export async function sendFeedbackEmailCopy(input: {
     const nodemailer = require('nodemailer') as {
       createTransport: (opts: unknown) => { sendMail: (mail: unknown) => Promise<unknown> };
     };
-    const port = Number(process.env.ETECZKA_SMTP_PORT || 465);
+    const port = Number(process.env.MOJATECZKA_SMTP_PORT || 465);
     const transport = nodemailer.createTransport({ host, port, secure: port === 465, auth: { user, pass } });
     await transport.sendMail({
       from,

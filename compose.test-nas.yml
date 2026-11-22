@@ -10,7 +10,7 @@ services:
       - .env.nas
     environment:
       NODE_ENV: test
-      ETECZKA_PUBLIC_TEST_MODE: "1"
+      MOJATECZKA_PUBLIC_TEST_MODE: "1"
       DATABASE_URL: "file:/app/backend/prisma/data/eteczka.db"
     volumes:
       - eteczka_test_db:/app/backend/prisma/data

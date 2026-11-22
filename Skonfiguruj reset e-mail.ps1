@@ -19,11 +19,11 @@ try {
   $quotedPassword = '"' + $plain.Replace([string][char]92, '\\').Replace('"', '\"') + '"'
   $lines = @(Get-Content -LiteralPath $envFile)
   $values = [ordered]@{
-    ETECZKA_SMTP_HOST = 'smtp.wp.pl'
-    ETECZKA_SMTP_PORT = '465'
-    ETECZKA_SMTP_USER = $account
-    ETECZKA_SMTP_PASSWORD = $quotedPassword
-    ETECZKA_SMTP_FROM = $account
+    MOJATECZKA_SMTP_HOST = 'smtp.wp.pl'
+    MOJATECZKA_SMTP_PORT = '465'
+    MOJATECZKA_SMTP_USER = $account
+    MOJATECZKA_SMTP_PASSWORD = $quotedPassword
+    MOJATECZKA_SMTP_FROM = $account
   }
   foreach ($name in $values.Keys) {
     $lines = @($lines | Where-Object { $_ -notmatch ('^\s*' + [regex]::Escape($name) + '\s*=') })

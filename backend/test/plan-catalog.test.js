@@ -1,7 +1,7 @@
 const test=require('node:test'),assert=require('node:assert/strict'),express=require('express');
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
-const sandbox=fs.mkdtempSync(path.join(os.tmpdir(),'eteczka-catalog-'));process.chdir(sandbox);
-process.env.ETECZKA_DEV_PLANS='1';process.env.NODE_ENV='development';
+const sandbox=fs.mkdtempSync(path.join(os.tmpdir(),'mojateczka-catalog-'));process.chdir(sandbox);
+process.env.MOJATECZKA_DEV_PLANS='1';process.env.NODE_ENV='development';
 const {defaultCatalog,validateCatalog,saveCatalog,getCatalog,quote}=require('../services/planCatalog');
 const policy=require('../services/planPolicy');const {createDeveloperCatalogRouter}=require('../routes/developerCatalog');
 test('catalog validates, persists, updates limits and trials, and limits discounts to their date range',async()=>{

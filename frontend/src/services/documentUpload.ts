@@ -104,7 +104,7 @@ function sendWithProgress(url: string, body: string, label: string, totalFiles: 
     signal?.addEventListener('abort', onAbort, { once: true });
     xhr.open('POST', url);
     xhr.setRequestHeader('Content-Type', 'application/json');
-    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('eteczka_auth_token') : null;
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('mojateczka_auth_token') : null;
     if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
     const payloadBytes = new Blob([body]).size;
     xhr.upload.onprogress = event => {

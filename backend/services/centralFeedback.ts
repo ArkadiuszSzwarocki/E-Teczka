@@ -33,7 +33,7 @@ export type CentralFeedbackItem = {
 };
 
 function adminSettings() {
-  const origin = centralAccountOrigin(process.env.ETECZKA_CENTRAL_ACCOUNT_URL);
+  const origin = centralAccountOrigin(process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL);
   if (!origin) return null;
   let key = process.env.CENTRAL_CATALOG_ADMIN_TOKEN;
   try {
@@ -49,7 +49,7 @@ function adminSettings() {
 
 /** Sends a user bug/feedback report with optional screenshot to the central QNAP API. */
 export async function submitCentralFeedback(payload: SubmitFeedbackPayload): Promise<{ id: number; status: string; createdAt: number }> {
-  const origin = centralAccountOrigin(process.env.ETECZKA_CENTRAL_ACCOUNT_URL);
+  const origin = centralAccountOrigin(process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL);
   if (!origin) throw new Error('Adres serwera QNAP nie jest skonfigurowany.');
   const response = await fetch(`${origin}/feedback`, {
     method: 'POST',

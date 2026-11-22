@@ -29,7 +29,7 @@ export function BackupSettingsTransferCard({ apiUrl, fetcher, isPremiumPlan = fa
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `eteczka-ustawienia-${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `mojateczka-ustawienia-${new Date().toISOString().slice(0, 10)}.json`;
       document.body.appendChild(a);
       a.click();
       a.remove();

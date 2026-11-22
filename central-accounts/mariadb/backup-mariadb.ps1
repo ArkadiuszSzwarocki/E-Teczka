@@ -28,7 +28,7 @@ if (-not $dumpTool) { throw 'Nie znaleziono mariadb-dump ani mysqldump w PATH.' 
 $backupDir = Join-Path $PSScriptRoot 'backups'
 New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$sqlFile = Join-Path $backupDir "eteczka-$stamp.sql"
+$sqlFile = Join-Path $backupDir "mojateczka-$stamp.sql"
 $zipFile = "$sqlFile.zip"
 
 $env:MYSQL_PWD = $dbPass
@@ -43,5 +43,5 @@ Compress-Archive -LiteralPath $sqlFile -DestinationPath $zipFile -Force
 Remove-Item -LiteralPath $sqlFile -Force
 
 $cutoff = (Get-Date).AddDays(-$KeepDays)
-Get-ChildItem -LiteralPath $backupDir -Filter 'eteczka-*.sql.zip' | Where-Object { $_.LastWriteTime -lt $cutoff } | Remove-Item -Force
+Get-ChildItem -LiteralPath $backupDir -Filter 'mojateczka-*.sql.zip' | Where-Object { $_.LastWriteTime -lt $cutoff } | Remove-Item -Force
 Write-Host "Kopia bazy zapisana: $zipFile" -ForegroundColor Green

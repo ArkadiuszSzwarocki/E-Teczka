@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 /** Polls dev bug counts and unread user feedback replies in the background. */
 export function useFeedbackNotifications(apiUrl: string, apiFetch: typeof fetch) {
   const [openBugCount, setOpenBugCount] = useState<number>(() => {
-    const saved = Number(localStorage.getItem('eteczka_dev_open_bugs'));
+    const saved = Number(localStorage.getItem('mojateczka_dev_open_bugs'));
     return Number.isFinite(saved) && saved >= 0 ? saved : 0;
   });
   const [adminReplyCount, setAdminReplyCount] = useState<number>(0);
@@ -11,11 +11,11 @@ export function useFeedbackNotifications(apiUrl: string, apiFetch: typeof fetch)
 
   const updateOpenBugCount = useCallback((count: number) => {
     setOpenBugCount(count);
-    localStorage.setItem('eteczka_dev_open_bugs', String(count));
+    localStorage.setItem('mojateczka_dev_open_bugs', String(count));
   }, []);
 
   const markUserFeedbackSeen = useCallback(() => {
-    localStorage.setItem('eteczka_feedback_user_seen_at', new Date().toISOString());
+    localStorage.setItem('mojateczka_feedback_user_seen_at', new Date().toISOString());
     setUserFeedbackReplyCount(0);
   }, []);
 
@@ -46,7 +46,7 @@ export function useFeedbackNotifications(apiUrl: string, apiFetch: typeof fetch)
         if (!res.ok) return;
         const payload = await res.json().catch(() => ({})) as { items?: Array<{ messages?: Array<{ author?: string; createdAt?: string }> }> };
         if (!active || !Array.isArray(payload.items)) return;
-        const seenAt = Date.parse(localStorage.getItem('eteczka_feedback_user_seen_at') || '') || 0;
+        const seenAt = Date.parse(localStorage.getItem('mojateczka_feedback_user_seen_at') || '') || 0;
         const unread = payload.items.filter(item => {
           const last = item.messages?.at(-1);
           if (!last || last.author !== 'admin') return false;

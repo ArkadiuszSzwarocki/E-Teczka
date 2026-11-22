@@ -41,8 +41,8 @@ export function useWiaScanner({
     const handleStage = (_event: unknown, stage: unknown) => {
       if (typeof stage === 'string') setWiaStage(stage);
     };
-    ipc.on('eteczka-wia-status', handleStage);
-    return () => ipc.removeListener('eteczka-wia-status', handleStage);
+    ipc.on('mojateczka-wia-status', handleStage);
+    return () => ipc.removeListener('mojateczka-wia-status', handleStage);
   }, []);
 
   const openWiaScanner = async () => {
@@ -60,7 +60,7 @@ export function useWiaScanner({
       if (!isMobile || ipc) {
         try {
           devices = ipc
-            ? (isWiaDeviceList(await ipc.invoke('eteczka-wia-devices')) ? await ipc.invoke('eteczka-wia-devices') as WiaDevice[] : [])
+            ? (isWiaDeviceList(await ipc.invoke('mojateczka-wia-devices')) ? await ipc.invoke('mojateczka-wia-devices') as WiaDevice[] : [])
             : await fetchWiaDevices(apiUrl, fetch);
         } catch {
           devices = [];
@@ -69,8 +69,8 @@ export function useWiaScanner({
       const cameraOption: WiaDevice = { id: CAMERA_DEVICE_ID, name: '📷 Aparat telefonu / kamera' };
       const allDevices = [...devices, cameraOption];
       setWiaDevices(allDevices);
-      const remembered = localStorage.getItem('eteczka_default_scanner');
-      const defaultPrinter = ipc ? await ipc.invoke('eteczka-default-printer') : null;
+      const remembered = localStorage.getItem('mojateczka_default_scanner');
+      const defaultPrinter = ipc ? await ipc.invoke('mojateczka-default-printer') : null;
       const printerName = typeof defaultPrinter === 'string'
         ? defaultPrinter.toLowerCase().replace(/[^a-z0-9]/g, '').replace(/(series|lan|network|usb)$/g, '')
         : '';
@@ -117,7 +117,7 @@ export function useWiaScanner({
       let base64: string;
       if (ipc) {
         if (!scanPath) {
-          const scanResponse = await ipc.invoke('eteczka-wia-scan', wiaDeviceId);
+          const scanResponse = await ipc.invoke('mojateczka-wia-scan', wiaDeviceId);
           if (!isWiaScanResult(scanResponse)) throw new Error('Nieprawidłowa odpowiedź skanera.');
           if (!scanResponse.ok || !scanResponse.path) throw new Error('Nie odebrano obrazu ze skanera.');
           scanPath = scanResponse.path;

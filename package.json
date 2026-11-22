@@ -1,5 +1,5 @@
 {
-  "name": "eteczka-master",
+  "name": "mojateczka",
   "version": "1.0.0",
   "private": true,
   "workspaces": [
@@ -11,7 +11,7 @@
     "start:backend": "cd backend && npx nodemon --watch . --ext ts,json --ignore uploads/** --ignore security/** --ignore node_modules/** --ignore test/** --exec \"ts-node --preferTsExts\" index.ts",
     "start:accounts": "cd central-accounts && npm start",
     "start:frontend": "cd frontend && npm run dev",
-    "start:electron-dev": "wait-on tcp:3000 http://127.0.0.1:5173 && set ETECZKA_DEV_URL=http://127.0.0.1:5173&& set ETECZKA_EXTERNAL_BACKEND=1&& electron .",
+    "start:electron-dev": "wait-on tcp:3000 http://127.0.0.1:5173 && set MOJATECZKA_DEV_URL=http://127.0.0.1:5173&& set MOJATECZKA_EXTERNAL_BACKEND=1&& electron .",
     "dev:desktop:existing-backend": "concurrently -k \"npm run start:frontend\" \"npm run start:electron-dev\"",
     "dev:desktop:existing-backend-accounts": "concurrently -k \"npm run start:accounts\" \"npm run start:frontend\" \"npm run start:electron-dev\"",
     "test:desktop": "node --test desktop/test/*.test.js",

@@ -203,7 +203,7 @@ export function createBackupRouter(prisma: PrismaClient) {
       const result = await downloadCloudBackup(destination, credentials, requested);
       if (!result.ok) return res.status(result.status).json({ error: result.error });
       res.setHeader('Content-Type', 'application/octet-stream');
-      res.setHeader('Content-Disposition', 'attachment; filename="eteczka-cloud-backup.zip.enc"');
+      res.setHeader('Content-Disposition', 'attachment; filename="mojateczka-cloud-backup.zip.enc"');
       res.send(result.buffer);
     } catch (error) { console.error('[backup] cloud download:', error); res.status(502).json({ error: 'Nie udało się pobrać kopii z chmury.' }); }
   });
@@ -213,7 +213,7 @@ export function createBackupRouter(prisma: PrismaClient) {
       const { manifest, files } = await buildBackupArchive(prisma, ownerId(res), ocrOwnerKey(res));
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/zip');
-      res.setHeader('Content-Disposition', `attachment; filename="eteczka-backup-${new Date().toISOString().slice(0, 10)}.zip"`);
+      res.setHeader('Content-Disposition', `attachment; filename="mojateczka-backup-${new Date().toISOString().slice(0, 10)}.zip"`);
       const archive = new (archiver as any).ZipArchive({ zlib: { level: 6 } });
       archive.on('error', (error: Error) => { if (!res.headersSent) res.status(500); res.end(); console.error('[backup] export:', error); });
       archive.pipe(res);

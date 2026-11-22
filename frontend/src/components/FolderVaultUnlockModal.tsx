@@ -32,7 +32,7 @@ export default function FolderVaultUnlockModal({ apiUrl, fetcher, folderId, fold
     setError('');
     const ipc = getElectronIpc();
     if (!ipc) { setError('Biometria Windows Hello działa w aplikacji desktopowej.'); return; }
-    const res = await ipc.invoke('eteczka-hello-verify');
+    const res = await ipc.invoke('mojateczka-hello-verify');
     if (isAccessResult(res) && res.ok) setBiometricVerified(true);
     else setError((isAccessResult(res) && res.error) || 'Nie udało się potwierdzić biometrii.');
   };

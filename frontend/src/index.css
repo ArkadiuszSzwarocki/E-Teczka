@@ -569,5 +569,5 @@ html[data-custom-bg="true"] body,
 html[data-custom-bg="true"] .cyber-dashboard-bg,
 html[data-custom-bg="true"][data-theme] .cyber-dashboard-bg,
 html[data-custom-bg="true"][data-theme]:not([data-classic-icons="true"]) .cyber-dashboard-bg {
-  background-color: var(--eteczka-custom-bg) !important;
+  background-color: var(--mojateczka-custom-bg) !important;
 }

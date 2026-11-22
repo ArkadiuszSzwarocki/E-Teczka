@@ -13,11 +13,11 @@
 - **Tytuł w sklepie (max 30 znaków):** `MojaTeczka: Skaner i Dokumenty`
 - **Krótki opis (max 80 znaków):** `Domowe archiwum dokumentów, paragonów i faktur OCR z ochroną RODO i kopią NAS.`
 - **Słowa kluczowe:** skaner dokumentów, paragony OCR, faktury, gwarancje, umowy, domowe archiwum, kartoteki, RODO, sejf, kopia zapasowa NAS.
-- **Grafiki:** ikona 3D **MT** (`ETeczkaMobile/assets/icon.png` 1024×1024), baner `og-image.png` (`1200×630` jako baza dla banera `1024×500` w Google Play).
+- **Grafiki:** ikona 3D **MT** (`MojaTeczkaMobile/assets/icon.png` 1024×1024), baner `og-image.png` (`1200×630` jako baza dla banera `1024×500` w Google Play).
 
 ## 3. Wymagania formalne sklepów
 - Publiczny link HTTPS do **Polityki prywatności** oraz strony **usuwania konta** (udostępniane przez `central-accounts`).
 - **Google Play:** podpisany plik `.aab` + produkty subskrypcyjne zsynchronizowane z `googlePlayBilling.ts`.
 - **iOS (App Store):**
-  - Gotowe dziś: pełne PWA w Safari (z `manifest.webmanifest`, ikoną **MT**, aparatem OCR i obsługą planu Rodzinnego przez Stripe) oraz konfiguracja `ios.bundleIdentifier: "pl.arecki.mojateczka"` i uprawnienia `infoPlist` w `ETeczkaMobile/app.json`.
+  - Gotowe dziś: pełne PWA w Safari (z `manifest.webmanifest`, ikoną **MT**, aparatem OCR i obsługą planu Rodzinnego przez Stripe) oraz konfiguracja `ios.bundleIdentifier: "pl.arecki.mojateczka"` i uprawnienia `infoPlist` w `MojaTeczkaMobile/app.json`.
   - Przy publikacji natywnej w App Store: konto Apple Developer (\$99/rok), moduł Swift dla TLS pinningu (odpowiednik `LocalTls.kt`), integracja Apple StoreKit 2 oraz kompilacja przez Expo EAS Build (`eas build --platform ios`).

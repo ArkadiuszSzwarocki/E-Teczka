@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 
 const trustedProxyIps = new Set(
-  (process.env.ETECZKA_TRUSTED_PROXY_IPS || '')
+  (process.env.MOJATECZKA_TRUSTED_PROXY_IPS || '')
     .split(',')
     .map(ip => ip.trim())
     .filter(Boolean),

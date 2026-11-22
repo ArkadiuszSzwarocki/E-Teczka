@@ -2,7 +2,7 @@ param(
   [Parameter(Mandatory = $true)]
   [string]$NasHost,
   [string]$NasUser = 'admin',
-  [string]$RemoteDir = '/share/Container/eteczka-test',
+  [string]$RemoteDir = '/share/Container/mojateczka-test',
   [int]$SshPort = 22,
   [switch]$Sudo,
   [switch]$SkipUpload
@@ -16,7 +16,7 @@ if (-not (Test-Path -LiteralPath $envTunnel)) {
   throw 'Brak pliku .env.tunnel z CLOUDFLARE_TEST_TUNNEL_TOKEN.'
 }
 
-$stageDir = Join-Path $env:TEMP ("eteczka-test-qnap-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+$stageDir = Join-Path $env:TEMP ("mojateczka-test-qnap-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
 $archivePath = "$stageDir.tar"
 
 try {
@@ -53,7 +53,7 @@ try {
     if ($rc1 -ge 8) { throw "Blad kopiowania backend (robocopy exit $rc1)." }
     if ($rc2 -ge 8) { throw "Blad kopiowania frontend (robocopy exit $rc2)." }
 
-    $apkRel = 'ETeczkaMobile\android\app\build\outputs\apk\debug\app-debug.apk'
+    $apkRel = 'MojaTeczkaMobile\android\app\build\outputs\apk\debug\app-debug.apk'
     $apkSrc = Join-Path $PSScriptRoot $apkRel
     if (Test-Path -LiteralPath $apkSrc) {
       $apkDst = Join-Path $stageDir $apkRel
@@ -72,7 +72,7 @@ try {
     Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
     $sshDir = Join-Path $env:USERPROFILE '.ssh'
-    $sshKey = Join-Path $sshDir 'id_ed25519_eteczka_qnap'
+    $sshKey = Join-Path $sshDir 'id_ed25519_mojateczka_qnap'
     if (-not (Test-Path -LiteralPath $sshKey)) {
       New-Item -ItemType Directory -Path $sshDir -Force | Out-Null
       $prevEap = $ErrorActionPreference
@@ -112,7 +112,7 @@ try {
     & scp @scpArgs
     if ($LASTEXITCODE -ne 0) { throw 'Nie udalo sie przeslac paczki na QNAP.' }
   } else {
-    $sshKey = Join-Path $env:USERPROFILE '.ssh\id_ed25519_eteczka_qnap'
+    $sshKey = Join-Path $env:USERPROFILE '.ssh\id_ed25519_mojateczka_qnap'
     $useKey = (Test-Path -LiteralPath $sshKey)
     Write-Host "Pomijam wysylke - uruchamiam z istniejacego archiwum na QNAP ($target -> $RemoteDir)..." -ForegroundColor Cyan
   }
@@ -132,9 +132,9 @@ chmod 600 .env .env.nas
 export HOME='$RemoteDir/.home'
 export DOCKER_CONFIG='$RemoteDir/.docker'
 mkdir -p "`$HOME" "`$DOCKER_CONFIG"
-if ${dockerPrefix}docker ps -q -f name='^eteczka-test$' | grep -q .; then
-  if ! ${dockerPrefix}docker exec eteczka-test test -s /app/backend/prisma/data/eteczka.db && ${dockerPrefix}docker exec eteczka-test test -s /app/backend/prisma/eteczka.db; then
-    ${dockerPrefix}docker exec eteczka-test cp /app/backend/prisma/eteczka.db /app/backend/prisma/data/eteczka.db
+if ${dockerPrefix}docker ps -q -f name='^mojateczka-test$' | grep -q .; then
+  if ! ${dockerPrefix}docker exec mojateczka-test test -s /app/backend/prisma/data/eteczka.db && ${dockerPrefix}docker exec mojateczka-test test -s /app/backend/prisma/eteczka.db; then
+    ${dockerPrefix}docker exec mojateczka-test cp /app/backend/prisma/eteczka.db /app/backend/prisma/data/eteczka.db
   fi
 fi
 ${dockerPrefix}docker compose -f compose.test-nas.yml up -d --build

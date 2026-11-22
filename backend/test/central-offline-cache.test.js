@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict'),crypto=require('node:crypto'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
-process.chdir(fs.mkdtempSync(path.join(os.tmpdir(),'eteczka-offline-cache-')));process.env.AUTH_SECRET='isolated-offline-cache-test-key';
+process.chdir(fs.mkdtempSync(path.join(os.tmpdir(),'mojateczka-offline-cache-')));process.env.AUTH_SECRET='isolated-offline-cache-test-key';
 const {registerCentralDevice,centralPlanRequest,centralEntitlement}=require('../services/centralEntitlements');
 const catalog=require('../../central-accounts/catalog.defaults.json');
 test('offline snapshots cannot preserve paid access after downgrade or bypass explicit device revocation',async()=>{

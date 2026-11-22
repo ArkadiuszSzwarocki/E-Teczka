@@ -19,7 +19,7 @@ export async function ensurePlanLedger(db: Db): Promise<void> {
   await db.$executeRawUnsafe('CREATE TABLE IF NOT EXISTS PlanPrinterClaim (ownerKey TEXT NOT NULL, jobId TEXT NOT NULL, draftId TEXT NOT NULL, PRIMARY KEY(ownerKey, jobId))');
   await db.$executeRawUnsafe('CREATE TABLE IF NOT EXISTS PlanScanReceipt (ownerKey TEXT NOT NULL, draftId TEXT NOT NULL, documentId INTEGER NOT NULL, fingerprint TEXT NOT NULL, PRIMARY KEY(ownerKey, draftId))');
 }
-const isPublicTestMode = () => process.env.ETECZKA_PUBLIC_TEST_MODE === '1' && process.env.NODE_ENV !== 'production';
+const isPublicTestMode = () => process.env.MOJATECZKA_PUBLIC_TEST_MODE === '1' && process.env.NODE_ENV !== 'production';
 
 export async function getPlan(db: Db, ownerKey: string, now = new Date()): Promise<Plan> {
   const override = devPlan(ownerKey); if (override) return override;

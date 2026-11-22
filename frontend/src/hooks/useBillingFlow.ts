@@ -40,8 +40,8 @@ export function useBillingFlow({ apiUrl, fetcher: fetch, fetchData, showToast, c
 
   useEffect(() => {
     const handler = (event: Event) => setPlanLimitMessage(String((event as CustomEvent<string>).detail));
-    window.addEventListener('eteczka-plan-limit', handler);
-    return () => window.removeEventListener('eteczka-plan-limit', handler);
+    window.addEventListener('mojateczka-plan-limit', handler);
+    return () => window.removeEventListener('mojateczka-plan-limit', handler);
   }, []);
 
   const openBillingCheckout = useCallback(async (plan: PaidBillingPlan, interval: 'monthly' | 'yearly', acceptReplacement = false, fromLimit = false) => {
@@ -51,10 +51,10 @@ export function useBillingFlow({ apiUrl, fetcher: fetch, fetchData, showToast, c
     const popup = electronIpc ? null : window.open('', '_blank', 'noopener,noreferrer');
     try {
       const checkout = await startCheckout(apiUrl, fetch, plan, interval, acceptReplacement);
-      if (checkout.kind === 'upgrade') localStorage.setItem('eteczka_pending_upgrade', String(Date.now()));
-      else localStorage.setItem('eteczka_pending_checkout', JSON.stringify({ sessionId: checkout.sessionId, startedAt: Date.now() }));
+      if (checkout.kind === 'upgrade') localStorage.setItem('mojateczka_pending_upgrade', String(Date.now()));
+      else localStorage.setItem('mojateczka_pending_checkout', JSON.stringify({ sessionId: checkout.sessionId, startedAt: Date.now() }));
       if (electronIpc) {
-        await electronIpc.invoke('eteczka-open-external', checkout.url);
+        await electronIpc.invoke('mojateczka-open-external', checkout.url);
       } else if (popup) {
         popup.location.href = checkout.url;
       } else {
@@ -75,15 +75,15 @@ export function useBillingFlow({ apiUrl, fetcher: fetch, fetchData, showToast, c
     let active = true;
     let busy = false;
     const sync = async () => {
-      const started = Number(localStorage.getItem('eteczka_pending_upgrade') || 0);
+      const started = Number(localStorage.getItem('mojateczka_pending_upgrade') || 0);
       if (!started || busy) return;
-      if (Date.now() - started > 30 * 60 * 1000) { localStorage.removeItem('eteczka_pending_upgrade'); return; }
+      if (Date.now() - started > 30 * 60 * 1000) { localStorage.removeItem('mojateczka_pending_upgrade'); return; }
       busy = true;
       try {
         const response = await fetch(`${apiUrl}/api/billing/sync-upgrade`, { method: 'POST' });
         const result = await response.json();
         if (active && result.upgraded) {
-          localStorage.removeItem('eteczka_pending_upgrade');
+          localStorage.removeItem('mojateczka_pending_upgrade');
           await fetchData();
           showToast('Plan Premium jest aktywny.', 'success');
         }
@@ -167,18 +167,18 @@ export function useBillingFlow({ apiUrl, fetcher: fetch, fetchData, showToast, c
     let confirmingPending = false;
     const confirmPendingCheckout = async () => {
       if (confirmingPending) return;
-      const raw = localStorage.getItem('eteczka_pending_checkout');
+      const raw = localStorage.getItem('mojateczka_pending_checkout');
       if (!raw) return;
       let pending: { sessionId: string; startedAt: number };
-      try { pending = JSON.parse(raw); } catch { localStorage.removeItem('eteczka_pending_checkout'); return; }
+      try { pending = JSON.parse(raw); } catch { localStorage.removeItem('mojateczka_pending_checkout'); return; }
       if (typeof pending.sessionId !== 'string' || typeof pending.startedAt !== 'number' || Date.now() - pending.startedAt > 60 * 60_000) {
-        localStorage.removeItem('eteczka_pending_checkout');
+        localStorage.removeItem('mojateczka_pending_checkout');
         return;
       }
       confirmingPending = true;
       try {
         await confirmCheckout(apiUrl, fetch, pending.sessionId);
-        localStorage.removeItem('eteczka_pending_checkout');
+        localStorage.removeItem('mojateczka_pending_checkout');
         showToast('Płatność potwierdzona. Plan został aktywowany.', 'success');
         await fetchData();
       } catch { /* retry while session is recent */ } finally {

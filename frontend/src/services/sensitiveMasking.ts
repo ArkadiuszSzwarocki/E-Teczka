@@ -1,11 +1,11 @@
 import { getRodoCategories, maskRodoText } from './rodoProtection';
 
-const MASKING_KEY = 'eteczka_sensitive_masking_v1';
-const AUTO_SUGGEST_KEY = 'eteczka_auto_suggest_folder_v1';
-const ALLOW_SERVER_AI_KEY = 'eteczka_allow_server_ai_v1';
-const AUTO_MAIL_SYNC_KEY = 'eteczka_auto_mail_sync_v1';
+const MASKING_KEY = 'mojateczka_sensitive_masking_v1';
+const AUTO_SUGGEST_KEY = 'mojateczka_auto_suggest_folder_v1';
+const ALLOW_SERVER_AI_KEY = 'mojateczka_allow_server_ai_v1';
+const AUTO_MAIL_SYNC_KEY = 'mojateczka_auto_mail_sync_v1';
 
-export const MASKING_CHANGED_EVENT = 'eteczka-masking-changed';
+export const MASKING_CHANGED_EVENT = 'mojateczka-masking-changed';
 
 export function getSensitiveMaskingEnabled(): boolean {
   try {

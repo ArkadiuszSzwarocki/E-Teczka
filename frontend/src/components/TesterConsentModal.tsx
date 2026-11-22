@@ -59,7 +59,7 @@ export default function TesterConsentModal({ userEmail, busy, error, onAccept, o
               <div className="flex-1">
                 <p className="font-bold text-white">Utwórz bazę w folderze na moim dysku (Zalecane — pełna prywatność)</p>
                 <p className="mt-1 text-xs text-slate-300">
-                  Aplikacja utworzy plik bazy (`eteczka-db.json`) i podfolder `uploads/` bezpośrednio we wskazanym folderze na Twoim komputerze. Dane nie są wysyłane na QNAP i nie znikną po wyczyszczeniu przeglądarki ani po aktualizacji serwera.
+                  Aplikacja utworzy plik bazy (`mojateczka-db.json`) i podfolder `uploads/` bezpośrednio we wskazanym folderze na Twoim komputerze. Dane nie są wysyłane na QNAP i nie znikną po wyczyszczeniu przeglądarki ani po aktualizacji serwera.
                 </p>
                 {diskSupported ? (
                   <div className="mt-2.5 flex flex-wrap items-center gap-2">

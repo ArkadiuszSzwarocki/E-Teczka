@@ -23,7 +23,7 @@ function createWindowAndTrayController({ app, BrowserWindow, Tray, Menu, ipcMain
           if (!settled) {
             settled = true;
             clearTimeout(timer);
-            ipcMain.removeHandler('eteczka-quit-ready');
+            ipcMain.removeHandler('mojateczka-quit-ready');
             if (mainWindow && !mainWindow.isDestroyed()) {
               mainWindow.removeListener('closed', done);
             }
@@ -32,8 +32,8 @@ function createWindowAndTrayController({ app, BrowserWindow, Tray, Menu, ipcMain
         };
         const timer = setTimeout(done, 60_000);
         mainWindow.once('closed', done);
-        ipcMain.handle('eteczka-quit-ready', () => { done(); return true; });
-        mainWindow.webContents.send('eteczka-prepare-quit');
+        ipcMain.handle('mojateczka-quit-ready', () => { done(); return true; });
+        mainWindow.webContents.send('mojateczka-prepare-quit');
       });
     }
     quitting = true;
@@ -64,14 +64,14 @@ function createWindowAndTrayController({ app, BrowserWindow, Tray, Menu, ipcMain
       if (now - lastSessionInput < 500) return;
       lastSessionInput = now;
       if (mainWindow && !mainWindow.webContents.isDestroyed()) {
-        mainWindow.webContents.send('eteczka-user-activity');
+        mainWindow.webContents.send('mojateczka-user-activity');
       }
     };
     mainWindow.webContents.on('before-mouse-event', sessionInput);
     mainWindow.webContents.on('before-input-event', sessionInput);
 
     mainWindow.maximize();
-    if (process.env.ETECZKA_PROFILE_DIR) {
+    if (process.env.MOJATECZKA_PROFILE_DIR) {
       mainWindow.on('page-title-updated', event => {
         event.preventDefault();
         mainWindow.setTitle('MojaTeczka - TEST NOWEGO UZYTKOWNIKA');
@@ -79,8 +79,8 @@ function createWindowAndTrayController({ app, BrowserWindow, Tray, Menu, ipcMain
       mainWindow.setTitle('MojaTeczka - TEST NOWEGO UZYTKOWNIKA');
     }
 
-    if (process.env.ETECZKA_DEV_URL) {
-      mainWindow.loadURL(process.env.ETECZKA_DEV_URL);
+    if (process.env.MOJATECZKA_DEV_URL) {
+      mainWindow.loadURL(process.env.MOJATECZKA_DEV_URL);
       mainWindow.webContents.openDevTools({ mode: 'detach' });
     } else {
       mainWindow.loadFile(path.join(rootDir, 'frontend', 'dist', 'index.html'));
@@ -90,7 +90,7 @@ function createWindowAndTrayController({ app, BrowserWindow, Tray, Menu, ipcMain
     mainWindow.on('close', (event) => {
       if (quitting || !tray) return;
       event.preventDefault();
-      if (!mainWindow.isDestroyed()) mainWindow.webContents.send('eteczka-confirm-close');
+      if (!mainWindow.isDestroyed()) mainWindow.webContents.send('mojateczka-confirm-close');
     });
   }
 
@@ -115,7 +115,7 @@ function createWindowAndTrayController({ app, BrowserWindow, Tray, Menu, ipcMain
     }
   }
 
-  ipcMain.handle('eteczka-show-main-window', event => {
+  ipcMain.handle('mojateczka-show-main-window', event => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) return;
     if (win.isMinimized()) win.restore();
@@ -126,7 +126,7 @@ function createWindowAndTrayController({ app, BrowserWindow, Tray, Menu, ipcMain
     win.setAlwaysOnTop(false);
   });
 
-  ipcMain.handle('eteczka-capture-screenshot', async event => {
+  ipcMain.handle('mojateczka-capture-screenshot', async event => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win || !ownRenderer(event)) return null;
     const image = await win.webContents.capturePage();
@@ -137,7 +137,7 @@ function createWindowAndTrayController({ app, BrowserWindow, Tray, Menu, ipcMain
     };
   });
 
-  ipcMain.handle('eteczka-open-external', async (event, rawUrl) => {
+  ipcMain.handle('mojateczka-open-external', async (event, rawUrl) => {
     if (!ownRenderer(event) || typeof rawUrl !== 'string') return false;
     let parsed;
     try {
@@ -152,7 +152,7 @@ function createWindowAndTrayController({ app, BrowserWindow, Tray, Menu, ipcMain
     return true;
   });
 
-  ipcMain.handle('eteczka-minimize-to-tray', (event) => {
+  ipcMain.handle('mojateczka-minimize-to-tray', (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win || !ownRenderer(event) || win.isDestroyed()) return false;
     win.hide();
@@ -162,7 +162,7 @@ function createWindowAndTrayController({ app, BrowserWindow, Tray, Menu, ipcMain
     return true;
   });
 
-  ipcMain.handle('eteczka-quit-app', (event) => {
+  ipcMain.handle('mojateczka-quit-app', (event) => {
     if (!ownRenderer(event)) return false;
     void quitGracefully();
     return true;

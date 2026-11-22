@@ -1,6 +1,6 @@
 export type CustomFolderIcon = { id: string; dataUrl: string };
 
-const STORAGE_KEY = 'eteczka_custom_icons_v1';
+const STORAGE_KEY = 'mojateczka_custom_icons_v1';
 export const DEFAULT_FOLDER_ICONS = ['📁', '📂', '🗂️', '💼', '🏠', '📄', '🔒', '⭐', '🏢', '🚗', '🧾', '💊'];
 
 export function customIconLimit(plan: 'free' | 'standard' | 'premium' | 'family' | 'business'): number | null {

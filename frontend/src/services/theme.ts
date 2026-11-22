@@ -1,6 +1,6 @@
 export type ThemePreference = 'dark' | 'light' | 'system';
 
-const THEME_KEY = 'eteczka_theme_v1';
+const THEME_KEY = 'mojateczka_theme_v1';
 
 export function getThemePreference(): ThemePreference {
   const saved = localStorage.getItem(THEME_KEY);
@@ -22,7 +22,7 @@ export function applyTheme(pref: ThemePreference): void {
 export function setThemePreference(pref: ThemePreference): void {
   localStorage.setItem(THEME_KEY, pref);
   applyTheme(pref);
-  window.dispatchEvent(new Event('eteczka-theme-changed'));
+  window.dispatchEvent(new Event('mojateczka-theme-changed'));
 }
 
 /** Applies persisted theme on startup and tracks OS changes in system mode. */

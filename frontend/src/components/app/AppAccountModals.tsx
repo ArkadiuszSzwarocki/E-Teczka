@@ -154,8 +154,8 @@ export function AppAccountModals(p: Props) {
       )}
       {p.session.isCloseModalOpen && (
         <CloseAppModal
-          onMinimize={() => { p.session.setIsCloseModalOpen(false); void getElectronIpc()?.invoke('eteczka-minimize-to-tray'); }}
-          onQuit={() => { p.session.setIsCloseModalOpen(false); void getElectronIpc()?.invoke('eteczka-quit-app'); }}
+          onMinimize={() => { p.session.setIsCloseModalOpen(false); void getElectronIpc()?.invoke('mojateczka-minimize-to-tray'); }}
+          onQuit={() => { p.session.setIsCloseModalOpen(false); void getElectronIpc()?.invoke('mojateczka-quit-app'); }}
           onCancel={() => p.session.setIsCloseModalOpen(false)}
         />
       )}

@@ -1,7 +1,7 @@
 @echo off
 setlocal
-title E-Teczka Mobile — deweloperka
-set "MOBILE_DIR=%~dp0ETeczkaMobile"
+title MojaTeczka Mobile — deweloperka
+set "MOBILE_DIR=%~dp0MojaTeczkaMobile"
 set "GRADLE_USER_HOME=%~dp0.local\gradle"
 set "TEMP=%~dp0.local\temp"
 set "TMP=%TEMP%"

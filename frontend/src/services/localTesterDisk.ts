@@ -1,6 +1,6 @@
 import { emptyLocalDb, type DirectoryPickerWindow, type LocalDatabase } from '../types/localTesterDb';
 
-const DB_NAME = 'eteczka_tester_local_db_v1';
+const DB_NAME = 'mojateczka_tester_local_db_v1';
 const STORE_NAME = 'workspaces';
 const HANDLE_STORE = 'handles';
 const dbLocks = new Map<string, Promise<unknown>>();
@@ -109,11 +109,11 @@ export async function requestSavedDiskPermission(userEmail: string): Promise<boo
   return ok;
 }
 
-/** Prompts the user to pick a local disk folder and initializes `eteczka-db.json` + `uploads/` inside it. */
+/** Prompts the user to pick a local disk folder and initializes `mojateczka-db.json` + `uploads/` inside it. */
 export async function pickTesterDiskDirectory(userEmail: string): Promise<string> {
   const picker = (window as DirectoryPickerWindow).showDirectoryPicker;
   if (!picker) throw new Error('Twoja przeglądarka nie obsługuje zapisu bezpośrednio do folderu na dysku. Użyj Chrome lub Edge na komputerze.');
-  const handle = await picker({ id: 'eteczka-local-db', mode: 'readwrite' });
+  const handle = await picker({ id: 'mojateczka-local-db', mode: 'readwrite' });
   if (!(await verifyHandlePermission(handle, true))) throw new Error('Nie przyznano uprawnień zapisu do wybranego folderu.');
 
   const key = `user:${userEmail.trim().toLowerCase()}`;
@@ -121,9 +121,9 @@ export async function pickTesterDiskDirectory(userEmail: string): Promise<string
   memoryDbCache.delete(key);
   await handle.getDirectoryHandle('uploads', { create: true });
   try {
-    await handle.getFileHandle('eteczka-db.json', { create: false });
+    await handle.getFileHandle('mojateczka-db.json', { create: false });
   } catch {
-    const fileHandle = await handle.getFileHandle('eteczka-db.json', { create: true });
+    const fileHandle = await handle.getFileHandle('mojateczka-db.json', { create: true });
     const writable = await fileHandle.createWritable();
     await writable.write(JSON.stringify(emptyLocalDb(), null, 2));
     await writable.close();
@@ -136,7 +136,7 @@ export async function readLocalDb(key: string): Promise<LocalDatabase> {
     const diskHandle = await getDiskHandle(key);
     if (diskHandle && await verifyHandlePermission(diskHandle, false)) {
       try {
-        const fileHandle = await diskHandle.getFileHandle('eteczka-db.json', { create: false });
+        const fileHandle = await diskHandle.getFileHandle('mojateczka-db.json', { create: false });
         const text = await (await fileHandle.getFile()).text();
         if (text.trim()) {
           const parsed = JSON.parse(text) as LocalDatabase;
@@ -188,7 +188,7 @@ export async function writeLocalDb(key: string, db: LocalDatabase, changedFiles?
         ...db,
         blobs: Object.fromEntries(Object.entries(db.blobs).map(([k, v]) => [k, { mimeType: v.mimeType, dataUrl: '', size: v.size }])),
       };
-      const dbFile = await diskHandle.getFileHandle('eteczka-db.json', { create: true });
+      const dbFile = await diskHandle.getFileHandle('mojateczka-db.json', { create: true });
       const writable = await dbFile.createWritable();
       await writable.write(JSON.stringify(compact, null, 2));
       await writable.close();
@@ -221,13 +221,13 @@ export async function readBlobDataUrl(key: string, db: LocalDatabase, filename: 
   return null;
 }
 
-/** Permanently deletes all local disk files (`eteczka-db.json` + `uploads/`) and IndexedDB state for the user. */
+/** Permanently deletes all local disk files (`mojateczka-db.json` + `uploads/`) and IndexedDB state for the user. */
 export async function clearLocalTesterWorkspace(userEmail: string): Promise<void> {
   const key = `user:${userEmail.trim().toLowerCase()}`;
   const diskHandle = await getDiskHandle(key);
   if (diskHandle && await verifyHandlePermission(diskHandle, false)) {
     try { await diskHandle.removeEntry('uploads', { recursive: true }); } catch { /* ignore */ }
-    try { await diskHandle.removeEntry('eteczka-db.json'); } catch { /* ignore */ }
+    try { await diskHandle.removeEntry('mojateczka-db.json'); } catch { /* ignore */ }
   }
   const idb = await openIdb();
   await new Promise<void>((resolve, reject) => {

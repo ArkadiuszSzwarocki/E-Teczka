@@ -3,7 +3,7 @@
   const status = document.getElementById('status'), credentials = document.getElementById('credentials');
   const email = document.getElementById('email'), password = document.getElementById('password');
   const logout = document.getElementById('logout'), form = document.getElementById('form');
-  const storageKey = 'eteczka_central_session';
+  const storageKey = 'mojateczka_central_session';
   const googleOnly = new URLSearchParams(location.search || '').get('login') === 'google';
   const securityConfirmation = new URLSearchParams(location.search || '').get('purpose') === 'security';
   if (googleOnly) {
@@ -12,7 +12,7 @@
   }
   const googleLinkSection = document.getElementById('googleLinkSection'); let googleWebClientId = '';
   let turnstileSiteKey = ''; let turnstileToken = ''; let turnstileWidgetId = null;
-  const handoffKey = 'eteczka_central_handoff';
+  const handoffKey = 'mojateczka_central_handoff';
   let handoffId = location.hash.slice(1) || sessionStorage.getItem(handoffKey) || ''; history.replaceState(null, '', location.pathname + (googleOnly ? '?login=google' + (securityConfirmation ? '&purpose=security' : '') : ''));
   if (!/^[A-Za-z0-9_-]{43}$/.test(handoffId)) handoffId = '';
   if (handoffId) sessionStorage.setItem(handoffKey, handoffId);

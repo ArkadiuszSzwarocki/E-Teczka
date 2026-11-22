@@ -1,4 +1,4 @@
-package com.anonymous.eteczkamobile
+package pl.arecki.mojateczka
 
 import android.content.Context
 import android.net.http.X509TrustManagerExtensions
@@ -21,7 +21,7 @@ import javax.net.ssl.X509TrustManager
 
 /** A QR-confirmed CA is trusted only by this app; no device-wide CA is installed. */
 object LocalTls {
-  private const val PREFS = "eteczka_pinned_tls"
+  private const val PREFS = "mojateczka_pinned_tls"
   private lateinit var context: Context
   private fun prefs() = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
   private fun manager(pem: String?): X509TrustManager {
@@ -104,8 +104,8 @@ object LocalTls {
               else -> "ECDHE_RSA"
             }
             try { X509TrustManagerExtensions(system).checkServerTrusted(certificates, authType, host) } catch (e: Exception) { throw javax.net.ssl.SSLPeerUnverifiedException("Niezaufany certyfikat serwera.") }
-          } else if (request.header("Authorization") != null || request.url.encodedPath == "/api/pair") {
-            throw java.io.IOException("Wysyłanie tokenu lub kodu parowania przez HTTP jest zabronione.")
+          } else if (request.header("Authorization") != null) {
+            throw java.io.IOException("Wysyłanie tokenu przez HTTP jest zabronione.")
           }
           chain.proceed(request)
         }.build()

@@ -9,7 +9,7 @@ Poniżej znajduje się zestawienie wszystkich zgód zbieranych od użytkownika w
 - **Treść zgody:**
   > *„Rozumiem zasady przechowywania danych w wersji testowej i wyrażam zgodę na zapisanie mojego wyboru oraz odnotowanie tej zgody w bazie konta testowego.”*
 - **Opcje wyboru:**
-  1. `local_disk` (domyślnie) — plik bazy `eteczka-db.json` i fizyczne pliki w `uploads/` zapisywane są bezpośrednio we wskazanym folderze na dysku komputera użytkownika.
+  1. `local_disk` (domyślnie) — plik bazy `mojateczka-db.json` i fizyczne pliki w `uploads/` zapisywane są bezpośrednio we wskazanym folderze na dysku komputera użytkownika.
   2. `qnap_server` — dokumenty w testowej bazie SQLite na serwerze QNAP.
 - **Gdzie jest odnotowana:** tabela `TesterConsent` w bazie `eteczka.db` na QNAP-ie (`userId`, `email`, `accepted`, `storageMode`, `policyVersion`, `acceptedAt`).
 - **Odmowa:** zapisuje `accepted = 0` i wylogowuje użytkownika z aplikacji.
@@ -34,7 +34,7 @@ Poniżej znajduje się zestawienie wszystkich zgód zbieranych od użytkownika w
 
 ---
 
-## 5. Uprawnienia aplikacji mobilnej (`ETeczkaMobile` Android)
+## 5. Uprawnienia aplikacji mobilnej (`MojaTeczkaMobile` Android)
 System Android pyta użytkownika o jednorazową zgodę przy pierwszym użyciu funkcji:
 - **Aparat** — skanowanie dokumentów aparatem oraz skanowanie kodu QR do parowania z komputerem.
 - **Powiadomienia** — przypomnienia o zbliżającym się terminie życia dokumentów (`retentionNotifications`).

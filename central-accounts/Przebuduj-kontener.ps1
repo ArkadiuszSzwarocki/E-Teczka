@@ -1,6 +1,6 @@
 param(
-  [string]$ImageName = 'eteczka-central-accounts:latest',
-  [string]$ContainerName = 'eteczka-central-accounts',
+  [string]$ImageName = 'mojateczka-central-accounts:latest',
+  [string]$ContainerName = 'mojateczka-central-accounts',
   [switch]$ExportTar
 )
 
@@ -20,7 +20,7 @@ Write-Host "Buduje obraz $ImageName..." -ForegroundColor Cyan
 if ($LASTEXITCODE -ne 0) { throw 'Budowanie obrazu Docker nie powiodlo sie.' }
 
 if ($ExportTar) {
-  $tarPath = Join-Path $PSScriptRoot 'eteczka-central-accounts.tar'
+  $tarPath = Join-Path $PSScriptRoot 'mojateczka-central-accounts.tar'
   & docker save -o $tarPath $ImageName
   if ($LASTEXITCODE -ne 0) { throw 'Eksport obrazu do pliku .tar nie powiodl sie.' }
   Write-Host "Wyeksportowano obraz dla QNAP: $tarPath" -ForegroundColor Green

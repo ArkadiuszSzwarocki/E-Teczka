@@ -1,7 +1,7 @@
 param([switch]$CheckOnly)
 
 $ErrorActionPreference = 'Stop'
-$projectDir = Join-Path $PSScriptRoot 'ETeczkaMobile'
+$projectDir = Join-Path $PSScriptRoot 'MojaTeczkaMobile'
 $androidDir = Join-Path $projectDir 'android'
 $gradlew = Join-Path $androidDir 'gradlew.bat'
 $apk = Join-Path $androidDir 'app\build\outputs\apk\debug\app-debug.apk'

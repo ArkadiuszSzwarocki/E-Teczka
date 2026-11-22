@@ -17,7 +17,7 @@ export function createAccountSecurityRouter(prisma: PrismaClient, googleHandoffs
  const sessionHash=(req:express.Request)=>createHash('sha256').update(req.header('authorization')||'').digest('hex');
  const bound=(req:express.Request,res:express.Response,handle:string)=>{const item=approvals.get(handle);return item&&item.expires>Date.now()&&item.userId===Number(res.locals.userId)&&item.session===sessionHash(req)?item:null;};
  router.post('/mfa/reauth/start',async(req,res)=>{
-  const base=centralAccountOrigin(process.env.ETECZKA_CENTRAL_ACCOUNT_URL);const action=req.body?.action;
+  const base=centralAccountOrigin(process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL);const action=req.body?.action;
   if(!base||!['start','disable'].includes(action))return res.status(400).json({error:'Nieprawidłowa operacja.'});
   for(const [handle,item] of approvals)if(item.expires<=Date.now()){approvals.delete(handle);googleHandoffs.finish(handle);}
   if(approvals.size>=64)return res.status(429).json({error:'Zbyt wiele rozpoczętych potwierdzeń.'});
@@ -25,18 +25,18 @@ export function createAccountSecurityRouter(prisma: PrismaClient, googleHandoffs
  });
  router.post('/mfa/reauth/poll',async(req,res)=>{
   const handle=String(req.body?.handle||'');if(!bound(req,res,handle))return res.status(403).json({error:'Potwierdzenie wygasło lub należy do innej sesji.'});
-  try{const result=await googleHandoffs.poll(handle);if(result.status==='approved'){const base=centralAccountOrigin(process.env.ETECZKA_CENTRAL_ACCOUNT_URL);if(!base||await createCentralAccountLinks(prisma).find(base,result.user.id)!==Number(res.locals.userId))return res.status(403).json({error:'Wybierz konto Google przypisane do aktualnego konta E‑Teczki.'});}return res.json({status:result.status});}catch{return res.status(400).json({error:'Potwierdzenie wygasło. Rozpocznij je ponownie.'});}
+  try{const result=await googleHandoffs.poll(handle);if(result.status==='approved'){const base=centralAccountOrigin(process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL);if(!base||await createCentralAccountLinks(prisma).find(base,result.user.id)!==Number(res.locals.userId))return res.status(403).json({error:'Wybierz konto Google przypisane do aktualnego konta E‑Teczki.'});}return res.json({status:result.status});}catch{return res.status(400).json({error:'Potwierdzenie wygasło. Rozpocznij je ponownie.'});}
  });
  async function authorizeChange(req:express.Request,res:express.Response,action:string,consume=true){
   const handle=typeof req.body?.googleHandle==='string'?req.body.googleHandle:'';
   if(!handle)return reauthenticate(Number(res.locals.userId),req.body?.password);
   const binding=bound(req,res,handle);if(!binding||binding.action!==action)return false;
-  if(!consume){const result=await googleHandoffs.poll(handle);const base=centralAccountOrigin(process.env.ETECZKA_CENTRAL_ACCOUNT_URL);return result.status==='approved'&&Boolean(base)&&await createCentralAccountLinks(prisma).find(base!,result.user.id)===Number(res.locals.userId);}
+  if(!consume){const result=await googleHandoffs.poll(handle);const base=centralAccountOrigin(process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL);return result.status==='approved'&&Boolean(base)&&await createCentralAccountLinks(prisma).find(base!,result.user.id)===Number(res.locals.userId);}
   approvals.delete(handle);
   try{const approved=await googleHandoffs.take(handle);try{return await createCentralAccountLinks(prisma).find(approved.origin,approved.user.id)===Number(res.locals.userId);}finally{await fetch(`${approved.origin}/logout`,{method:'POST',headers:{authorization:`Bearer ${approved.centralToken}`},redirect:'error',signal:AbortSignal.timeout(5000)}).catch(()=>undefined);}}finally{googleHandoffs.finish(handle);}
  }
  async function reauthenticate(userId:number,password:unknown){
-  const base=centralAccountOrigin(process.env.ETECZKA_CENTRAL_ACCOUNT_URL);if(!base||typeof password!=='string'||password.length>200)return false;
+  const base=centralAccountOrigin(process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL);if(!base||typeof password!=='string'||password.length>200)return false;
   const user=await prisma.user.findUnique({where:{id:userId},select:{email:true}});if(!user)return false;
   let token:string|undefined;
   try{const r=await fetch(`${base}/login`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:user.email,password}),redirect:'error',signal:AbortSignal.timeout(10000)});if(!r.ok)return false;const data=await r.json() as {token?:string};token=data.token;if(!token)return false;const remote=await verifyCentralSession(base,token);return await createCentralAccountLinks(prisma).find(base,remote.id)===userId;}

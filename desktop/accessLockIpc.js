@@ -33,8 +33,8 @@ function registerAccessLockIpc({ app, ipcMain, safeStorage, ownRenderer, rootDir
     return accessLock.status().mode === 'pin' ? 'pin' : 'password';
   }
 
-  ipcMain.handle('eteczka-hello-accounts', event => (ownRenderer(event) ? helloLogin.list() : []));
-  ipcMain.handle('eteczka-hello-login', async (event, settings) => {
+  ipcMain.handle('mojateczka-hello-accounts', event => (ownRenderer(event) ? helloLogin.list() : []));
+  ipcMain.handle('mojateczka-hello-login', async (event, settings) => {
     if (!ownRenderer(event)) return { ok: false, error: 'Niedostępne okno.' };
     const result = await helloLogin.login(event.sender.id, String(settings?.email || ''), String(settings?.mfaCode || ''));
     if (result.ok) {
@@ -44,7 +44,7 @@ function registerAccessLockIpc({ app, ipcMain, safeStorage, ownRenderer, rootDir
     return result;
   });
 
-  ipcMain.handle('eteczka-access-use-account', async (event, token) => {
+  ipcMain.handle('mojateczka-access-use-account', async (event, token) => {
     if (typeof token !== 'string' || token.length > 4096) return { ok: false, error: 'Nieprawidłowa sesja.' };
     try {
       const response = await fetch('http://127.0.0.1:3000/api/auth/me', {
@@ -79,21 +79,21 @@ function registerAccessLockIpc({ app, ipcMain, safeStorage, ownRenderer, rootDir
     }
   });
 
-  ipcMain.handle('eteczka-access-status', event => ({
+  ipcMain.handle('mojateczka-access-status', event => ({
     ...accessLock.status(),
     loginMethod: loginMethod(),
     helloVerified: isVerified(event),
     helloLoginRegistered: helloLogin.list().some(item => item.email === selectedAccountEmail),
   }));
 
-  ipcMain.handle('eteczka-hello-available', () => checkWindowsHelloAvailability());
-  ipcMain.handle('eteczka-hello-verify', async (event) => {
+  ipcMain.handle('mojateczka-hello-available', () => checkWindowsHelloAvailability());
+  ipcMain.handle('mojateczka-hello-verify', async (event) => {
     const result = await verifyWithWindowsHello('Potwierdź tożsamość w MojejTeczce');
     if (result.ok) verifiedSenders.set(event.sender.id, Date.now() + 5 * 60_000);
     return result;
   });
 
-  ipcMain.handle('eteczka-access-set-method', async (event, settings) => {
+  ipcMain.handle('mojateczka-access-set-method', async (event, settings) => {
     if (!ownRenderer(event)) return { ok: false, error: 'Niedostępne okno.' };
     if (!settings || !['password', 'pin', 'hello'].includes(settings.method)) return { ok: false, error: 'Niedostępna metoda logowania.' };
     const status = accessLock.status();
@@ -121,23 +121,23 @@ function registerAccessLockIpc({ app, ipcMain, safeStorage, ownRenderer, rootDir
     }
   });
 
-  ipcMain.handle('eteczka-access-verify', (event, secret) => {
+  ipcMain.handle('mojateczka-access-verify', (event, secret) => {
     const result = accessLock.verify(secret);
     if (result.ok) verifiedSenders.set(event.sender.id, Date.now() + 5 * 60_000);
     else verifiedSenders.delete(event.sender.id);
     return result;
   });
 
-  ipcMain.handle('eteczka-access-configure', (event, settings) => {
+  ipcMain.handle('mojateczka-access-configure', (event, settings) => {
     const result = accessLock.configure(settings || {}, isVerified(event));
     if (result.ok) verifiedSenders.delete(event.sender.id);
     return result;
   });
 
-  ipcMain.handle('eteczka-recovery-enroll-request', (event, email) => accessLock.requestEnrollment(email, isVerified(event)));
-  ipcMain.handle('eteczka-recovery-enroll-complete', (event, email, code) => accessLock.completeEnrollment(email, code, isVerified(event)));
-  ipcMain.handle('eteczka-recovery-reset-request', () => accessLock.requestReset());
-  ipcMain.handle('eteczka-recovery-reset-complete', (_event, settings) => accessLock.completeReset(settings || {}));
+  ipcMain.handle('mojateczka-recovery-enroll-request', (event, email) => accessLock.requestEnrollment(email, isVerified(event)));
+  ipcMain.handle('mojateczka-recovery-enroll-complete', (event, email, code) => accessLock.completeEnrollment(email, code, isVerified(event)));
+  ipcMain.handle('mojateczka-recovery-reset-request', () => accessLock.requestReset());
+  ipcMain.handle('mojateczka-recovery-reset-complete', (_event, settings) => accessLock.completeReset(settings || {}));
 }
 
 module.exports = { registerAccessLockIpc };

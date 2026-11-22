@@ -16,7 +16,7 @@ type Args = {
 export function useAppSession({ apiUrl, fetcher, fetchData, onResetWorkspace, showToast }: Args) {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
-  const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('eteczka_auth_token'));
+  const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('mojateczka_auth_token'));
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isCloseModalOpen, setIsCloseModalOpen] = useState(false);
   const [autoBackupStatus, setAutoBackupStatus] = useState<AutoBackupStatus>(null);
@@ -66,32 +66,32 @@ export function useAppSession({ apiUrl, fetcher, fetchData, onResetWorkspace, sh
     if (!ipc) return;
     const onPrepareQuit = () => {
       void runAutoBackup('on_logout').finally(() => {
-        void ipc.invoke('eteczka-quit-ready').catch(() => undefined);
+        void ipc.invoke('mojateczka-quit-ready').catch(() => undefined);
       });
     };
     const onConfirmClose = () => setIsCloseModalOpen(true);
-    ipc.on('eteczka-prepare-quit', onPrepareQuit);
-    ipc.on('eteczka-confirm-close', onConfirmClose);
+    ipc.on('mojateczka-prepare-quit', onPrepareQuit);
+    ipc.on('mojateczka-confirm-close', onConfirmClose);
     return () => {
-      ipc.removeListener('eteczka-prepare-quit', onPrepareQuit);
-      ipc.removeListener('eteczka-confirm-close', onConfirmClose);
+      ipc.removeListener('mojateczka-prepare-quit', onPrepareQuit);
+      ipc.removeListener('mojateczka-confirm-close', onConfirmClose);
     };
   }, [runAutoBackup]);
 
   useEffect(() => {
-    const token = localStorage.getItem('eteczka_auth_token');
+    const token = localStorage.getItem('mojateczka_auth_token');
     if (!token) return;
     let active = true;
     void fetcher(`${apiUrl}/api/auth/me`)
       .then(async response => {
         if (response.status === 401) {
-          if (localStorage.getItem('eteczka_auth_token') === token) localStorage.removeItem('eteczka_auth_token');
+          if (localStorage.getItem('mojateczka_auth_token') === token) localStorage.removeItem('mojateczka_auth_token');
           return null;
         }
         return response.ok ? response.json() : null;
       })
       .then(user => {
-        if (active && localStorage.getItem('eteczka_auth_token') === token && user && typeof user.email === 'string') {
+        if (active && localStorage.getItem('mojateczka_auth_token') === token && user && typeof user.email === 'string') {
           setCurrentUser(user);
         }
       })
@@ -101,13 +101,13 @@ export function useAppSession({ apiUrl, fetcher, fetchData, onResetWorkspace, sh
 
   useEffect(() => {
     const onDeviceRevoked = () => {
-      localStorage.removeItem('eteczka_auth_token');
+      localStorage.removeItem('mojateczka_auth_token');
       setCurrentUser(null);
       setIsUserMenuOpen(false);
       onResetWorkspace();
     };
-    window.addEventListener('eteczka-device-revoked', onDeviceRevoked);
-    return () => window.removeEventListener('eteczka-device-revoked', onDeviceRevoked);
+    window.addEventListener('mojateczka-device-revoked', onDeviceRevoked);
+    return () => window.removeEventListener('mojateczka-device-revoked', onDeviceRevoked);
   }, [onResetWorkspace]);
 
   const logoutAccount = useCallback(async () => {
@@ -115,8 +115,8 @@ export function useAppSession({ apiUrl, fetcher, fetchData, onResetWorkspace, sh
     try {
       await fetcher(`${apiUrl}/api/auth/logout`, { method: 'POST' });
     } catch { /* Local sign-out remains possible when the server is unavailable. */ } finally {
-      localStorage.removeItem('eteczka_auth_token');
-      window.dispatchEvent(new Event('eteczka-auth-changed'));
+      localStorage.removeItem('mojateczka_auth_token');
+      window.dispatchEvent(new Event('mojateczka-auth-changed'));
       setCurrentUser(null);
       setIsUserMenuOpen(false);
       onResetWorkspace();

@@ -91,7 +91,7 @@ export default function FolderScreen() {
       if (!await MailComposer.isAvailableAsync()) return Alert.alert("Brak aplikacji e-mail", "Zainstaluj lub skonfiguruj pocztę w telefonie.");
       const attachments = await Promise.all(selected.map(async (document) => {
         const extension = document.filePath?.split(".").pop() || "pdf";
-        const result = await downloadSecureFile(await getApiUrl(`/uploads/${document.filePath}`), `${FileSystem.cacheDirectory}eteczka_mail_${document.id}.${extension}`, await getAuthHeaders());
+        const result = await downloadSecureFile(await getApiUrl(`/uploads/${document.filePath}`), `${FileSystem.cacheDirectory}mojateczka_mail_${document.id}.${extension}`, await getAuthHeaders());
         return result.uri;
       }));
       await MailComposer.composeAsync({ subject: `Dokumenty E‑Teczka (${selected.length})`, body: "Pakiet dokumentów z E‑Teczki w załącznikach.", attachments });

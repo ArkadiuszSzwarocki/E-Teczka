@@ -19,7 +19,7 @@ function createBackendLifecycle({ ipcMain, BrowserWindow, ownRenderer, rootDir, 
     stopping = false;
     const backendDir = path.join(rootDir, 'backend');
     const tsNodeBin = path.join(backendDir, 'node_modules', 'ts-node', 'dist', 'bin.js');
-    const useTsNode = Boolean(process.env.ETECZKA_DEV_URL) && fs.existsSync(tsNodeBin);
+    const useTsNode = Boolean(process.env.MOJATECZKA_DEV_URL) && fs.existsSync(tsNodeBin);
     const distEntry = path.join(backendDir, 'dist', 'index.js');
     const prodEntry = fs.existsSync(distEntry) ? distEntry : path.join(backendDir, 'index.js');
     const args = useTsNode ? [tsNodeBin, '--preferTsExts', path.join(backendDir, 'index.ts')] : [prodEntry];
@@ -80,7 +80,7 @@ function createBackendLifecycle({ ipcMain, BrowserWindow, ownRenderer, rootDir, 
   }
 
   async function restartBackendForDev() {
-    if (process.env.ETECZKA_EXTERNAL_BACKEND === '1') {
+    if (process.env.MOJATECZKA_EXTERNAL_BACKEND === '1') {
       for (let i = 0; i < 30; i++) {
         if (await backendAvailable()) return true;
         await new Promise((resolve) => setTimeout(resolve, 350));
@@ -118,9 +118,9 @@ function createBackendLifecycle({ ipcMain, BrowserWindow, ownRenderer, rootDir, 
     });
   }
 
-  ipcMain.handle('eteczka-dev-reload', async (event) => {
+  ipcMain.handle('mojateczka-dev-reload', async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
-    if (!win || !ownRenderer(event) || !process.env.ETECZKA_DEV_URL) return false;
+    if (!win || !ownRenderer(event) || !process.env.MOJATECZKA_DEV_URL) return false;
     await restartBackendForDev();
     if (!win.isDestroyed()) win.webContents.reloadIgnoringCache();
     return true;

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-const CLASSIC_ICONS_KEY = 'eteczka_classic_icons_v1';
+const CLASSIC_ICONS_KEY = 'mojateczka_classic_icons_v1';
 
 function applyClassicIconAttribute(value: boolean): void {
   if (typeof document !== 'undefined') {
@@ -19,7 +19,7 @@ export function getUseClassicIcons(): boolean {
 export function setUseClassicIcons(value: boolean): void {
   localStorage.setItem(CLASSIC_ICONS_KEY, value ? '1' : '0');
   applyClassicIconAttribute(value);
-  window.dispatchEvent(new Event('eteczka-icon-style-changed'));
+  window.dispatchEvent(new Event('mojateczka-icon-style-changed'));
 }
 
 /** Subscribes to global classic/modern icon style changes. */
@@ -28,8 +28,8 @@ export function useClassicIcons(): boolean {
   useEffect(() => {
     applyClassicIconAttribute(getUseClassicIcons());
     const sync = () => setClassic(getUseClassicIcons());
-    window.addEventListener('eteczka-icon-style-changed', sync);
-    return () => window.removeEventListener('eteczka-icon-style-changed', sync);
+    window.addEventListener('mojateczka-icon-style-changed', sync);
+    return () => window.removeEventListener('mojateczka-icon-style-changed', sync);
   }, []);
   return classic;
 }

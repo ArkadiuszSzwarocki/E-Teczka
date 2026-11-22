@@ -9,7 +9,7 @@ const ENV_SNIPPET = `PORT=3001
 DATABASE_URL="file:./prisma/dev.db"
 AUTH_SECRET="ustaw-dlugi-losowy-sekret-min-32-znaki"
 # Opcjonalnie dla wygasających linków:
-# ETECZKA_SHARE_SERVICE_URL="https://twoj-serwer.pl"`;
+# MOJATECZKA_SHARE_SERVICE_URL="https://twoj-serwer.pl"`;
 
 const MIGRATE_SNIPPET = `docker compose up -d
 npx prisma migrate deploy`;

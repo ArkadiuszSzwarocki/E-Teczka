@@ -49,14 +49,14 @@ test('WIA scanner IPC degrades cleanly on macOS without invoking PowerShell', as
     platform: 'darwin',
   });
 
-  const devices = await handlers.get('eteczka-wia-devices')();
+  const devices = await handlers.get('mojateczka-wia-devices')();
   assert.deepEqual(devices, []);
 
-  const printer = await handlers.get('eteczka-default-printer')();
+  const printer = await handlers.get('mojateczka-default-printer')();
   assert.equal(printer, '');
 
   await assert.rejects(
-    () => handlers.get('eteczka-wia-scan')({ sender: { send: () => {} } }, 'dev-1'),
+    () => handlers.get('mojateczka-wia-scan')({ sender: { send: () => {} } }, 'dev-1'),
     /macOS/i,
   );
 });

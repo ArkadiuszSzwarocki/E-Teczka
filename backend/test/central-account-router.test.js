@@ -12,8 +12,8 @@ const { createAccountService } = require('./helpers/centralAccounts');
 const { createHttpApp } = require('../../central-accounts/httpApp');
 
 test('central identity links only after both sessions and preserves the local account', async () => {
-  const previous = process.env.ETECZKA_CENTRAL_ACCOUNT_URL;
-  process.env.ETECZKA_CENTRAL_ACCOUNT_URL = 'https://accounts.example.com';
+  const previous = process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL;
+  process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL = 'https://accounts.example.com';
   const db = new DatabaseSync(':memory:'); db.exec('PRAGMA foreign_keys=ON; CREATE TABLE User (id INTEGER PRIMARY KEY); INSERT INTO User VALUES (1), (2)');
   const sql = strings => strings.join('?');
   const hashes = new Map([['local-one', 1], ['local-two', 2]].map(([token, id]) => [crypto.createHash('sha256').update(token).digest('hex'), id]));
@@ -40,11 +40,11 @@ test('central identity links only after both sessions and preserves the local ac
     assert.equal((await post('/unlink', 'local-two')).status, 404);
     assert.equal((await post('/unlink', 'local-one')).status, 204);
     assert.equal((await post('/login', null)).status, 409);
-  } finally { await new Promise(resolve => server.close(resolve)); db.close(); if (previous === undefined) delete process.env.ETECZKA_CENTRAL_ACCOUNT_URL; else process.env.ETECZKA_CENTRAL_ACCOUNT_URL = previous; }
+  } finally { await new Promise(resolve => server.close(resolve)); db.close(); if (previous === undefined) delete process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL; else process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL = previous; }
 });
 
 test('desktop browser handoff links and later signs into existing local account', async () => {
-  const previous = process.env.ETECZKA_CENTRAL_ACCOUNT_URL; process.env.ETECZKA_CENTRAL_ACCOUNT_URL = 'https://accounts.example.com';
+  const previous = process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL; process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL = 'https://accounts.example.com';
   const centralDb = new DatabaseSync(':memory:'); let emailCode;
   const accounts = createAccountService({ db: centralDb, sendVerification: async (_email, code) => { emailCode = code; }, verifyGoogle: async () => {} });
   await accounts.register('central@example.com', 'test-password'); await accounts.verifyEmail(emailCode, 'test-password');
@@ -94,17 +94,17 @@ test('desktop browser handoff links and later signs into existing local account'
     assert.equal((await post('/handoff/create-local', { handle: newRequest.handle })).status, 400);
     const created = await post('/handoff/create-local', { handle: newRequest.handle, deviceId: 'new-desktop', localPassword: 'offline-password' });
     assert.equal(created.status, 201); assert.equal((await created.json()).user.id, 2);
-  } finally { await new Promise(resolve => server.close(resolve)); await new Promise(resolve => centralServer.close(resolve)); db.close(); centralDb.close(); if (previous === undefined) delete process.env.ETECZKA_CENTRAL_ACCOUNT_URL; else process.env.ETECZKA_CENTRAL_ACCOUNT_URL = previous; }
+  } finally { await new Promise(resolve => server.close(resolve)); await new Promise(resolve => centralServer.close(resolve)); db.close(); centralDb.close(); if (previous === undefined) delete process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL; else process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL = previous; }
 });
 
 
 test('registration bridge forwards only credentials and preserves upstream validation', async () => {
-  const previous = process.env.ETECZKA_CENTRAL_ACCOUNT_URL;
+  const previous = process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL;
   let forwarded;
   const upstream = express(); upstream.use(express.json());
   upstream.post('/register', (req, res) => { forwarded = req.body; return res.status(req.body.email === 'invalid' ? 400 : 202).json(req.body.email === 'invalid' ? { error: 'Nieprawidłowy e-mail.' } : { message: 'Sprawdź pocztę.' }); });
   const upstreamServer = upstream.listen(0, '127.0.0.1'); await new Promise(resolve => upstreamServer.once('listening', resolve));
-  process.env.ETECZKA_CENTRAL_ACCOUNT_URL = `http://127.0.0.1:${upstreamServer.address().port}`;
+  process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL = `http://127.0.0.1:${upstreamServer.address().port}`;
   const app = express(); app.use(express.json()); app.use('/bridge', createCentralAccountRouter({}));
   const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
   const post = body => fetch(`http://127.0.0.1:${server.address().port}/bridge/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -115,22 +115,22 @@ test('registration bridge forwards only credentials and preserves upstream valid
     assert.equal(response.status, 202); assert.equal((await response.json()).message, 'Sprawdź pocztę.');
     assert.deepEqual(forwarded, { email: 'a@example.com', password: 'valid-password' });
     assert.equal((await post({ email: 'invalid', password: 'valid-password' })).status, 400);
-    delete process.env.ETECZKA_CENTRAL_ACCOUNT_URL;
+    delete process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL;
     assert.equal((await post({ email: 'a@example.com', password: 'valid-password' })).status, 503);
   } finally {
     await new Promise(resolve => server.close(resolve)); await new Promise(resolve => upstreamServer.close(resolve));
-    if (previous === undefined) delete process.env.ETECZKA_CENTRAL_ACCOUNT_URL; else process.env.ETECZKA_CENTRAL_ACCOUNT_URL = previous;
+    if (previous === undefined) delete process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL; else process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL = previous;
   }
 });
 
 
 test('email credentials sign in without a browser code and preserve explicit local linking', async () => {
-  const previous = process.env.ETECZKA_CENTRAL_ACCOUNT_URL;
+  const previous = process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL;
   const db = new DatabaseSync(':memory:'); let verification;
   const accounts = createAccountService({ db, sendVerification: async (_, code) => { verification = code; }, verifyGoogle: async () => {} });
   await accounts.register('direct@example.com', 'test-password'); await accounts.verifyEmail(verification);
   const upstream = createHttpApp(accounts).listen(0, '127.0.0.1'); await new Promise(resolve => upstream.once('listening', resolve));
-  process.env.ETECZKA_CENTRAL_ACCOUNT_URL = `http://127.0.0.1:${upstream.address().port}`;
+  process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL = `http://127.0.0.1:${upstream.address().port}`;
   const app = express(); app.use(express.json()); app.use('/bridge', createCentralAccountRouter({ $executeRawUnsafe: async () => 0, $queryRaw: async () => [] }));
   const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
   const post = (path, body) => fetch(`http://127.0.0.1:${server.address().port}/bridge${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -140,18 +140,18 @@ test('email credentials sign in without a browser code and preserve explicit loc
     assert.equal(response.status, 200); const data = await response.json(); assert.equal(data.user.email, 'direct@example.com'); assert.ok(data.handle); assert.equal(data.token, undefined);
     const finish = await post('/handoff/finish', { handle: data.handle }); assert.equal(finish.status, 409); assert.equal((await finish.json()).code, 'LOCAL_LINK_REQUIRED');
     assert.equal(accounts.testPool.tables.sessions.length, 1);
-  } finally { await new Promise(resolve => server.close(resolve)); await new Promise(resolve => upstream.close(resolve)); db.close(); if (previous === undefined) delete process.env.ETECZKA_CENTRAL_ACCOUNT_URL; else process.env.ETECZKA_CENTRAL_ACCOUNT_URL = previous; }
+  } finally { await new Promise(resolve => server.close(resolve)); await new Promise(resolve => upstream.close(resolve)); db.close(); if (previous === undefined) delete process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL; else process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL = previous; }
 });
 
 
 test('password recovery sends mail only for a verified account and never discloses account existence', async () => {
-  const previous = process.env.ETECZKA_CENTRAL_ACCOUNT_URL;
+  const previous = process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL;
   const db = new DatabaseSync(':memory:'); let code; let resetCount = 0; let resetToken;
   const accounts = createAccountService({ db, sendVerification: async (_, value) => { code = value; }, sendPasswordReset: async (_, value) => { resetCount++; resetToken = value; }, verifyGoogle: async () => {} });
   await accounts.register('recovery@example.com', 'old-password'); await accounts.verifyEmail(code);
   const oldSession = await accounts.login('recovery@example.com', 'old-password');
   const upstream = createHttpApp(accounts).listen(0, '127.0.0.1'); await new Promise(resolve => upstream.once('listening', resolve));
-  process.env.ETECZKA_CENTRAL_ACCOUNT_URL = `http://127.0.0.1:${upstream.address().port}`;
+  process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL = `http://127.0.0.1:${upstream.address().port}`;
   const app = express(); app.use(express.json()); app.use('/bridge', createCentralAccountRouter({}));
   const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
   const post = email => fetch(`http://127.0.0.1:${server.address().port}/bridge/request-password-reset`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email }) });
@@ -162,7 +162,7 @@ test('password recovery sends mail only for a verified account and never disclos
     await accounts.resetPassword(resetToken, 'new-password'); assert.equal(await accounts.getSession(oldSession.token), null);
     await assert.rejects(accounts.resetPassword(resetToken, 'another-password'), /INVALID_TOKEN/);
     assert.equal((await accounts.login('recovery@example.com', 'new-password')).user.email, 'recovery@example.com');
-  } finally { await new Promise(resolve => server.close(resolve)); await new Promise(resolve => upstream.close(resolve)); db.close(); if (previous === undefined) delete process.env.ETECZKA_CENTRAL_ACCOUNT_URL; else process.env.ETECZKA_CENTRAL_ACCOUNT_URL = previous; }
+  } finally { await new Promise(resolve => server.close(resolve)); await new Promise(resolve => upstream.close(resolve)); db.close(); if (previous === undefined) delete process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL; else process.env.MOJATECZKA_CENTRAL_ACCOUNT_URL = previous; }
 });
 
 

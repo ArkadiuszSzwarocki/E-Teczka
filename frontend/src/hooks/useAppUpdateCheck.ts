@@ -8,7 +8,7 @@ export type UpdateInfo = {
   infoUrl?: string;
 };
 
-const JUST_UPDATED_KEY = 'eteczka_just_updated_info';
+const JUST_UPDATED_KEY = 'mojateczka_just_updated_info';
 
 /** Polls `/api/app-version` and notifies when a newer build is deployed, allowing user-scheduled reloads. */
 export function useAppUpdateCheck(apiUrl: string) {

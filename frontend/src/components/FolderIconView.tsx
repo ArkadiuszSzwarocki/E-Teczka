@@ -1,4 +1,4 @@
-import eteczkaFolderIcon from '../assets/mojateczka-folder.png';
+import mojateczkaFolderIcon from '../assets/mojateczka-folder.png';
 import { useClassicIcons } from '../hooks/useIconStyle';
 import { PRESET_ICON_MAP, VAULT_ICON_ID } from '../utils/folderIconCatalog';
 
@@ -14,7 +14,7 @@ export function AppFolderIcon({ size = 'sm' }: { size?: 'xs' | 'sm' | 'md' | 'lg
   const classic = useClassicIcons();
   const cls = SIZE_CLASSES[size];
   if (classic) return <span className={cls.emoji}>📁</span>;
-  return <img src={eteczkaFolderIcon} alt="" draggable={false} className={cls.img} />;
+  return <img src={mojateczkaFolderIcon} alt="" draggable={false} className={cls.img} />;
 }
 
 /** Renders a folder icon by preset id, custom data URL, or emoji. */
@@ -23,7 +23,7 @@ export function FolderIconView({ icon, size = 'lg' }: { icon: string; size?: 'xs
   if (!icon || icon === '📁') {
     const cls = SIZE_CLASSES[size];
     if (classic) return <span className={cls.emoji}>📁</span>;
-    return <img src={eteczkaFolderIcon} alt="" draggable={false} className={`${cls.img} cyber-icon-glow`} />;
+    return <img src={mojateczkaFolderIcon} alt="" draggable={false} className={`${cls.img} cyber-icon-glow`} />;
   }
   const presetSrc = PRESET_ICON_MAP.get(icon);
   if (presetSrc) {

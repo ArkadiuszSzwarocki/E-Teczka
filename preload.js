@@ -1,18 +1,18 @@
 const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
 const ALLOWED_EVENTS = new Set([
-  'eteczka-user-activity',
-  'eteczka-confirm-close',
-  'eteczka-wia-status',
-  'eteczka-prepare-quit',
+  'mojateczka-user-activity',
+  'mojateczka-confirm-close',
+  'mojateczka-wia-status',
+  'mojateczka-prepare-quit',
 ]);
 
 const listenerMapByChannel = new Map();
 
-contextBridge.exposeInMainWorld('eteczkaElectron', {
+contextBridge.exposeInMainWorld('mojateczkaElectron', {
   ipcRenderer: {
     invoke: (channel, ...args) => {
-      if (typeof channel !== 'string' || !channel.startsWith('eteczka-')) {
+      if (typeof channel !== 'string' || !channel.startsWith('mojateczka-')) {
         return Promise.reject(new Error('Niedozwolony kanał IPC.'));
       }
       return ipcRenderer.invoke(channel, ...args);
@@ -44,5 +44,5 @@ contextBridge.exposeInMainWorld('eteczkaElectron', {
       webFrame.setZoomFactor(factor);
     }
   },
-  openExternal: (url) => ipcRenderer.invoke('eteczka-open-external', url),
+  openExternal: (url) => ipcRenderer.invoke('mojateczka-open-external', url),
 });

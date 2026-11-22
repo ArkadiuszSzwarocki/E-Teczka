@@ -28,7 +28,7 @@ test('restore rejects missing document before changing the database', async () =
 });
 
 test('restore removes written files when the database transaction fails', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eteczka-restore-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mojateczka-restore-'));
   let folderWrites = 0;
   const prisma = { $transaction: async action => action(restoreTx({ folder: { create: async () => { folderWrites++; return { id: 11 }; } }, document: { create: async () => { throw new Error('database failed'); } } })) };
   try {
@@ -39,7 +39,7 @@ test('restore removes written files when the database transaction fails', async 
 });
 
 test('restore returns actual counts and saves document in owner folder', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eteczka-restore-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mojateczka-restore-'));
   let document;
   const prisma = { $transaction: async action => action(restoreTx({ folder: { create: async ({ data }) => { assert.equal(data.ownerId, 7); return { id: 11 }; } }, document: { create: async ({ data }) => { document = data; return { id: 22 }; } } })) };
   try {
@@ -51,7 +51,7 @@ test('restore returns actual counts and saves document in owner folder', async (
 });
 
 test('restores a document encrypted on another installation with its recovery key', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eteczka-restore-key-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mojateczka-restore-key-'));
   const key = crypto.randomBytes(32); const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
   const payload = Buffer.concat([cipher.update(backup()), cipher.final()]);
@@ -66,11 +66,11 @@ test('restores a document encrypted on another installation with its recovery ke
 });
 
 test('re-encrypts OCR from another installation when restoring a backup', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eteczka-restore-ocr-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mojateczka-restore-ocr-'));
   const oldKey = crypto.randomBytes(32); const textIv = crypto.randomBytes(12);
   const textCipher = crypto.createCipheriv('aes-256-gcm', oldKey, textIv);
   const ciphertext = Buffer.concat([textCipher.update('Wyszukiwana faktura', 'utf8'), textCipher.final()]);
-  const oldText = `eteczka-ocr-v1:${textIv.toString('base64url')}.${textCipher.getAuthTag().toString('base64url')}.${ciphertext.toString('base64url')}`;
+  const oldText = `mojateczka-ocr-v1:${textIv.toString('base64url')}.${textCipher.getAuthTag().toString('base64url')}.${ciphertext.toString('base64url')}`;
   const zip = new AdmZip(backup()); const manifest = JSON.parse(zip.readAsText('manifest.json')); manifest.documents[0].ocrText = oldText; zip.updateFile('manifest.json', Buffer.from(JSON.stringify(manifest)));
   const backupIv = crypto.randomBytes(12); const cipher = crypto.createCipheriv('aes-256-gcm', oldKey, backupIv);
   const encrypted = Buffer.concat([cipher.update(zip.toBuffer()), cipher.final()]);

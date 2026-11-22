@@ -21,7 +21,7 @@ function createTrustedDatabaseController({ app, ipcMain, dialog, BrowserWindow, 
       path.join(dir, 'eteczka.db'),
       path.join(dir, 'dev.db'),
       path.join(dir, 'prisma', 'dev.db'),
-      path.join(dir, 'eteczka-db.json'),
+      path.join(dir, 'mojateczka-db.json'),
     ];
     for (const c of candidates) {
       if (fs.existsSync(c) && fs.statSync(c).isFile()) return c;
@@ -38,12 +38,12 @@ function createTrustedDatabaseController({ app, ipcMain, dialog, BrowserWindow, 
     const cfg = readConfig();
     if (!cfg || !fs.existsSync(cfg.trustedDataDir) || !fs.existsSync(cfg.dbFile)) return {};
     return {
-      ETECZKA_DATA_DIR: cfg.trustedDataDir,
+      MOJATECZKA_DATA_DIR: cfg.trustedDataDir,
       DATABASE_URL: `file:${cfg.dbFile.replace(/\\/g, '/')}`,
     };
   }
 
-  ipcMain.handle('eteczka-pick-directory', async (event, defaultPath) => {
+  ipcMain.handle('mojateczka-pick-directory', async (event, defaultPath) => {
     if (!ownRenderer(event)) return null;
     const win = BrowserWindow.fromWebContents(event.sender);
     const result = await dialog.showOpenDialog(win || undefined, {
@@ -55,7 +55,7 @@ function createTrustedDatabaseController({ app, ipcMain, dialog, BrowserWindow, 
     return result.filePaths[0];
   });
 
-  ipcMain.handle('eteczka-trusted-db-get', (event) => {
+  ipcMain.handle('mojateczka-trusted-db-get', (event) => {
     if (!ownRenderer(event)) return null;
     const cfg = readConfig();
     const dirExists = Boolean(cfg && fs.existsSync(cfg.trustedDataDir));
@@ -67,11 +67,11 @@ function createTrustedDatabaseController({ app, ipcMain, dialog, BrowserWindow, 
       dirExists,
       dbExists,
       exists: dirExists && dbExists,
-      isExternalBackend: process.env.ETECZKA_EXTERNAL_BACKEND === '1',
+      isExternalBackend: process.env.MOJATECZKA_EXTERNAL_BACKEND === '1',
     };
   });
 
-  ipcMain.handle('eteczka-trusted-db-pick', async (event) => {
+  ipcMain.handle('mojateczka-trusted-db-pick', async (event) => {
     if (!ownRenderer(event)) return null;
     const win = BrowserWindow.fromWebContents(event.sender);
     const result = await dialog.showOpenDialog(win || undefined, {
@@ -92,7 +92,7 @@ function createTrustedDatabaseController({ app, ipcMain, dialog, BrowserWindow, 
     };
   });
 
-  ipcMain.handle('eteczka-trusted-db-trust', async (event, payload) => {
+  ipcMain.handle('mojateczka-trusted-db-trust', async (event, payload) => {
     if (!ownRenderer(event)) return { ok: false, error: 'Brak uprawnień.' };
     const dir = typeof payload?.dir === 'string' ? path.resolve(payload.dir.trim()) : '';
     const dbFile = typeof payload?.dbFile === 'string' ? path.resolve(payload.dbFile.trim()) : '';
@@ -109,7 +109,7 @@ function createTrustedDatabaseController({ app, ipcMain, dialog, BrowserWindow, 
     return { ok: true, ...config };
   });
 
-  ipcMain.handle('eteczka-trusted-db-clear', (event) => {
+  ipcMain.handle('mojateczka-trusted-db-clear', (event) => {
     if (!ownRenderer(event)) return { ok: false };
     try { fs.unlinkSync(configPath()); } catch { /* ignore */ }
     return { ok: true };

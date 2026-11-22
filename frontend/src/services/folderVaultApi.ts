@@ -14,11 +14,11 @@ export async function ensureDifferentFromAppAccess(password: string, pin: string
   const ipc = getElectronIpc();
   if (!ipc) return null;
   try {
-    const pRes = await ipc.invoke('eteczka-access-verify', password);
+    const pRes = await ipc.invoke('mojateczka-access-verify', password);
     if (isAccessResult(pRes) && pRes.ok) {
       return 'Hasło do sejfu nie może być takie samo jak hasło lub PIN logowania do aplikacji.';
     }
-    const pinRes = await ipc.invoke('eteczka-access-verify', pin);
+    const pinRes = await ipc.invoke('mojateczka-access-verify', pin);
     if (isAccessResult(pinRes) && pinRes.ok) {
       return 'Kod PIN do sejfu nie może być taki sam jak PIN lub hasło logowania do aplikacji.';
     }
