@@ -18,7 +18,7 @@ type Args = {
   selectedDocs: number[];
   setSelectedDocs: React.Dispatch<React.SetStateAction<number[]>>;
   displayedDocs: DocumentRecord[];
-  billingPlan: 'free' | 'standard' | 'premium';
+  billingPlan: 'free' | 'standard' | 'premium' | 'family' | 'business';
   setPlanLimitMessage: (msg: string) => void;
   searchQuery: string;
   fetchData: () => Promise<void>;

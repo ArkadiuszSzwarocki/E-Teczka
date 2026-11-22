@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { confirmCheckout, startCheckout, type BillingDetails, type BillingTransaction } from '../services/billing';
+import { confirmCheckout, startCheckout, type BillingDetails, type BillingPlan, type BillingTransaction, type PaidBillingPlan } from '../services/billing';
 import { errorMessage } from '../utils/errors';
 
 export type CancelPreview = {
@@ -24,7 +24,7 @@ type Args = {
 export function useBillingFlow({ apiUrl, fetcher: fetch, fetchData, showToast, closeUserMenu }: Args) {
   const [planLimitMessage, setPlanLimitMessage] = useState('');
   const [billingIsDev, setBillingIsDev] = useState(false);
-  const [billingPlan, setBillingPlan] = useState<'free' | 'standard' | 'premium'>('free');
+  const [billingPlan, setBillingPlan] = useState<BillingPlan>('free');
   const [billingDetails, setBillingDetails] = useState<BillingDetails | null>(null);
   const [billingDetailsBusy, setBillingDetailsBusy] = useState(false);
   const [billingBusy, setBillingBusy] = useState(false);
@@ -43,7 +43,7 @@ export function useBillingFlow({ apiUrl, fetcher: fetch, fetchData, showToast, c
     return () => window.removeEventListener('eteczka-plan-limit', handler);
   }, []);
 
-  const openBillingCheckout = useCallback(async (plan: 'standard' | 'premium', interval: 'monthly' | 'yearly', acceptReplacement = false, fromLimit = false) => {
+  const openBillingCheckout = useCallback(async (plan: PaidBillingPlan, interval: 'monthly' | 'yearly', acceptReplacement = false, fromLimit = false) => {
     setBillingBusy(true);
     try {
       const checkout = await startCheckout(apiUrl, fetch, plan, interval, acceptReplacement);

@@ -7,7 +7,7 @@ import { AppFolderIcon, FolderIconView } from './FolderIconView';
 export { VAULT_ICON_ID, PRESET_FOLDER_ICONS, suggestFolderIcon, getUseClassicIcons, setUseClassicIcons, useClassicIcons, AppFolderIcon, FolderIconView };
 
 /** Dropdown picker allowing selection of default, preset, or custom folder icons. */
-export default function FolderIconPicker({ plan, onSelect }: { plan: 'free' | 'standard' | 'premium'; onSelect: (icon: string) => void }) {
+export default function FolderIconPicker({ plan, onSelect }: { plan: 'free' | 'standard' | 'premium' | 'family' | 'business'; onSelect: (icon: string) => void }) {
   const [customIcons, setCustomIcons] = useState<CustomFolderIcon[]>(loadCustomIcons);
   const [error, setError] = useState('');
   const limit = customIconLimit(plan);

@@ -27,7 +27,7 @@ type Props = {
   selectedDocs: number[];
   setSelectedDocs: (ids: number[]) => void;
   scannerFileCount: number;
-  billingPlan: 'free' | 'standard' | 'premium';
+  billingPlan: 'free' | 'standard' | 'premium' | 'family' | 'business';
   accountEmail: string;
   documentMenuId: number | null;
   setDocumentMenuId: (id: number | null) => void;

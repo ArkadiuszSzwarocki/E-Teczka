@@ -66,7 +66,7 @@ export default function UploadPanel({
         <div className={`mb-5 rounded-lg border px-4 py-3 text-xs leading-5 ${uploadDocsExceeded || uploadMergeExceeded ? 'border-red-500/60 bg-red-950/35 text-red-200' : 'border-slate-600 bg-[#111827]/80 text-slate-300'}`}>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span>
-              Plan <strong className="text-white">{uploadUsage.plan === 'free' ? 'Darmowy' : uploadUsage.plan === 'standard' ? 'Standard' : 'Premium'}</strong>:{' '}
+              Plan <strong className="text-white">{uploadUsage.plan === 'free' ? 'Darmowy' : uploadUsage.plan === 'standard' ? 'Standard' : uploadUsage.plan === 'family' ? 'Rodzinny' : uploadUsage.plan === 'business' ? 'Firmowy' : 'Premium'}</strong>:{' '}
               {uploadDocsRemaining === null ? 'bez limitu dokumentów' : <>możesz wgrać jeszcze <strong className="text-white">{uploadDocsRemaining}</strong> z {uploadUsage.documents.limit} dokumentów</>}
               {isMergeMode && uploadMergeRemaining !== null && <> · łączenie PDF: pozostało <strong className="text-white">{uploadMergeRemaining}</strong></>}
             </span>

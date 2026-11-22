@@ -279,7 +279,10 @@ export function createDocumentRouter(prisma: PrismaClient, ocrQueue?: ReturnType
         owner: ownerId(res), userId: res.locals.userId || null, plan, folderId: Number(folderId),
         physicalLocation: physicalLocation || null, files, retentions,
       });
-      for (const saved of savedDocs) void enqueuePremiumOcr(prisma, ocrQueue, res, saved.id);
+      for (const saved of savedDocs) {
+        if (saved.mimeType === 'application/xml' || saved.mimeType === 'text/xml' || saved.mimeType === 'application/json' || saved.ocrText) continue;
+        void enqueuePremiumOcr(prisma, ocrQueue, res, saved.id);
+      }
       res.json({ success: true, savedDocs, skippedDuplicates });
     } catch (error: unknown) {
       if (error instanceof PlanLimitError) return res.status(403).json({ code: error.code, error: error.message, resetsAt: error.resetsAt });
@@ -310,7 +313,10 @@ export function createDocumentRouter(prisma: PrismaClient, ocrQueue?: ReturnType
         retentions: Array.isArray(retentions) ? retentions : [],
         thumbnails: Array.isArray(thumbnails) ? thumbnails : [],
       });
-      for (const saved of savedDocs) void enqueuePremiumOcr(prisma, ocrQueue, res, saved.id);
+      for (const saved of savedDocs) {
+        if (saved.mimeType === 'application/xml' || saved.mimeType === 'text/xml' || saved.mimeType === 'application/json' || saved.ocrText) continue;
+        void enqueuePremiumOcr(prisma, ocrQueue, res, saved.id);
+      }
       return res.json({ success: true, savedDocs, skippedDuplicates });
     } catch (error: unknown) {
       if (error instanceof PlanLimitError) return res.status(403).json({ code: error.code, error: error.message, resetsAt: error.resetsAt });

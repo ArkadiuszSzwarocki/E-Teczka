@@ -73,8 +73,10 @@ export async function saveBatchBinaryDocuments(
     const fullPath = path.join(uploadsDir, fileName);
     const digest = hashBuffer(file.buffer);
 
-    const ksef = ext === '.xml' ? parseKsefXml(file.buffer.toString('utf8')) : null;
-    const eReceipt = ext === '.json' ? parseEReceiptPayload(file.buffer.toString('utf8')) : null;
+    const isBusinessPlan = input.plan === 'business';
+    const isPremiumTier = input.plan === 'premium' || input.plan === 'family' || input.plan === 'business';
+    const ksef = ext === '.xml' && isBusinessPlan ? parseKsefXml(file.buffer.toString('utf8')) : null;
+    const eReceipt = ext === '.json' && isPremiumTier ? parseEReceiptPayload(file.buffer.toString('utf8')) : null;
     const structuredItems = ksef?.items ?? eReceipt?.items ?? [];
 
     const retention = input.retentions[i] || { enabled: false, value: 5, unit: 'years' };

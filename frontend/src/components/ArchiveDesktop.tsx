@@ -14,7 +14,7 @@ import { countFolderTreeStats } from '../utils/folderTree';
 export default function ArchiveDesktop({
   apiUrl, fetcher, plan, documents, selectedDocs, onToggleSelect, onSelectAllVisible, onClearSelected, onOpenPreview, onHoverEnter, onHoverLeave, onRestore, onTrashDocs, onShareLink, onShareClassic, onOpenOcr, onExportPdf, onPropertiesDoc,
 }: {
-  apiUrl: string; fetcher: typeof fetch; plan: 'free' | 'standard' | 'premium'; documents: DocumentRecord[]; selectedDocs: number[];
+  apiUrl: string; fetcher: typeof fetch; plan: 'free' | 'standard' | 'premium' | 'family' | 'business'; documents: DocumentRecord[]; selectedDocs: number[];
   onToggleSelect: (id: number) => void; onSelectAllVisible: (ids: number[]) => void; onClearSelected: () => void; onOpenPreview: (doc: DocumentRecord) => void;
   onHoverEnter: (doc: DocumentRecord, anchor: HTMLElement) => void; onHoverLeave: () => void;
   onRestore: (doc: DocumentRecord) => void; onTrashDocs: (docIds: number[], onConfirmed: () => void) => void;

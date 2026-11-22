@@ -1,4 +1,5 @@
-export type BillingPlan = 'free' | 'standard' | 'premium';
+export type BillingPlan = 'free' | 'standard' | 'premium' | 'family' | 'business';
+export type PaidBillingPlan = Exclude<BillingPlan, 'free'>;
 
 export type BillingTransaction = {
   id: number | string;
@@ -30,7 +31,7 @@ export async function getBillingStatus(apiUrl: string, fetcher: Fetcher): Promis
   return response.ok ? await response.json() as BillingDetails : null;
 }
 
-export async function startCheckout(apiUrl: string, fetcher: Fetcher, plan: 'standard' | 'premium', interval: 'monthly' | 'yearly', acceptReplacement = false) {
+export async function startCheckout(apiUrl: string, fetcher: Fetcher, plan: PaidBillingPlan, interval: 'monthly' | 'yearly', acceptReplacement = false) {
   const response = await fetcher(`${apiUrl}/api/billing/checkout`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan, interval, acceptReplacement }) });
   const payload = await response.json().catch(() => ({})) as { url?: string; sessionId?: string; kind?: string; error?: string };
   if (!response.ok || typeof payload.url !== 'string' || typeof payload.sessionId !== 'string') throw new Error(payload.error || 'Nie udało się uruchomić płatności.');

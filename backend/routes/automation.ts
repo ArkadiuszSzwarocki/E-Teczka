@@ -30,6 +30,15 @@ export function createAutomationRouter(prisma: PrismaClient) {
     return true;
   };
 
+  const requireBusiness = async (res: express.Response): Promise<boolean> => {
+    const plan = await getPlan(prisma, ocrOwnerKey(res));
+    if (plan !== 'business') {
+      res.status(402).json({ code: 'BUSINESS_REQUIRED', error: 'Paczka dla księgowej (ZIP + CSV) wymaga planu Firmowy (JDG).' });
+      return false;
+    }
+    return true;
+  };
+
   router.get('/watch-folder', async (_req, res) => {
     const plan = await getPlan(prisma, ocrOwnerKey(res));
     res.setHeader('Cache-Control', 'no-store');
@@ -151,7 +160,7 @@ export function createAutomationRouter(prisma: PrismaClient) {
   });
 
   router.post('/accountant-bundle', async (req, res) => {
-    if (!await requirePremium(res)) return;
+    if (!await requireBusiness(res)) return;
     try {
       const month = typeof req.body?.month === 'string' ? req.body.month : undefined;
       const { archive, label } = await createAccountantZipArchive(prisma, ownerIdOf(res), month);

@@ -26,7 +26,7 @@ export default function FoldersDesktop({
   onCreateFolder, onDiscardEmptyFolder, onRenameFolder, onDeleteFolder, onReorderFolders, onMoveFolderParent, onMoveDocument, onUploadToFolder,
   onTrashDoc, onShareLink, onShareClassic, onOpenOcr, onExportPdf, onPropertiesDoc, onEditRetention,
 }: {
-  apiUrl: string; fetcher: typeof fetch; plan: 'free' | 'standard' | 'premium'; accountEmail?: string; folders: FolderRecord[]; documents: DocumentRecord[]; selectedDocs: number[];
+  apiUrl: string; fetcher: typeof fetch; plan: 'free' | 'standard' | 'premium' | 'family' | 'business'; accountEmail?: string; folders: FolderRecord[]; documents: DocumentRecord[]; selectedDocs: number[];
   onToggleSelect: (id: number) => void; onSelectAllVisible: (ids: number[]) => void; onClearSelected: () => void; onOpenFolder: (folderId: number) => void; onOpenPreview: (doc: DocumentRecord) => void;
   onHoverEnter: (doc: DocumentRecord, anchor: HTMLElement) => void; onHoverLeave: () => void;
   onCreateFolder: (name: string, parentId: number | null) => Promise<number | null>;

@@ -5,7 +5,7 @@ type Plan = 'standard' | 'premium';
 type PaidPlan = Plan | 'family' | 'business';
 type AnyPlan = 'free' | PaidPlan;
 type BillingInterval = 'monthly' | 'yearly';
-type Props = { apiUrl?: string; fetcher?: typeof fetch; busy: boolean; currentPlan: AnyPlan; developmentOverride: boolean; cancellationScheduled: boolean; onClose: () => void; onSelectFree: () => void; onSelect: (plan: Plan, interval: BillingInterval) => void };
+type Props = { apiUrl?: string; fetcher?: typeof fetch; busy: boolean; currentPlan: AnyPlan; developmentOverride: boolean; cancellationScheduled: boolean; onClose: () => void; onSelectFree: () => void; onSelect: (plan: PaidPlan, interval: BillingInterval) => void };
 type Value = boolean | string;
 type Feature = { name: string; description?: string; free: Value; standard: Value; premium: Value; family: Value; business: Value };
 type QuoteItem = { base: number; amount: number; promotion: { name: string; percent: number } | null; currency: string };
@@ -49,8 +49,8 @@ function buildSections(catalog?: CatalogResponse['catalog']): { title: string; i
         { name: 'Auto-rozpoznawanie i sugestia kartoteki po skanie', description: 'Działa lokalnie offline i uczy się ręcznych korekt (NIP / nadawca).', free: f?.ocr ? 'Bez limitu' : trialFreeOcr, standard: s?.ocr ? 'Bez limitu' : trialStandardOcr, premium: 'Bez limitu', family: 'Bez limitu', business: 'Bez limitu' },
         { name: 'Odczyt załączników ze skrzynki pocztowej (IMAP)', description: 'Pobieranie załączników do poczekalni z podglądem, odczytem treści PDF, wstępnym przydziałem kartotek i Drag & Drop.', free: 'Tylko odczyt', standard: '1 skrzynka', premium: 'Bez limitu', family: 'Bez limitu', business: 'Bez limitu' },
         { name: 'Gorący folder (Watch Folder)', description: 'Automatyczne przejmowanie nowych skanów/PDF ze wskazanego folderu na komputerze do poczekalni.', free: false, standard: false, premium: true, family: true, business: true },
-        { name: 'Paczka dla księgowej (ZIP + CSV)', description: 'Eksport dokumentów z wybranego miesiąca wraz z podsumowaniem kwot w CSV jednym kliknięciem.', free: false, standard: false, premium: true, family: true, business: true },
-        { name: 'Import faktur KSeF (XML FA(2)/FA(3)) + podgląd PDF', description: 'Automatyczny odczyt NIP, kwot, pozycji i terminów płatności z pliku XML KSeF oraz wydruk faktury do PDF.', free: false, standard: false, premium: true, family: true, business: true },
+        { name: 'Paczka dla księgowej (ZIP + CSV)', description: 'Eksport dokumentów z wybranego miesiąca wraz z podsumowaniem kwot w CSV jednym kliknięciem.', free: false, standard: false, premium: false, family: false, business: true },
+        { name: 'Import faktur KSeF (XML FA(2)/FA(3)) + podgląd PDF', description: 'Automatyczny odczyt NIP, kwot, pozycji i terminów płatności z pliku XML KSeF oraz wydruk faktury do PDF.', free: false, standard: false, premium: false, family: false, business: true },
         { name: 'Odczyt paragonów i faktur do dashboardu', description: 'Automatyczne podsumowanie wydatków i terminów płatności w panelu analiz.', free: f?.ocr ? 'Bez limitu' : trialFreeOcr, standard: s?.ocr ? 'Bez limitu' : trialStandardOcr, premium: 'Bez limitu', family: 'Bez limitu', business: 'Bez limitu' },
         { name: 'Opcjonalny własny serwer AI/OCR (bez zapisu)', description: 'Wyłącznie za wyraźną zgodą użytkownika, bez przechowywania plików po stronie serwera.', free: false, standard: false, premium: true, family: true, business: true },
         { name: 'Eksport zaznaczonych dokumentów do jednego PDF', free: false, standard: false, premium: true, family: true, business: true },
@@ -103,7 +103,7 @@ function CheckoutButtons({ plan, busy, onSelect, catalogData }: { plan: PaidPlan
   const yearlyCents = catalogData?.catalog.plans[plan]?.yearly ?? DEFAULT_PRICES[plan].yearly;
   const quotes = catalogData?.quotes?.[plan];
   const triggerSelect = (interval: BillingInterval) => {
-    if (plan === 'standard' || plan === 'premium') onSelect(plan, interval);
+    onSelect(plan, interval);
   };
 
   return (

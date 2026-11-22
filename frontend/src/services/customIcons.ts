@@ -3,7 +3,7 @@ export type CustomFolderIcon = { id: string; dataUrl: string };
 const STORAGE_KEY = 'eteczka_custom_icons_v1';
 export const DEFAULT_FOLDER_ICONS = ['📁', '📂', '🗂️', '💼', '🏠', '📄', '🔒', '⭐', '🏢', '🚗', '🧾', '💊'];
 
-export function customIconLimit(plan: 'free' | 'standard' | 'premium'): number | null {
+export function customIconLimit(plan: 'free' | 'standard' | 'premium' | 'family' | 'business'): number | null {
   if (plan === 'premium') return null;
   return plan === 'standard' ? 6 : 3;
 }

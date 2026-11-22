@@ -78,8 +78,9 @@ export function createBillingRouter(prisma: PrismaClient, getStripe: () => Strip
       await prisma.subscription.update({ where: { ownerKey: subscription.ownerKey }, data: { plan: 'free', status: 'canceled' } });
     }
     const active = !scheduledEndPassed && (subscription?.status === 'active' || subscription?.status === 'trialing');
+    const resolvedLocalPlan = subscription?.plan && ['standard', 'premium', 'family', 'business'].includes(subscription.plan) ? subscription.plan : 'premium';
     response.json({
-      plan: active ? (subscription?.plan === 'standard' ? 'standard' : 'premium') : 'free',
+      plan: active ? resolvedLocalPlan : 'free',
       status: scheduledEndPassed ? 'canceled' : subscription?.status ?? 'inactive',
       currentPeriodEnd: subscription?.currentPeriodEnd ?? null,
       cancelAtPeriodEnd: subscription?.cancelAtPeriodEnd ?? false,
@@ -112,8 +113,9 @@ export function createBillingRouter(prisma: PrismaClient, getStripe: () => Strip
     try {
       const session = await stripe.checkout.sessions.retrieve(sessionId);
       const plan = await applyCheckoutSession(prisma, stripe, session, true);
-      const planLabel = plan === 'standard' ? 'Standard' : 'Premium';
-      response.type('html').send(`<!doctype html><meta charset="utf-8"><title>E‑Teczka — płatność potwierdzona</title><body style="font-family:Arial;background:#0f172a;color:#e2e8f0;padding:40px"><h1>Płatność potwierdzona</h1><p>Plan ${planLabel} jest aktywny. Możesz zamknąć to okno i wrócić do E‑Teczki.</p><script>setTimeout(() => window.close(), 2500)</script></body>`);
+      const planLabels: Record<string, string> = { standard: 'Standard', premium: 'Premium', family: 'Rodzinny', business: 'Firmowy' };
+      const planLabel = (plan && planLabels[plan]) || 'Premium';
+      response.type('html').send(`<!doctype html><meta charset="utf-8"><title>MojaTeczka — płatność potwierdzona</title><body style="font-family:Arial;background:#0f172a;color:#e2e8f0;padding:40px"><h1>Płatność potwierdzona</h1><p>Plan ${planLabel} jest aktywny. Możesz zamknąć to okno i wrócić do MojejTeczki.</p><script>setTimeout(() => window.close(), 2500)</script></body>`);
     } catch (error) {
       if (error instanceof BillingHttpError) return response.status(error.statusCode).send(error.message);
       response.status(400).send('Nie udało się potwierdzić płatności.');
@@ -224,13 +226,21 @@ export function createBillingRouter(prisma: PrismaClient, getStripe: () => Strip
     catch { return response.status(503).json({ error: 'Nie udało się sprawdzić anulowania w Stripe. Spróbuj ponownie.' }); }
     if (existing?.cancelAtPeriodEnd && ['active', 'trialing'].includes(existing.status) && request.body?.acceptReplacement !== true) return response.status(409).json({ error: 'Przed nową płatnością potwierdź rozpoczęcie nowego planu i opłatę za niego.' });
 
-    const plan = request.body?.plan === 'standard' ? 'standard' : 'premium';
+    const rawPlan = String(request.body?.plan || 'premium');
+    const plan = (['standard', 'premium', 'family', 'business'].includes(rawPlan) ? rawPlan : 'premium') as 'standard' | 'premium' | 'family' | 'business';
     const interval = request.body?.interval === 'yearly' ? 'yearly' : 'monthly';
-    const price = plan === 'standard' ? (interval === 'yearly' ? process.env.STRIPE_STANDARD_PRICE_YEARLY : process.env.STRIPE_STANDARD_PRICE_MONTHLY) : (interval === 'yearly' ? process.env.STRIPE_PRICE_YEARLY : process.env.STRIPE_PRICE_MONTHLY);
+    const envPrices: Record<typeof plan, { monthly?: string; yearly?: string; fallbackMonthly: number; fallbackYearly: number; label: string }> = {
+      standard: { monthly: process.env.STRIPE_STANDARD_PRICE_MONTHLY, yearly: process.env.STRIPE_STANDARD_PRICE_YEARLY, fallbackMonthly: 499, fallbackYearly: 4990, label: 'Standard' },
+      premium: { monthly: process.env.STRIPE_PRICE_MONTHLY, yearly: process.env.STRIPE_PRICE_YEARLY, fallbackMonthly: 999, fallbackYearly: 9990, label: 'Premium' },
+      family: { monthly: process.env.STRIPE_FAMILY_PRICE_MONTHLY, yearly: process.env.STRIPE_FAMILY_PRICE_YEARLY, fallbackMonthly: 1499, fallbackYearly: 14990, label: 'Rodzinny' },
+      business: { monthly: process.env.STRIPE_BUSINESS_PRICE_MONTHLY, yearly: process.env.STRIPE_BUSINESS_PRICE_YEARLY, fallbackMonthly: 2999, fallbackYearly: 29990, label: 'Firmowy' },
+    };
+    const planCfg = envPrices[plan];
+    const price = interval === 'yearly' ? planCfg.yearly : planCfg.monthly;
     const testKey = (process.env.STRIPE_SECRET_KEY || '').startsWith('sk_test_');
-    if (!price && !testKey) return response.status(503).json({ error: `Brak ceny dla planu ${interval}.` });
+    if (!price && !testKey) return response.status(503).json({ error: `Brak ceny dla planu ${planCfg.label} (${interval}).` });
 
-    const lineItem = price ? { price, quantity: 1 } : { price_data: { currency: 'pln', unit_amount: plan === 'standard' ? (interval === 'yearly' ? 4990 : 499) : (interval === 'yearly' ? 9990 : 999), recurring: { interval: interval === 'yearly' ? 'year' as const : 'month' as const }, product_data: { name: `E‑Teczka ${plan === 'standard' ? 'Standard' : 'Premium'}` } }, quantity: 1 };
+    const lineItem = price ? { price, quantity: 1 } : { price_data: { currency: 'pln', unit_amount: interval === 'yearly' ? planCfg.fallbackYearly : planCfg.fallbackMonthly, recurring: { interval: interval === 'yearly' ? 'year' as const : 'month' as const }, product_data: { name: `MojaTeczka ${planCfg.label}` } }, quantity: 1 };
     const returnBase = billingReturnBase(request.socket.localAddress);
     const replacesSubscriptionId = existing?.cancelAtPeriodEnd && ['active', 'trialing'].includes(existing.status) ? existing.providerSubscriptionId || '' : '';
     const checkoutParams = { mode: 'subscription', line_items: [lineItem], success_url: process.env.ETECZKA_BILLING_SUCCESS_URL || `${returnBase}/api/billing/confirm?session_id={CHECKOUT_SESSION_ID}`, cancel_url: process.env.ETECZKA_BILLING_CANCEL_URL || `${returnBase}/api/billing/cancel`, metadata: { ownerKey: ownerKey(request), plan, replacesSubscriptionId }, subscription_data: { metadata: { ownerKey: ownerKey(request), plan } } } as Stripe.Checkout.SessionCreateParams & { managed_payments?: { enabled: boolean } };

@@ -5,7 +5,7 @@ import { FolderIconView, PRESET_FOLDER_ICONS, suggestFolderIcon } from './Folder
 
 type Props = {
   isSubfolder: boolean;
-  plan: 'free' | 'standard' | 'premium';
+  plan: 'free' | 'standard' | 'premium' | 'family' | 'business';
   onSubmit: (name: string, icon: string) => Promise<void> | void;
   onCancel: () => void;
 };

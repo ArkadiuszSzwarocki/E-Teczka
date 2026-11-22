@@ -25,7 +25,7 @@ type Props = {
   notificationsOpen: boolean;
   userMenuOpen: boolean;
   currentUser: { email: string; name?: string | null } | null;
-  billingPlan: 'free' | 'standard' | 'premium';
+  billingPlan: 'free' | 'standard' | 'premium' | 'family' | 'business';
   billingIsDev: boolean;
   onDevPlanChanged: () => void;
   apiUrl: string;

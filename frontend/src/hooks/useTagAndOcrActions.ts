@@ -7,7 +7,7 @@ type UseTagAndOcrActionsArgs = {
   apiUrl: string;
   fetcher: typeof fetch;
   selectedDocs: number[];
-  billingPlan: 'free' | 'standard' | 'premium';
+  billingPlan: 'free' | 'standard' | 'premium' | 'family' | 'business';
   setPlanLimitMessage: (msg: string) => void;
   searchQuery: string;
   fetchData: () => Promise<void>;

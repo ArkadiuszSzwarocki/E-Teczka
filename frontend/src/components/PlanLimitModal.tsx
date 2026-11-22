@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-type Props = { message: string; plan: 'free' | 'standard' | 'premium'; busy: boolean; onClose: () => void; onSelect: (plan: 'standard' | 'premium', interval: 'monthly' | 'yearly') => void };
+type Props = { message: string; plan: 'free' | 'standard' | 'premium' | 'family' | 'business'; busy: boolean; onClose: () => void; onSelect: (plan: 'standard' | 'premium' | 'family' | 'business', interval: 'monthly' | 'yearly') => void };
 export default function PlanLimitModal({ message, plan, busy, onClose, onSelect }: Props) {
   const [otherPlans, setOtherPlans] = useState(false);
   const googlePlayAvailable = false;
