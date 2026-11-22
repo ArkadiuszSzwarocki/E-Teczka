@@ -27,7 +27,7 @@ function decodeBase64UrlUtf8(input: string): string {
 }
 async function savePlan(origin:string,userId:string,signed:{payload:string}) {
   const lease=JSON.parse(decodeBase64UrlUtf8(signed.payload)) as CentralPlan;
-  const device=await mobileDevice(userId);if(lease.accountId!==userId||lease.deviceId!==device.deviceId||lease.kind!=='mobile'||!VALID_PLANS.includes(lease.plan)||lease.expiresAt<=Date.now()||lease.expiresAt>Date.now()+86460000)throw new Error('Nieprawidłowe uprawnienia konta.');
+  const device=await mobileDevice(userId);if(lease.accountId!==userId||lease.deviceId!==device.deviceId||lease.kind!=='mobile'||!VALID_PLANS.includes(lease.plan)||lease.expiresAt<=Date.now()||lease.expiresAt>Date.now()+86400000+600000)throw new Error('Nieprawidłowe uprawnienia konta.');
   // Received over HTTPS and kept in OS-protected SecureStore; never trust purchase fields from the UI.
   await SecureStore.setItemAsync(`${PLAN_KEY}_${userId}`,JSON.stringify({origin:centralAccountOrigin(origin),lease}));return lease;
 }
@@ -91,7 +91,12 @@ export async function refreshCentralUser(origin: string): Promise<CentralAccount
   const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 15000);
   try {
     const response = await fetch(`${centralAccountOrigin(origin)}/me`, { headers: { authorization: `Bearer ${session.token}` }, signal: controller.signal, redirect: 'error' });
-    if (response.status === 401) { await SecureStore.deleteItemAsync(SESSION_KEY); return null; }
+    if (response.status === 401) {
+      await closeMobileProfile().catch(() => undefined);
+      await SecureStore.deleteItemAsync(SESSION_KEY);
+      DeviceEventEmitter.emit('eteczka-central-logout');
+      return null;
+    }
     if (!response.ok) throw new Error('Nie udało się sprawdzić sesji.');
     const user = await response.json() as CentralAccountUser;
     if (user.id !== session.user.id || !user.email) throw new Error('Serwer zwrócił nieprawidłowe dane konta.');
@@ -102,12 +107,13 @@ export async function refreshCentralUser(origin: string): Promise<CentralAccount
 
 export async function logoutCentralAccount(origin: string) {
   const session = await getCentralSession(origin);
-  // Keep the local credential if the server cannot revoke it, so the user can retry.
-  if (session) await post(origin, '/logout', {}, session.token);
   DeviceEventEmitter.emit('eteczka-account-switch-start');
-  await closeMobileProfile();
+  await closeMobileProfile().catch(() => undefined);
   await SecureStore.deleteItemAsync(SESSION_KEY);
   DeviceEventEmitter.emit('eteczka-central-logout');
+  if (session) {
+    void post(origin, '/logout', {}, session.token).catch(() => undefined);
+  }
 }
 
 export async function deleteCentralAccount(origin: string) {

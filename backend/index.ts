@@ -23,7 +23,7 @@ import { createSyncRouter } from './routes/sync';
 import { createMobileScanRouter } from './routes/mobileScan';
 import { getAccessibleFolderIds } from './services/familyAccess';
 import { errorMessage } from './utils/errors';
-import { createBillingRouter, createBillingWebhookHandler } from './routes/billing';
+import { createBillingReturnRouter, createBillingRouter, createBillingWebhookHandler } from './routes/billing';
 import { createAuthRouter } from './routes/auth';
 import { createHelloAuthRouter } from './routes/helloAuth';
 import { centralEntitlement } from './services/centralEntitlements';
@@ -83,7 +83,7 @@ app.use((_req, res, next) => {
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader(
     'Content-Security-Policy',
-    "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; frame-src 'self' blob:; connect-src 'self' http://127.0.0.1:* http://localhost:* https:;",
+    "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; script-src 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; frame-src 'self' blob:; connect-src 'self' http://127.0.0.1:* http://localhost:* https:;",
   );
   next();
 });
@@ -122,6 +122,7 @@ app.use('/api/hello', createHelloAuthRouter(prisma));
 app.use('/api/central-account', requireLocalDesktop, createCentralAccountRouter(prisma));
 
 app.use('/api/backup/oauth', createBackupOAuthCallbackRouter(prisma));
+app.use('/api/billing', createBillingReturnRouter(prisma));
 
 app.use('/api/dev/catalog', createDeveloperCatalogRouter(prisma));
 app.use('/api/dev/feedback', createDeveloperFeedbackRouter(prisma));

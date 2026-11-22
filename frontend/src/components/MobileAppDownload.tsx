@@ -28,7 +28,11 @@ export default function MobileAppDownload() {
     return () => { active = false; };
   }, []);
 
-  const webAppUrl = typeof window !== 'undefined' && /^https?:\/\//i.test(window.location.origin) ? window.location.origin : '';
+  const envWebUrl = (import.meta.env.VITE_PUBLIC_WEB_URL || '').trim();
+  const isReachableOrigin = typeof window !== 'undefined'
+    && /^https?:\/\//i.test(window.location.origin)
+    && !/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(window.location.origin);
+  const webAppUrl = /^https?:\/\//i.test(envWebUrl) ? envWebUrl : isReachableOrigin ? window.location.origin : '';
 
   return (
     <div className="grid gap-4 md:grid-cols-2">

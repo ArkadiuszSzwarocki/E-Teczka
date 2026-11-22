@@ -146,16 +146,21 @@ export async function buildAnalyticsSummary(
     }
 
     const docCurrency = (doc.currency || 'PLN').toUpperCase();
-    if (typeof doc.amountCents === 'number' && doc.amountCents !== 0 && docCurrency === 'PLN') {
+    const isBillableDoc = Boolean(
+      doc.merchantName ||
+      doc.lineItems.length > 0 ||
+      /\b(paragon|rachunek|faktura|fv)\b/i.test(doc.title),
+    );
+    if (isBillableDoc && typeof doc.amountCents === 'number' && doc.amountCents !== 0 && docCurrency === 'PLN') {
       const refDate = doc.dueDate || doc.createdAt;
-      if (refDate >= monthStart && refDate < monthEnd) {
+      const docMonthKey = `${refDate.getFullYear()}-${String(refDate.getMonth() + 1).padStart(2, '0')}`;
+      if (docMonthKey === targetMonth) {
         totalCents += doc.amountCents;
         if (doc.paymentStatus === 'paid') paidCents += doc.amountCents;
         else unpaidCents += doc.amountCents;
       }
       if (refDate >= sixMonthsStart && refDate < monthEnd) {
-        const key = `${refDate.getFullYear()}-${String(refDate.getMonth() + 1).padStart(2, '0')}`;
-        if (monthlyTotals.has(key)) monthlyTotals.set(key, (monthlyTotals.get(key) || 0) + doc.amountCents);
+        if (monthlyTotals.has(docMonthKey)) monthlyTotals.set(docMonthKey, (monthlyTotals.get(docMonthKey) || 0) + doc.amountCents);
       }
     }
 

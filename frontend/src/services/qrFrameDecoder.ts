@@ -53,7 +53,7 @@ export function createQrFrameDecoder(): QrFrameDecoder {
 
       ctx.drawImage(video, 0, 0, width, height);
       const imageData = ctx.getImageData(0, 0, width, height);
-      const result = jsQR(imageData.data, width, height, { inversionAttempts: 'dontInvert' });
+      const result = jsQR(imageData.data, width, height, { inversionAttempts: 'attemptBoth' });
       return result?.data?.trim() || null;
     },
   };

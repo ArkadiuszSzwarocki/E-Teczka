@@ -24,10 +24,14 @@ function createWindowAndTrayController({ app, BrowserWindow, Tray, Menu, ipcMain
             settled = true;
             clearTimeout(timer);
             ipcMain.removeHandler('eteczka-quit-ready');
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.removeListener('closed', done);
+            }
             resolve();
           }
         };
         const timer = setTimeout(done, 60_000);
+        mainWindow.once('closed', done);
         ipcMain.handle('eteczka-quit-ready', () => { done(); return true; });
         mainWindow.webContents.send('eteczka-prepare-quit');
       });
@@ -135,7 +139,12 @@ function createWindowAndTrayController({ app, BrowserWindow, Tray, Menu, ipcMain
 
   ipcMain.handle('eteczka-open-external', async (event, rawUrl) => {
     if (!ownRenderer(event) || typeof rawUrl !== 'string') return false;
-    const parsed = new URL(rawUrl);
+    let parsed;
+    try {
+      parsed = new URL(rawUrl);
+    } catch {
+      return false;
+    }
     if (!(parsed.protocol === 'https:' || (parsed.protocol === 'http:' && parsed.hostname === '127.0.0.1'))) {
       return false;
     }

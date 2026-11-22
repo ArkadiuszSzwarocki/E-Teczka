@@ -19,11 +19,21 @@ export function verifyEntitlement(signed:SignedLease,entry:Pick<Entry,'accountId
  const key=crypto.createPublicKey({key:Buffer.from(signed.publicKey,'base64'),type:'spki',format:'der'});
  if(key.asymmetricKeyType!=='ed25519'||!crypto.verify(null,Buffer.from(signed.payload),key,Buffer.from(signed.signature,'base64url')))throw new Error('INVALID_ENTITLEMENT');
  const lease=JSON.parse(Buffer.from(signed.payload,'base64url').toString()) as Lease;
- if(lease.version!==1||lease.accountId!==entry.accountId||lease.deviceId!==entry.deviceId||lease.kind!=='desktop'||!['free','standard','premium','family','business'].includes(lease.plan)||!Number.isSafeInteger(lease.issuedAt)||!Number.isSafeInteger(lease.expiresAt)||lease.issuedAt>now+60000||lease.expiresAt<=now||lease.expiresAt>lease.issuedAt+86400000||(lease.validUntil!==null&&lease.expiresAt>lease.validUntil))throw new Error('EXPIRED_ENTITLEMENT');
+ if(lease.version!==1||lease.accountId!==entry.accountId||lease.deviceId!==entry.deviceId||lease.kind!=='desktop'||!['free','standard','premium','family','business'].includes(lease.plan)||!Number.isSafeInteger(lease.issuedAt)||!Number.isSafeInteger(lease.expiresAt)||lease.issuedAt>now+600000||lease.expiresAt<=now||lease.expiresAt>lease.issuedAt+86400000+600000||(lease.validUntil!==null&&lease.expiresAt>lease.validUntil))throw new Error('EXPIRED_ENTITLEMENT');
  if(lease.catalog){require('./planCatalog').applyCentralCatalog(lease.catalog);require('./planPolicy').refreshPlanPolicy();}
  return lease;
 }
-async function post(origin:string,endpoint:string,credential:string,body:object){const response=await fetch(`${origin}${endpoint}`,{method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${credential}`},body:JSON.stringify(body),redirect:'error',signal:AbortSignal.timeout(7000)});const value=await response.json();return {response,value};}
+async function post(origin:string,endpoint:string,credential:string,body:object){
+ const response=await fetch(`${origin}${endpoint}`,{method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${credential}`},body:JSON.stringify(body),redirect:'error',signal:AbortSignal.timeout(7000)});
+ if(response.status===204)return {response,value:{}};
+ const raw=await response.text();
+ if(!raw)return {response,value:{}};
+ try{return {response,value:JSON.parse(raw)};}
+ catch{
+  if(response.status>=500)throw Object.assign(new Error('Serwer kont jest chwilowo niedostępny.'),{code:'CENTRAL_OFFLINE'});
+  return {response,value:{}};
+ }
+}
 export async function registerCentralDevice(localUserId:number,origin:string,accountId:string,token:string){
  const safe=centralAccountOrigin(origin);if(!safe)throw new Error('INVALID_ORIGIN');
  let entry=read()[localUserId];if(!entry||entry.blocked||entry.origin!==safe||entry.accountId!==accountId){entry={origin:safe,accountId,deviceId:crypto.randomUUID(),credential:crypto.randomBytes(32).toString('base64url')};update(localUserId,entry);}

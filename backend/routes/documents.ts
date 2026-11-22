@@ -58,12 +58,14 @@ function safeErrorPayload(message: string, details: string) {
 export function createDocumentRouter(prisma: PrismaClient, ocrQueue?: ReturnType<typeof createOcrQueue>) {
   const router = express.Router();
   const ownerId = (res: express.Response) => Number(res.locals.userId || 1);
-  // Delete only records currently in this owner's trash; shared file paths remain intact.
+  // Delete only records currently in trash within folders accessible to this owner; shared file paths remain intact.
   const removeTrashed = async (owner: number, id?: number) => {
-    const where = { isDeleted: true, folder: { ownerId: owner }, ...(id === undefined ? {} : { id }) };
+    const accessibleIds = await getAccessibleFolderIds(prisma, owner);
+    const where = { isDeleted: true, folderId: { in: accessibleIds }, ...(id === undefined ? {} : { id }) };
     const records = await prisma.document.findMany({ where, select: { id: true, filePath: true } });
     const ids = records.map(record => record.id);
     if (ids.length) await prisma.$transaction(async tx => {
+      await tx.documentLineItem.deleteMany({ where: { documentId: { in: ids } } });
       await tx.documentTag.deleteMany({ where: { documentId: { in: ids } } });
       await tx.document.deleteMany({ where: { ...where, id: { in: ids } } });
     });
@@ -313,8 +315,27 @@ export function createDocumentRouter(prisma: PrismaClient, ocrQueue?: ReturnType
       if (!await canAccessFolder(prisma, ownerId(res), folderId) || !await isDocumentFolder(prisma, folderId)) {
         return res.status(400).json({ error: 'Dokumenty można dodawać wyłącznie do dostępnej kartoteki.' });
       }
-      const retentions = JSON.parse(String(req.body?.retentions || '[]'));
-      const thumbnails = JSON.parse(String(req.body?.thumbnails || '[]'));
+      let retentions: unknown;
+      let thumbnails: unknown;
+      try {
+        retentions = JSON.parse(String(req.body?.retentions || '[]'));
+        thumbnails = JSON.parse(String(req.body?.thumbnails || '[]'));
+      } catch {
+        return res.status(400).json({ error: 'Nieprawidłowy format JSON dla retencji lub miniatur.' });
+      }
+      if (!Array.isArray(retentions) || !Array.isArray(thumbnails)) {
+        return res.status(400).json({ error: 'Nieprawidłowe ustawienia retencji lub miniatur.' });
+      }
+      for (const item of retentions) {
+        if (!item || typeof item !== 'object') return res.status(400).json({ error: 'Nieprawidłowe ustawienia retencji.' });
+        const r = item as { enabled?: unknown; value?: unknown; unit?: unknown };
+        const val = Number(r.value ?? 5);
+        const unit = String(r.unit ?? 'years');
+        if (r.enabled !== undefined && typeof r.enabled !== 'boolean') return res.status(400).json({ error: 'Nieprawidłowa flaga retencji.' });
+        if (!Number.isInteger(val) || val < 1 || val > 1000 || !retentionUnits.has(unit)) {
+          return res.status(400).json({ error: 'Nieprawidłowa wartość lub jednostka retencji.' });
+        }
+      }
       const physicalLocation = req.body?.physicalLocation ? String(req.body.physicalLocation) : null;
       const plan = await getPlan(prisma, ocrOwnerKey(res));
       const { savedDocs, skippedDuplicates } = await saveBatchBinaryDocuments(prisma, {

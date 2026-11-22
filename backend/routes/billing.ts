@@ -26,12 +26,46 @@ function ownerKey(request: express.Request) {
   return String(request.res?.locals.billingOwnerKey || 'desktop-local');
 }
 
+export function createBillingReturnRouter(prisma: PrismaClient, getStripe: () => Stripe | null = defaultStripeClient) {
+  const router = express.Router();
+
+  router.get('/confirm', async (request, response) => {
+    const stripe = getStripe();
+    const sessionId = typeof request.query.session_id === 'string' ? request.query.session_id : '';
+    if (!stripe || !sessionId) return response.status(400).send('Brak identyfikatora sesji płatności.');
+    try {
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+      const plan = await applyCheckoutSession(prisma, stripe, session, true);
+      const planLabels: Record<string, string> = { standard: 'Standard', premium: 'Premium', family: 'Rodzinny', business: 'Firmowy' };
+      const planLabel = (plan && planLabels[plan]) || 'Premium';
+      response.type('html').send(`<!doctype html><meta charset="utf-8"><title>MojaTeczka — płatność potwierdzona</title><body style="font-family:Arial;background:#0f172a;color:#e2e8f0;padding:40px"><h1>Płatność potwierdzona</h1><p>Plan ${planLabel} jest aktywny. Możesz zamknąć to okno i wrócić do MojejTeczki.</p><script>setTimeout(() => window.close(), 2500)</script></body>`);
+    } catch (error) {
+      if (error instanceof BillingHttpError) return response.status(error.statusCode).send(error.message);
+      response.status(400).send('Nie udało się potwierdzić płatności.');
+    }
+  });
+
+  router.get('/cancel', (_request, response) => {
+    response.type('html').send('<!doctype html><meta charset="utf-8"><title>MojaTeczka — płatność anulowana</title><body style="font-family:Arial;background:#0f172a;color:#e2e8f0;padding:40px"><h1>Płatność anulowana</h1><p>Nie pobrano opłaty. Możesz zamknąć tę kartę i wrócić do MojejTeczki.</p></body>');
+  });
+
+  router.get('/portal-return', (_request, response) => {
+    response.type('html').send('<!doctype html><meta charset="utf-8"><title>MojaTeczka — powrót</title><body style="font-family:Arial;background:#0f172a;color:#e2e8f0;padding:40px"><h1>Wróć do MojejTeczki</h1><p>Możesz zamknąć to okno. Aplikacja sprawdzi status subskrypcji.</p></body>');
+  });
+
+  return router;
+}
+
+let lastCentralCatalogFetchAt = 0;
+const CENTRAL_CATALOG_TTL_MS = 5 * 60 * 1000;
+
 export function createBillingRouter(prisma: PrismaClient, getStripe: () => Stripe | null = defaultStripeClient, options: { allowLegacyCheckout?: boolean } = {}) {
   const router = express.Router();
 
   router.get('/catalog', async (_request, response) => {
     const centralOrigin = centralAccountOrigin(process.env.ETECZKA_CENTRAL_ACCOUNT_URL);
-    if (centralOrigin) {
+    if (centralOrigin && Date.now() - lastCentralCatalogFetchAt > CENTRAL_CATALOG_TTL_MS) {
+      lastCentralCatalogFetchAt = Date.now();
       try {
         const res = await fetch(`${centralOrigin}/catalog`, { redirect: 'error', signal: AbortSignal.timeout(3000) });
         if (res.ok) applyCentralCatalog(await res.json());
@@ -104,30 +138,6 @@ export function createBillingRouter(prisma: PrismaClient, getStripe: () => Strip
       if (error instanceof BillingHttpError) return response.status(error.statusCode).json({ error: error.message });
       return response.json({ plan: localSubscription.plan, status: localSubscription.status, renewalAt: localSubscription.currentPeriodEnd });
     }
-  });
-
-  router.get('/confirm', async (request, response) => {
-    const stripe = getStripe();
-    const sessionId = typeof request.query.session_id === 'string' ? request.query.session_id : '';
-    if (!stripe || !sessionId) return response.status(400).send('Brak identyfikatora sesji płatności.');
-    try {
-      const session = await stripe.checkout.sessions.retrieve(sessionId);
-      const plan = await applyCheckoutSession(prisma, stripe, session, true);
-      const planLabels: Record<string, string> = { standard: 'Standard', premium: 'Premium', family: 'Rodzinny', business: 'Firmowy' };
-      const planLabel = (plan && planLabels[plan]) || 'Premium';
-      response.type('html').send(`<!doctype html><meta charset="utf-8"><title>MojaTeczka — płatność potwierdzona</title><body style="font-family:Arial;background:#0f172a;color:#e2e8f0;padding:40px"><h1>Płatność potwierdzona</h1><p>Plan ${planLabel} jest aktywny. Możesz zamknąć to okno i wrócić do MojejTeczki.</p><script>setTimeout(() => window.close(), 2500)</script></body>`);
-    } catch (error) {
-      if (error instanceof BillingHttpError) return response.status(error.statusCode).send(error.message);
-      response.status(400).send('Nie udało się potwierdzić płatności.');
-    }
-  });
-
-  router.get('/cancel', (_request, response) => {
-    response.type('html').send('<!doctype html><meta charset="utf-8"><title>MojaTeczka — płatność anulowana</title><body style="font-family:Arial;background:#0f172a;color:#e2e8f0;padding:40px"><h1>Płatność anulowana</h1><p>Nie pobrano opłaty. Możesz zamknąć tę kartę i wrócić do MojejTeczki.</p></body>');
-  });
-
-  router.get('/portal-return', (_request, response) => {
-    response.type('html').send('<!doctype html><meta charset="utf-8"><title>MojaTeczka — powrót</title><body style="font-family:Arial;background:#0f172a;color:#e2e8f0;padding:40px"><h1>Wróć do MojejTeczki</h1><p>Możesz zamknąć to okno. Aplikacja sprawdzi status subskrypcji.</p></body>');
   });
 
   router.get('/cancel-preview', async (request, response) => {

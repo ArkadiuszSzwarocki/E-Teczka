@@ -23,11 +23,16 @@ export default function EReceiptImportModal({
   const [scanningQr, setScanningQr] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const tickTimerRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
   const scanSessionRef = useRef(0);
 
   const stopCamera = () => {
     scanSessionRef.current += 1;
+    if (tickTimerRef.current !== null) {
+      window.clearTimeout(tickTimerRef.current);
+      tickTimerRef.current = null;
+    }
     streamRef.current?.getTracks().forEach(t => t.stop());
     streamRef.current = null;
     if (mountedRef.current) setScanningQr(false);
@@ -38,6 +43,10 @@ export default function EReceiptImportModal({
     return () => {
       mountedRef.current = false;
       scanSessionRef.current += 1;
+      if (tickTimerRef.current !== null) {
+        window.clearTimeout(tickTimerRef.current);
+        tickTimerRef.current = null;
+      }
       streamRef.current?.getTracks().forEach(t => t.stop());
       streamRef.current = null;
     };
@@ -66,18 +75,20 @@ export default function EReceiptImportModal({
       });
       const decoder = createQrFrameDecoder();
       const tick = async () => {
-        if (!streamRef.current || !videoRef.current) return;
+        if (!mountedRef.current || scanSessionRef.current !== session || !streamRef.current || !videoRef.current) return;
         try {
           const value = await decoder.decode(videoRef.current);
-          if (value) {
+          if (value && scanSessionRef.current === session) {
             setPayload(value);
             stopCamera();
             return;
           }
         } catch { /* wait next frame */ }
-        if (streamRef.current) window.setTimeout(() => void tick(), 250);
+        if (mountedRef.current && scanSessionRef.current === session && streamRef.current) {
+          tickTimerRef.current = window.setTimeout(() => void tick(), 250);
+        }
       };
-      window.setTimeout(() => void tick(), 400);
+      tickTimerRef.current = window.setTimeout(() => void tick(), 400);
     } catch {
       stopCamera();
       setError('Brak dostępu do aparatu. Wklej kod QR lub JSON e-Paragonu ręcznie.');
