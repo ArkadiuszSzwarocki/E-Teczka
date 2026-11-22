@@ -12,11 +12,18 @@ type IpcRenderer = {
 };
 
 type ElectronWindow = Window & {
+  eteczkaElectron?: {
+    ipcRenderer?: IpcRenderer;
+    getZoomFactor?: () => number;
+    openExternal?: (url: string) => Promise<boolean>;
+  };
   require?: (moduleName: string) => unknown;
 };
 
 export function getElectronIpc(): IpcRenderer | null {
-  const electron = (window as ElectronWindow).require?.('electron') as { ipcRenderer?: IpcRenderer } | undefined;
+  const win = window as ElectronWindow;
+  if (win.eteczkaElectron?.ipcRenderer) return win.eteczkaElectron.ipcRenderer;
+  const electron = win.require?.('electron') as { ipcRenderer?: IpcRenderer } | undefined;
   return electron?.ipcRenderer ?? null;
 }
 
@@ -40,8 +47,9 @@ export function getScaledElementBounds(element: HTMLElement | null): AccountEmbe
   if (!element) return undefined;
   const rect = element.getBoundingClientRect();
   if (rect.width < 100 || rect.height < 100) return undefined;
-  const electron = (window as ElectronWindow).require?.('electron') as { webFrame?: { getZoomFactor: () => number } } | undefined;
-  const zoom = electron?.webFrame?.getZoomFactor?.() || 1;
+  const win = window as ElectronWindow;
+  const electron = win.require?.('electron') as { webFrame?: { getZoomFactor: () => number } } | undefined;
+  const zoom = win.eteczkaElectron?.getZoomFactor?.() || electron?.webFrame?.getZoomFactor?.() || 1;
   return {
     x: Math.round(rect.left * zoom),
     y: Math.round(rect.top * zoom),
@@ -65,7 +73,12 @@ export async function openExternalAccountUrl(raw: string, origin: string, bounds
     try { await ipc.invoke('eteczka-open-external-account', url.href, bounds); return; }
     catch { /* fall back to direct shell/window open */ }
   }
-  const electron = (window as ElectronWindow).require?.('electron') as { shell?: { openExternal: (url: string, options?: { activate?: boolean }) => Promise<void> } } | undefined;
+  const win = window as ElectronWindow;
+  if (win.eteczkaElectron?.openExternal) {
+    await win.eteczkaElectron.openExternal(url.href);
+    return;
+  }
+  const electron = win.require?.('electron') as { shell?: { openExternal: (url: string, options?: { activate?: boolean }) => Promise<void> } } | undefined;
   if (electron?.shell) { await electron.shell.openExternal(url.href, { activate: true }); return; }
   const left = Math.max(0, Math.round((window.screenX || 0) + ((window.outerWidth || 1024) - 520) / 2));
   const top = Math.max(0, Math.round((window.screenY || 0) + ((window.outerHeight || 768) - 680) / 2));
@@ -77,13 +90,22 @@ type NodeFileSystem = {
   unlinkSync: (path: string) => void;
 };
 
-export function readScanFileBase64(path: string): string {
+export async function readScanFileBase64(path: string): Promise<string> {
+  const ipc = getElectronIpc();
+  if (ipc) {
+    return await ipc.invoke('eteczka-read-temp-scan', path) as string;
+  }
   const fileSystem = (window as ElectronWindow).require?.('fs') as NodeFileSystem | undefined;
   if (!fileSystem) throw new Error('System plików jest dostępny tylko w aplikacji desktopowej.');
   return fileSystem.readFileSync(path).toString('base64');
 }
 
 export function removeTemporaryScan(path: string): void {
+  const ipc = getElectronIpc();
+  if (ipc) {
+    void ipc.invoke('eteczka-remove-temp-scan', path).catch(() => undefined);
+    return;
+  }
   const fileSystem = (window as ElectronWindow).require?.('fs') as NodeFileSystem | undefined;
   try { fileSystem?.unlinkSync(path); } catch { /* temporary scan cleanup is best-effort */ }
 }

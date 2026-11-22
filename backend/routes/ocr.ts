@@ -6,6 +6,9 @@ import { indexDocumentOcrText, searchEncryptedOcrDocuments } from '../services/o
 import type { createOcrQueue } from '../services/ocrQueue';
 import { activeDocumentIds } from '../services/planRestrictions';
 import { getPlan } from '../services/planLedger';
+import { getAccessibleFolderIds } from '../services/familyAccess';
+import { getLearnedFolderBoosts, recordFolderChoice } from '../services/folderLearningStore';
+import { suggestFolderForDocument } from '../services/statelessAiClassifier';
 
 export function createOcrRouter(prisma: PrismaClient, queue: ReturnType<typeof createOcrQueue>) {
   const router = express.Router();
@@ -20,6 +23,47 @@ export function createOcrRouter(prisma: PrismaClient, queue: ReturnType<typeof c
       const ids = await searchEncryptedOcrDocuments(prisma, Number(res.locals.userId || 1), query);
       res.setHeader('Cache-Control', 'no-store'); res.json({ ids });
     } catch { res.status(500).json({ error: 'Nie udało się przeszukać rozpoznanego tekstu.' }); }
+  });
+  router.post('/suggest-folder', async (req, res) => {
+    const text = typeof req.body?.text === 'string' ? req.body.text : '';
+    if (!text.trim() || text.length > 200_000) {
+      return res.status(400).json({ error: 'Podaj tekst dokumentu (maksymalnie 200 000 znaków).' });
+    }
+    try {
+      const ownerId = Number(res.locals.userId || 1);
+      const accessibleIds = await getAccessibleFolderIds(prisma, ownerId);
+      const folders = await prisma.folder.findMany({
+        where: { id: { in: accessibleIds } },
+        select: { id: true, name: true, parentId: true },
+      });
+      const learnedBoosts = getLearnedFolderBoosts(ownerId, text);
+      const result = await suggestFolderForDocument(text, folders, {
+        allowServerAi: req.body?.allowServerAi === true,
+        learnedBoosts,
+      });
+      res.setHeader('Cache-Control', 'no-store');
+      return res.json(result);
+    } catch {
+      return res.status(500).json({ error: 'Nie udało się dopasować kartoteki do dokumentu.' });
+    }
+  });
+  router.post('/learn-folder', async (req, res) => {
+    const text = typeof req.body?.text === 'string' ? req.body.text : '';
+    const folderId = Number(req.body?.folderId);
+    if (!text.trim() || text.length > 200_000 || !Number.isSafeInteger(folderId) || folderId < 1) {
+      return res.status(400).json({ error: 'Podaj tekst dokumentu oraz prawidłowy identyfikator kartoteki.' });
+    }
+    try {
+      const ownerId = Number(res.locals.userId || 1);
+      const accessibleIds = await getAccessibleFolderIds(prisma, ownerId);
+      if (!accessibleIds.includes(folderId)) {
+        return res.status(404).json({ error: 'Nie znaleziono wskazanej kartoteki.' });
+      }
+      const learnedCount = recordFolderChoice(ownerId, text, folderId);
+      return res.json({ success: true, learnedCount });
+    } catch {
+      return res.status(500).json({ error: 'Nie udało się zapisać reguły dopasowania kartoteki.' });
+    }
   });
   router.post('/batch', async (req, res) => {
     const ids = req.body?.documentIds;

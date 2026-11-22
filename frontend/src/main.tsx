@@ -7,8 +7,10 @@ import AccountGate from './components/AccountGate'
 import './index.css'
 import { initTheme } from './services/theme'
 import { initAppZoom } from './services/appZoom'
+import { initBackgroundStyle } from './services/backgroundStyle'
 
 initTheme();
+initBackgroundStyle();
 initAppZoom();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

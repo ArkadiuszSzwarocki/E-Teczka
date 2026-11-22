@@ -1,5 +1,12 @@
+import { useState } from 'react';
 import type { DocumentRecord, FolderRecord } from '../types/domain';
 import { formatBytes } from '../services/documentUpload';
+import {
+  detectRodoMatches,
+  getDocumentRodoOverride,
+  setDocumentRodoOverride,
+  type RodoDocOverride,
+} from '../services/rodoProtection';
 import { getExpiryDate } from '../utils/documentLifecycle';
 
 type Props = {
@@ -28,8 +35,10 @@ function formatRetention(doc: DocumentRecord): string {
   return expiry ? `${doc.retentionValue} ${unit} (do ${expiry.toLocaleDateString('pl-PL')})` : `${doc.retentionValue} ${unit}`;
 }
 
-/** Displays detailed metadata (size, dates, path, MIME type, retention, OCR, tags, owner, status) for a document. */
+/** Displays detailed metadata (size, dates, path, MIME type, retention, OCR, tags, RODO status, owner) for a document. */
 export default function DocumentPropertiesModal({ document: doc, folders = [], onClose }: Props) {
+  const [rodoMode, setRodoMode] = useState<RodoDocOverride>(() => getDocumentRodoOverride(doc.id));
+  const detectedRodo = detectRodoMatches(`${doc.title}\n${doc.ocrText || ''}`);
   const location = doc.isDeleted
     ? 'Kosz'
     : doc.isArchived
@@ -52,6 +61,7 @@ export default function DocumentPropertiesModal({ document: doc, folders = [], o
     ['Ostatnia zmiana', doc.updatedAt ? new Date(doc.updatedAt).toLocaleString('pl-PL') : 'Brak danych'],
     ['Termin życia', formatRetention(doc)],
     ['Rozpoznany tekst (OCR)', doc.ocrText && doc.ocrText.trim() ? 'Tak' : 'Nie'],
+    ['Wykryte dane RODO', detectedRodo.count > 0 ? detectedRodo.labels.join(', ') : 'Brak'],
     ['Tagi', tagNames || 'Brak'],
     ['Wgrywający', doc.user?.name || doc.user?.email || 'Właściciel'],
     ['Status', statusParts.join(' · ')],
@@ -82,6 +92,24 @@ export default function DocumentPropertiesModal({ document: doc, folders = [], o
             </div>
           ))}
         </dl>
+
+        <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-slate-700 bg-slate-900/50 px-3.5 py-2.5 text-xs">
+          <span className="font-semibold text-slate-300">Ochrona RODO tego dokumentu</span>
+          <select
+            aria-label="Ochrona RODO tego dokumentu"
+            value={rodoMode}
+            onChange={e => {
+              const next = e.target.value as RodoDocOverride;
+              setRodoMode(next);
+              setDocumentRodoOverride(doc.id, next);
+            }}
+            className="rounded-lg border border-slate-600 bg-[#111827] px-2.5 py-1 text-xs text-slate-200 focus:border-blue-500 focus:outline-none"
+          >
+            <option value="auto">Automatycznie (wg OCR)</option>
+            <option value="always">Zawsze chroń (RODO)</option>
+            <option value="never">Bez ochrony</option>
+          </select>
+        </div>
 
         <div className="mt-5 flex justify-end">
           <button type="button" onClick={onClose} className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-500">Zamknij</button>

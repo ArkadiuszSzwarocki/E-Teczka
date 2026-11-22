@@ -67,7 +67,8 @@ export function useCentralSignIn(apiUrl: string, origin: string, deviceId: strin
       const desktopCount = nextDevices.filter(d => d.kind === 'desktop').length;
       if (nextLimits.desktop === null || desktopCount < nextLimits.desktop) {
         setDeviceFreed(true);
-        setInfo('Urządzenie zostało usunięte. Kliknij poniżej, aby dokończyć logowanie.');
+        setInfo('Urządzenie zostało usunięte. Trwa logowanie…');
+        await finish();
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Nie udało się usunąć urządzenia.');
@@ -104,6 +105,7 @@ export function useCentralSignIn(apiUrl: string, origin: string, deviceId: strin
 
   function finishSession(payload: { token?: string; user?: CentralUser }) {
     if (typeof payload.token !== 'string' || !payload.user?.email) throw new Error('Serwer zwrócił nieprawidłową sesję.');
+    try { sessionStorage.removeItem('eteczka_hide_hello_signin'); } catch { /* ignore */ }
     localStorage.setItem('eteczka_auth_token', payload.token);
     setPassword('');
     setCentralPassword('');

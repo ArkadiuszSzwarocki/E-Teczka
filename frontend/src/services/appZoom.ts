@@ -13,10 +13,15 @@ export function getAppZoom(): number {
 
 export function applyAppZoom(percent: number): number {
   const safe = clampAppZoom(percent);
-  const electron = (window as { require?: (id: string) => unknown }).require?.('electron') as { webFrame?: { setZoomFactor: (factor: number) => void } } | undefined;
-  if (electron?.webFrame?.setZoomFactor) {
+  const win = window as {
+    eteczkaElectron?: { setZoomFactor?: (factor: number) => void };
+    require?: (id: string) => unknown;
+  };
+  const electron = win.require?.('electron') as { webFrame?: { setZoomFactor: (factor: number) => void } } | undefined;
+  const setNativeZoom = win.eteczkaElectron?.setZoomFactor || electron?.webFrame?.setZoomFactor;
+  if (setNativeZoom) {
     document.documentElement.style.zoom = '';
-    electron.webFrame.setZoomFactor(safe / 100);
+    setNativeZoom(safe / 100);
   } else {
     document.documentElement.style.zoom = `${safe / 100}`;
   }

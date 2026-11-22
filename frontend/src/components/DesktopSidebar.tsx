@@ -2,7 +2,7 @@ import type { DocumentRecord } from '../types/domain';
 import { useState } from 'react';
 import type { BackupSection } from './BackupModal';
 import { useClassicIcons } from './FolderIconPicker';
-import { getElectronIpc } from '../services/electron';
+import { getEnvironmentLabel, isMobileBrowser } from '../services/platform';
 import eteczkaAppIcon from '../assets/eteczka-folder.png';
 import kartotekiIcon from '../assets/sidebar-icons/kartoteki.png';
 import dodajDokumentIcon from '../assets/sidebar-icons/dodaj-dokument.png';
@@ -36,9 +36,9 @@ export default function DesktopSidebar({
   const closeIfMobile = (action: () => void) => () => { onCloseMobile?.(); action(); };
   const [backupMenuOpen, setBackupMenuOpen] = useState(false);
   const classicIcons = useClassicIcons();
-  const isElectron = Boolean(getElectronIpc());
+  const isMobile = isMobileBrowser();
   const isDev = import.meta.env.DEV;
-  const envLabel = isElectron ? (isDev ? 'DESKTOP DEV' : 'DESKTOP') : (isDev ? 'WEB DEV' : 'WEB');
+  const envLabel = getEnvironmentLabel(isDev);
   const navClass = (view: string) => `w-full px-2 py-2 text-left flex items-center gap-2 rounded transition-colors ${activeView === view ? 'cyber-nav-active text-white bg-white/10' : 'text-slate-400 hover:text-white hover:bg-white/5'}`;
   const icon = (src: string, emoji: string) => classicIcons
     ? <span aria-hidden="true" className="inline-flex h-5 w-5 shrink-0 items-center justify-center text-base leading-none">{emoji}</span>
@@ -64,10 +64,11 @@ export default function DesktopSidebar({
         <button onClick={closeIfMobile(() => onViewChange('analytics'))} className={navClass('analytics')}>{icon(kartotekiIcon, '📊')}<span>Podsumowanie i analizy</span></button>
         <button onClick={closeIfMobile(() => onViewChange('dashboard'))} className={navClass('dashboard')}>{icon(kartotekiIcon, '📁')}<span>Kartoteki</span></button>
         <button onClick={closeIfMobile(() => onViewChange('upload'))} className={navClass('upload')}>{icon(dodajDokumentIcon, '⬆️')}<span>Dodaj dokument</span></button>
-        <button onClick={closeIfMobile(onOpenScanner)} className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-slate-400 hover:bg-white/5 hover:text-white">{icon(skanujIcon, '🖨️')}<span>Skanuj z drukarki</span></button>
+        <button onClick={closeIfMobile(() => onViewChange('mail-inbox'))} className={navClass('mail-inbox')}><span aria-hidden="true" className="inline-flex h-5 w-5 shrink-0 items-center justify-center text-base leading-none">📧</span><span>Poczta (Załączniki)</span></button>
+        <button onClick={closeIfMobile(onOpenScanner)} className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-slate-400 hover:bg-white/5 hover:text-white">{icon(skanujIcon, isMobile ? '📷' : '🖨️')}<span>{isMobile ? 'Skanuj aparatem telefonu' : 'Skanuj z drukarki'}</span></button>
       </div>
       <p className="mb-3 mt-7 px-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">Urządzenia</p>
-      <button onClick={closeIfMobile(onOpenPairing)} aria-haspopup="dialog" className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm text-slate-400 transition-colors hover:bg-white/5 hover:text-white">{icon(polaczTelefonIcon, '📱')}<span>Połącz z urządzeniem mobilnym</span></button>
+      <button onClick={closeIfMobile(onOpenPairing)} aria-haspopup="dialog" className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm text-slate-400 transition-colors hover:bg-white/5 hover:text-white">{icon(polaczTelefonIcon, '📱')}<span>{isMobile ? 'Połącz inne urządzenie / QR' : 'Połącz z urządzeniem mobilnym'}</span></button>
       <p className="mb-3 mt-7 px-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">Zapisane</p>
       <div className="space-y-1 text-sm">
         <button onClick={closeIfMobile(() => onViewChange('archive'))} className={`w-full px-2 py-2 text-left flex items-center justify-between rounded transition-colors ${activeView === 'archive' ? 'text-white bg-white/10' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}><span className="flex items-center gap-2">{icon(archiwumIcon, '📦')}<span>Archiwum</span></span><span className="text-xs">{documents.filter((doc) => doc.isArchived && !doc.isDeleted).length}</span></button>
@@ -87,6 +88,7 @@ export default function DesktopSidebar({
         </button>
       )}
       <button onClick={closeIfMobile(onOpenFeedback)} aria-haspopup="dialog" className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm text-slate-400 hover:bg-white/5 hover:text-white"><span aria-hidden="true" className="inline-flex h-5 w-5 shrink-0 items-center justify-center text-base leading-none">🐞</span><span>Zgłoś błąd / uwagę</span>{userFeedbackReplyCount > 0 && <span title="Nowe odpowiedzi zespołu na Twoje zgłoszenia" className="ml-auto rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-slate-950">💬 {userFeedbackReplyCount}</span>}</button>
+      <button onClick={closeIfMobile(() => onViewChange('options'))} className={navClass('options')}><span aria-hidden="true" className="inline-flex h-5 w-5 shrink-0 items-center justify-center text-base leading-none">🎛️</span><span>Opcje aplikacji</span></button>
       <button onClick={closeIfMobile(onToggleSettings)} aria-haspopup="dialog" className="flex w-full items-center gap-2 px-2 py-2 text-left text-sm text-slate-400 hover:text-white">{icon(ustawieniaIcon, '⚙️')}<span>Ustawienia</span><span className="ml-auto">↗</span></button>
     </div>
   </aside>

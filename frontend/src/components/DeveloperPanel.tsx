@@ -51,6 +51,8 @@ function NumberField({ label, value, onChange, nullable = false, min = 0, step =
 type Props = {
   embedded?: boolean;
   initialSection?: DevSection | null;
+  currentUser?: { email: string; name?: string | null } | null;
+  onPlanChanged?: () => void;
   openBugCount?: number;
   adminReplyCount?: number;
   onOpenBugCountChange?: (count: number) => void;
@@ -61,6 +63,8 @@ type Props = {
 export default function DeveloperPanel({
   embedded = false,
   initialSection = null,
+  currentUser = null,
+  onPlanChanged,
   openBugCount = 0,
   adminReplyCount = 0,
   onOpenBugCountChange,
@@ -176,7 +180,7 @@ export default function DeveloperPanel({
 
       {section === null && (
         <>
-          <DeveloperOverridesBar onRefresh={() => void loadCatalog()} onStatus={setMessage} />
+          <DeveloperOverridesBar currentUser={currentUser} onRefresh={() => void loadCatalog()} onPlanChanged={onPlanChanged} onStatus={setMessage} />
           <div className="grid gap-4 sm:grid-cols-2">
             {modules.map(item => (
               <button

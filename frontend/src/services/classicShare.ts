@@ -1,4 +1,5 @@
 import type { DocumentRecord } from '../types/domain';
+import { buildDocumentFileUrl } from '../utils/documentUrl';
 
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -25,7 +26,7 @@ export async function shareDocumentClassic(
   fetcher: Fetcher,
   doc: Pick<DocumentRecord, 'title' | 'filePath' | 'mimeType'>,
 ): Promise<'shared' | 'downloaded'> {
-  const source = `${apiUrl}/${doc.filePath.replace(/\\/g, '/')}`;
+  const source = buildDocumentFileUrl(apiUrl, doc.filePath);
   const response = await fetcher(source);
   if (!response.ok) throw new Error('Nie udało się pobrać pliku dokumentu.');
   const blob = await response.blob();

@@ -11,11 +11,18 @@ export function createAnalyticsRouter(prisma: PrismaClient) {
     try {
       const ownerId = Number(res.locals.userId || 1);
       const month = typeof req.query.month === 'string' ? req.query.month : undefined;
-      const ocrTrial = await featureTrial(prisma, ocrOwnerKey(res), 'ocr', false);
-      const allowReceiptInvoiceReading = ocrTrial.allowed || ocrTrial.startedAt === null;
+      let allowReceiptInvoiceReading = true;
+      let receiptReadingTrialEndsAt: string | null = null;
+      try {
+        const ocrTrial = await featureTrial(prisma, ocrOwnerKey(res), 'ocr', false);
+        allowReceiptInvoiceReading = ocrTrial.allowed || ocrTrial.startedAt === null;
+        receiptReadingTrialEndsAt = ocrTrial.endsAt ? ocrTrial.endsAt.toISOString() : null;
+      } catch {
+        allowReceiptInvoiceReading = true;
+      }
       res.json(await buildAnalyticsSummary(prisma, ownerId, month, {
         allowReceiptInvoiceReading,
-        receiptReadingTrialEndsAt: ocrTrial.endsAt ? ocrTrial.endsAt.toISOString() : null,
+        receiptReadingTrialEndsAt,
       }));
     } catch (error) {
       console.error('[analytics] summary:', error);

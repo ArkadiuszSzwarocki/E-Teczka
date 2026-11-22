@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import DocumentThumbnail from './DocumentThumbnail';
 import { formatFileSize, getExpiryDate } from '../utils/documentLifecycle';
 import { shareDocumentClassic } from '../services/classicShare';
@@ -46,6 +47,7 @@ export default function DocumentTableView({
   onOpenPreview, onHoverEnter, onHoverLeave, onUpdateDocument, onOpenMoveModal, onBeginRestore,
   onEditRetention, onOpenSecureShare, onOpenOcr, onExportPdf, onPropertiesDoc, showToast,
 }: Props) {
+  const [activeDocId, setActiveDocId] = useState<number | null>(null);
   const hasReadOnlySelected = documents.some(d => selectedDocs.includes(d.id) && d.readOnly);
 
   return (
@@ -73,7 +75,7 @@ export default function DocumentTableView({
           </>
         )}
       </div>
-      <div className="overflow-visible rounded-lg border border-slate-700 bg-[#1e293b] shadow-xl">
+      <div className="overflow-x-auto rounded-lg border border-slate-700 bg-[#1e293b] shadow-xl">
         <table className="w-full border-collapse text-left">
           <thead>
             <tr className="border-b border-slate-700 bg-[#0f172a]/50 text-xs font-semibold tracking-wider text-slate-400">
@@ -91,7 +93,7 @@ export default function DocumentTableView({
             {displayedDocs.length === 0 ? (
               <tr><td colSpan={8} className="p-8 text-center italic text-slate-500">Brak dokumentów w tym widoku.</td></tr>
             ) : displayedDocs.map(doc => (
-              <tr key={doc.id} className="group border-b border-slate-700/50 transition-colors hover:bg-[#374151]/30">
+              <tr key={doc.id} onClick={() => setActiveDocId(doc.id)} className={`group border-b border-slate-700/50 transition-colors ${activeDocId === doc.id ? 'bg-cyan-950/35 ring-1 ring-inset ring-cyan-400' : 'hover:bg-[#374151]/30'}`}>
                 <td className="p-4 text-center">
                   <input type="checkbox" checked={selectedDocs.includes(doc.id)} onChange={() => onToggleSelect(doc.id)} className="h-4 w-4 cursor-pointer rounded border-slate-600 bg-[#111827] text-blue-500 focus:ring-0" />
                 </td>
@@ -99,7 +101,7 @@ export default function DocumentTableView({
                   <div className="flex items-center justify-center">
                     <div
                       className="relative z-10 flex h-16 w-14 cursor-pointer items-center justify-center overflow-hidden rounded border border-slate-600 bg-[#0f172a] transition-all hover:border-blue-500 hover:shadow-[0_0_10px_rgba(59,130,246,0.5)]"
-                      onClick={() => onOpenPreview(doc)}
+                      onClick={() => { setActiveDocId(doc.id); onOpenPreview(doc); }}
                       onMouseEnter={event => onHoverEnter(doc, event.currentTarget)}
                       onMouseLeave={onHoverLeave}
                     >

@@ -6,6 +6,7 @@ import type { PrismaClient } from '@prisma/client';
 import { scanDraftsDir } from '../config/paths';
 import { getWiaDevices, runWiaPowerShell } from '../services/wia';
 import { errorMessage, errorStatusCode } from '../utils/errors';
+import { resolveSafePath } from '../utils/safePath';
 import { ocrOwnerKey } from '../services/ocrPremium';
 import { accountingKey } from '../services/devPlans';
 import { getPlan, ensurePlanLedger, consumeUsage, PlanLimitError } from '../services/planLedger';
@@ -50,8 +51,9 @@ export function createPrinterScanRouter(prisma: PrismaClient) {
   router.get('/:jobId/file', (req, res) => {
     const job = jobs.get(req.params.jobId);
     if (!job || job.status !== 'completed' || !job.temporaryPath || !fs.existsSync(job.temporaryPath)) return res.status(404).json({ error: 'Plik wersji roboczej nie jest dostępny.' });
-    const temporaryPath = job.temporaryPath;
-    res.type('jpeg').sendFile(temporaryPath, { dotfiles: 'allow' }, error => {
+    const safeFileName = path.basename(job.temporaryPath);
+    const temporaryPath = resolveSafePath(scanDraftsDir, safeFileName);
+    res.type('jpeg').sendFile(safeFileName, { root: path.resolve(scanDraftsDir) }, error => {
       if (error) { console.error('Nie udało się przekazać skanu do telefonu:', error); if (!res.headersSent) res.status(errorStatusCode(error) ?? 500).json({ error: 'Nie udało się przekazać skanu do telefonu.' }); return; }
       if (fs.existsSync(temporaryPath)) fs.unlinkSync(temporaryPath);
       jobs.delete(req.params.jobId);

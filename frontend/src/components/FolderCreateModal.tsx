@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { customIconLimit, DEFAULT_FOLDER_ICONS, fileToIconDataUrl, loadCustomIcons, saveCustomIcons, type CustomFolderIcon } from '../services/customIcons';
+import { FolderIconGeneratorPanel } from './FolderIconGeneratorPanel';
 import { FolderIconView, PRESET_FOLDER_ICONS, suggestFolderIcon } from './FolderIconPicker';
 
 type Props = {
@@ -15,8 +16,21 @@ export default function FolderCreateModal({ isSubfolder, plan, onSubmit, onCance
   const [customNameTyped, setCustomNameTyped] = useState(false);
   const [manualIcon, setManualIcon] = useState<string | null>(null);
   const [customIcons, setCustomIcons] = useState<CustomFolderIcon[]>(loadCustomIcons);
+  const [generatorOpen, setGeneratorOpen] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+
+  const saveGeneratedIcon = (dataUrl: string) => {
+    if (atLimit) {
+      setError(`Limit własnych ikon dla planu (${limit}) został osiągnięty.`);
+      return;
+    }
+    const next = [...customIcons, { id: `ci_${Date.now()}`, dataUrl }];
+    setCustomIcons(next);
+    saveCustomIcons(next);
+    setManualIcon(dataUrl);
+    setGeneratorOpen(false);
+  };
 
   const suggested = suggestFolderIcon(name);
   const activeIcon = manualIcon ?? suggested;
@@ -174,11 +188,27 @@ export default function FolderCreateModal({ isSubfolder, plan, onSubmit, onCance
                   <img src={item.dataUrl} alt="" className="h-9 w-9 rounded object-contain" />
                 </button>
               ))}
+              <button
+                type="button"
+                disabled={atLimit}
+                onClick={() => setGeneratorOpen(v => !v)}
+                className={`rounded-xl border px-3 py-2.5 text-xs font-semibold ${atLimit ? 'border-slate-700 text-slate-500' : 'border-cyan-500/60 bg-cyan-950/30 text-cyan-200 hover:bg-cyan-900/40'}`}
+              >
+                ✨ Wygeneruj pasującą ikonę
+              </button>
               <label className={`cursor-pointer rounded-xl border border-dashed px-3 py-2.5 text-xs font-semibold ${atLimit ? 'border-slate-700 text-slate-500' : 'border-blue-500/60 text-blue-300 hover:bg-blue-950/30'}`}>
                 + Własna ikona
                 <input type="file" accept="image/*" className="hidden" disabled={atLimit} onChange={e => { void handleUpload(e.target.files?.[0]); e.target.value = ''; }} />
               </label>
             </div>
+            {generatorOpen && (
+              <FolderIconGeneratorPanel
+                folderName={name}
+                atLimit={atLimit}
+                onApply={saveGeneratedIcon}
+                onCancel={() => setGeneratorOpen(false)}
+              />
+            )}
             {error && <p className="text-xs text-red-300">{error}</p>}
           </div>
         </div>

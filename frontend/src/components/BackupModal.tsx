@@ -4,13 +4,14 @@ import InfoTip from './InfoTip';
 import BackupTransferAnimation from './BackupTransferAnimation';
 import BackupAuthenticatorDialog from './BackupAuthenticatorDialog';
 import BackupSettingsView from './BackupSettingsView';
+import { BackupSettingsTransferCard } from './BackupSettingsTransferCard';
 import { BACKUP_PROVIDER_LABELS, useBackupManager, type BackupSection } from '../hooks/useBackupManager';
 
 export type { BackupSection };
-type Props = { embedded?: boolean; fetcher: typeof fetch; apiUrl: string; section: BackupSection; onClose: () => void; onDone: (message?: string) => void };
+type Props = { embedded?: boolean; fetcher: typeof fetch; apiUrl: string; section: BackupSection; isPremiumPlan?: boolean; onClose: () => void; onDone: (message?: string) => void };
 
 /** Modal for configuring, sending, and restoring encrypted cloud or local ZIP backups. */
-export default function BackupModal({ embedded = false, apiUrl, section, onClose, onDone, fetcher }: Props) {
+export default function BackupModal({ embedded = false, apiUrl, section, isPremiumPlan = false, onClose, onDone, fetcher }: Props) {
   const mgr = useBackupManager({ apiUrl, fetcher, onDone });
 
   return (
@@ -20,7 +21,8 @@ export default function BackupModal({ embedded = false, apiUrl, section, onClose
           <h2 id="backup-title" className="text-xl font-bold text-white">☁️ {section === 'settings' ? 'Ustawienia kopii zapasowej' : section === 'send' ? 'Wysyłanie kopii zapasowej' : 'Przywracanie kopii zapasowej'}</h2>
           <button type="button" aria-label="Zamknij" disabled={mgr.sending} onClick={onClose} className="rounded-lg px-2 py-1 text-2xl text-slate-400 hover:bg-slate-800 hover:text-white">×</button>
         </div>
-        <div className="overflow-y-auto p-5 sm:p-6">
+        <div className="space-y-5 overflow-y-auto p-5 sm:p-6">
+          <BackupSettingsTransferCard apiUrl={apiUrl} fetcher={fetcher} isPremiumPlan={isPremiumPlan} />
           {section === 'settings' ? (
             <BackupSettingsView
               apiUrl={apiUrl}

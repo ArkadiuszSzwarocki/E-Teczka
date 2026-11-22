@@ -4,11 +4,12 @@ import * as archiver from 'archiver';
 import multer from 'multer';
 import type { PrismaClient } from '@prisma/client';
 import { billingOwnerKey } from '../middleware/premium';
-import { featureTrial } from '../services/planLedger';
+import { featureTrial, getPlan } from '../services/planLedger';
 import { ocrOwnerKey } from '../services/ocrPremium';
 import { encrypt, decrypt, exportRecoveryKey, importRecoveryKey } from '../services/backupCrypto';
 import { requireLocalDesktop } from '../middleware/accessControl';
 import { restoreBackup } from '../services/restoreBackup';
+import { exportSystemSettings, restoreSystemSettings } from '../services/settingsBackup';
 import { importExternalArchive } from '../services/externalImport';
 import { listWebDavFolders, createWebDavFolder, normalizeWebDavEndpoint } from '../services/webdavFolders';
 import { suggestNasHostname } from '../services/webdavCertificate';
@@ -27,6 +28,7 @@ import {
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 512 * 1024 * 1024 } });
 const ownerId = (res: express.Response) => Number(res.locals.userId || 1);
 const allowedProviders = new Set(['webdav', 'google-drive', 'onedrive', 'dropbox']);
+const PREMIUM_PLANS = new Set(['premium', 'family', 'business']);
 const oauthStates = new Map<string, { ownerKey: string; provider: string; expiresAt: number }>();
 
 async function isPremium(prisma: PrismaClient, res: express.Response) {
@@ -236,6 +238,33 @@ export function createBackupRouter(prisma: PrismaClient) {
       const result = await restoreBackup(prisma, req.file.buffer, ownerId(res), res.locals.userId ? ownerId(res) : null, undefined, recoveryKey, ocrOwnerKey(res));
       res.json({ success: true, ...result });
     } catch (error) { console.error('[backup] restore:', error); res.status(400).json({ error: error instanceof Error ? error.message : 'Nie udało się przywrócić kopii zapasowej.' }); }
+  });
+
+  router.get('/settings/export', async (_req, res) => {
+    try {
+      const plan = await getPlan(prisma, ocrOwnerKey(res));
+      if (!PREMIUM_PLANS.has(plan)) {
+        return res.status(402).json({ code: 'PREMIUM_REQUIRED', error: 'Kopia zapasowa ustawień systemowych jest dostępna od pakietu Premium.' });
+      }
+      const data = await exportSystemSettings(prisma, ownerId(res), ocrOwnerKey(res));
+      res.setHeader('Cache-Control', 'no-store');
+      return res.json(data);
+    } catch (error) {
+      return res.status(500).json({ error: error instanceof Error ? error.message : 'Nie udało się wyeksportować ustawień.' });
+    }
+  });
+
+  router.post('/settings/restore', async (req, res) => {
+    try {
+      const plan = await getPlan(prisma, ocrOwnerKey(res));
+      if (!PREMIUM_PLANS.has(plan)) {
+        return res.status(402).json({ code: 'PREMIUM_REQUIRED', error: 'Kopia zapasowa ustawień systemowych jest dostępna od pakietu Premium.' });
+      }
+      const summary = await restoreSystemSettings(prisma, ownerId(res), ocrOwnerKey(res), req.body);
+      return res.json({ success: true, ...summary });
+    } catch (error) {
+      return res.status(400).json({ error: error instanceof Error ? error.message : 'Nie udało się przywrócić ustawień.' });
+    }
   });
 
   router.post('/import-external', upload.single('archive'), async (req, res) => {

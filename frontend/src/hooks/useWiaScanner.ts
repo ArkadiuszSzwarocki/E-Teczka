@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import type { InboxScan } from '../components/PrinterScannerModal';
 import { getElectronIpc, isWiaDeviceList, isWiaScanResult, readScanFileBase64, removeTemporaryScan, type WiaDevice } from '../services/electron';
+import { isMobileBrowser } from '../services/platform';
 import { fetchWiaDevices, preparePrinterPage, scanViaBackend, uploadPrinterDocument, type PrinterPage } from '../services/scannerApi';
 import { errorMessage } from '../utils/errors';
 
+export const CAMERA_DEVICE_ID = 'device:camera';
 const defaultPrinterScanTitle = () => `Skan drukarki ${new Date().toLocaleString('pl-PL')}`;
 
 type UseWiaScannerArgs = {
@@ -52,28 +54,55 @@ export function useWiaScanner({
     setWiaDeviceId('');
     if (!wiaPages.length && !wiaPendingScanPath) setWiaTitle(defaultPrinterScanTitle());
     const ipc = getElectronIpc();
+    const isMobile = isMobileBrowser();
     try {
-      const devices = ipc
-        ? (isWiaDeviceList(await ipc.invoke('eteczka-wia-devices')) ? await ipc.invoke('eteczka-wia-devices') as WiaDevice[] : [])
-        : await fetchWiaDevices(apiUrl, fetch);
-      setWiaDevices(devices);
+      let devices: WiaDevice[] = [];
+      if (!isMobile || ipc) {
+        try {
+          devices = ipc
+            ? (isWiaDeviceList(await ipc.invoke('eteczka-wia-devices')) ? await ipc.invoke('eteczka-wia-devices') as WiaDevice[] : [])
+            : await fetchWiaDevices(apiUrl, fetch);
+        } catch {
+          devices = [];
+        }
+      }
+      const cameraOption: WiaDevice = { id: CAMERA_DEVICE_ID, name: '📷 Aparat telefonu / kamera' };
+      const allDevices = [...devices, cameraOption];
+      setWiaDevices(allDevices);
       const remembered = localStorage.getItem('eteczka_default_scanner');
       const defaultPrinter = ipc ? await ipc.invoke('eteczka-default-printer') : null;
       const printerName = typeof defaultPrinter === 'string'
         ? defaultPrinter.toLowerCase().replace(/[^a-z0-9]/g, '').replace(/(series|lan|network|usb)$/g, '')
         : '';
-      const match = devices.find(device => device.id === remembered)
+      const match = allDevices.find(device => device.id === remembered)
         || (printerName ? devices.find(device => {
           const name = device.name.toLowerCase().replace(/\s*\[.*$/, '').replace(/[^a-z0-9]/g, '').replace(/(series|lan|network|usb)$/g, '');
           return name.length > 5 && (printerName.includes(name) || name.includes(printerName));
         }) : undefined)
-        || (devices.length === 1 ? devices[0] : undefined);
+        || (devices.length === 1 ? devices[0] : cameraOption);
       if (match) setWiaDeviceId(match.id);
-      setWiaStage(devices.length ? 'Wybierz skaner i kartotekę docelową.' : 'Nie znaleziono skanera WIA.');
+      setWiaStage(devices.length ? 'Wybierz skaner lub aparat i kartotekę docelową.' : 'Wybrano aparat telefonu (brak lokalnego skanera WIA).');
     } catch (error: unknown) {
       setWiaStage(errorMessage(error, 'Nie udało się odczytać listy skanerów.'));
     } finally {
       setIsWiaLoadingDevices(false);
+    }
+  };
+
+  const addCameraPage = async (dataUrl: string) => {
+    if (wiaPages.length >= 20) return showToast('Jeden dokument może mieć najwyżej 20 stron.', 'error');
+    setIsWiaScanning(true);
+    setWiaStage(`Przetwarzanie zdjęcia strony ${wiaPages.length + 1}…`);
+    try {
+      const prepared = await preparePrinterPage(dataUrl);
+      setWiaPages(prev => [...prev, prepared]);
+      setWiaStage(`Dodano stronę ${wiaPages.length + 1}. Zrób kolejne zdjęcie lub zapisz PDF.`);
+    } catch (error: unknown) {
+      const msg = errorMessage(error, 'Nie udało się przetworzyć zdjęcia.');
+      setWiaStage(msg);
+      showToast(msg, 'error');
+    } finally {
+      setIsWiaScanning(false);
     }
   };
 
@@ -95,7 +124,7 @@ export function useWiaScanner({
           setWiaPendingScanPath(scanPath);
         }
         setWiaStage('Zmniejszanie rozmiaru strony…');
-        base64 = readScanFileBase64(scanPath);
+        base64 = await readScanFileBase64(scanPath);
       } else {
         base64 = await scanViaBackend(apiUrl, fetch, wiaDeviceId, wiaFolderId, setWiaStage);
         setWiaStage('Zmniejszanie rozmiaru strony…');
@@ -180,6 +209,6 @@ export function useWiaScanner({
     wiaRetentionEnabled, setWiaRetentionEnabled,
     wiaRetentionValue, setWiaRetentionValue,
     wiaRetentionUnit, setWiaRetentionUnit,
-    openWiaScanner, scanFromPrinter, savePrinterDocument, moveInboxScan, renameInboxScan,
+    openWiaScanner, scanFromPrinter, addCameraPage, savePrinterDocument, moveInboxScan, renameInboxScan,
   };
 }

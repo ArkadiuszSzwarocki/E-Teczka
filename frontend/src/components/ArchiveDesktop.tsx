@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import type { DocumentRecord } from '../types/domain';
 import DocumentThumbnail from './DocumentThumbnail';
 import FolderIconPicker, { AppFolderIcon, FolderIconView } from './FolderIconPicker';
 import FolderCreateModal from './FolderCreateModal';
 import RetentionBadge from './RetentionBadge';
+import RodoUnlockBadge from './RodoUnlockBadge';
 import DocumentTagCorner, { getTagTileStyle } from './DocumentTagCorner';
 import ArchiveDeleteModal from './ArchiveDeleteModal';
 import { useArchiveWorkspace } from '../hooks/useArchiveWorkspace';
@@ -19,6 +21,7 @@ export default function ArchiveDesktop({
   onShareLink: (doc: DocumentRecord) => void; onShareClassic: (doc: DocumentRecord) => void; onOpenOcr: (doc: DocumentRecord) => void; onExportPdf: (doc: DocumentRecord, watermark?: boolean) => void; onPropertiesDoc: (doc: DocumentRecord) => void;
 }) {
   const arch = useArchiveWorkspace(apiUrl, fetcher, documents);
+  const [activeDocId, setActiveDocId] = useState<number | null>(null);
   const hideThreeDots = selectedDocs.length > 1;
 
   const renderDocMenu = (doc: DocumentRecord, posClass: string) => (
@@ -106,18 +109,20 @@ export default function ArchiveDesktop({
 
           {arch.visibleDocs.map(doc => {
             const checked = selectedDocs.includes(doc.id);
+            const active = activeDocId === doc.id;
             return (
-              <div key={doc.id} draggable onDragStart={() => arch.setDragItem({ kind: 'doc', id: doc.id })} onDragOver={e => e.preventDefault()} onDrop={() => arch.dropOnDoc(doc.id)} onClick={() => onOpenPreview(doc)} style={getTagTileStyle(doc, checked)} className={`group relative flex cursor-pointer flex-col items-center rounded-xl border p-4 text-center transition ${checked ? 'border-blue-500 bg-blue-950/30' : 'border-slate-700 bg-[#1e293b] hover:border-slate-500'}`}>
+              <div key={doc.id} draggable onDragStart={() => arch.setDragItem({ kind: 'doc', id: doc.id })} onDragOver={e => e.preventDefault()} onDrop={() => arch.dropOnDoc(doc.id)} onClick={() => { setActiveDocId(doc.id); onOpenPreview(doc); }} style={getTagTileStyle(doc, checked)} className={`group relative flex cursor-pointer flex-col items-center rounded-xl border p-4 text-center transition ${active ? 'border-cyan-400 bg-cyan-950/35 ring-2 ring-cyan-400 shadow-[0_0_16px_rgba(34,211,238,0.25)]' : checked ? 'border-blue-500 bg-blue-950/30' : 'border-slate-700 bg-[#1e293b] hover:border-slate-500'}`}>
                 <input type="checkbox" checked={checked} onClick={e => e.stopPropagation()} onChange={() => onToggleSelect(doc.id)} aria-label={`Zaznacz ${doc.title}`} className="absolute left-2.5 top-2.5 h-4 w-4 accent-blue-500" />
                 <DocumentTagCorner document={doc} hideThreeDots={hideThreeDots} />
                 {!hideThreeDots && (
-                  <button type="button" aria-label="Menu dokumentu" onClick={e => { e.stopPropagation(); arch.setDocMenuId(arch.docMenuId === doc.id ? null : doc.id); arch.setFolderMenuId(null); }} className="absolute right-2 top-2 rounded px-2 py-0.5 text-lg text-slate-400 hover:bg-slate-700 hover:text-white">⋮</button>
+                  <button type="button" aria-label="Menu dokumentu" onClick={e => { e.stopPropagation(); setActiveDocId(doc.id); arch.setDocMenuId(arch.docMenuId === doc.id ? null : doc.id); arch.setFolderMenuId(null); }} className="absolute right-2 top-2 rounded px-2 py-0.5 text-lg text-slate-400 hover:bg-slate-700 hover:text-white">⋮</button>
                 )}
-                <button type="button" onClick={() => onOpenPreview(doc)} onMouseEnter={e => onHoverEnter(doc, e.currentTarget)} onMouseLeave={onHoverLeave} className="mt-3 flex h-16 w-14 items-center justify-center overflow-hidden rounded border border-slate-700 bg-slate-900">
+                <button type="button" onClick={e => { e.stopPropagation(); setActiveDocId(doc.id); onOpenPreview(doc); }} onMouseEnter={e => onHoverEnter(doc, e.currentTarget)} onMouseLeave={onHoverLeave} className="mt-3 flex h-16 w-14 items-center justify-center overflow-hidden rounded border border-slate-700 bg-slate-900">
                   <DocumentThumbnail apiUrl={apiUrl} fetcher={fetcher} document={doc} />
                 </button>
-                <span onClick={() => onOpenPreview(doc)} className="mt-2 line-clamp-2 cursor-pointer text-xs font-semibold text-slate-200">{doc.title}</span>
+                <span title={doc.title} onClick={e => { e.stopPropagation(); setActiveDocId(doc.id); onOpenPreview(doc); }} className="mt-2 line-clamp-2 w-full min-w-0 max-w-full break-all cursor-pointer text-xs font-semibold text-slate-200">{doc.title}</span>
                 <RetentionBadge document={doc} className="mt-1" />
+                <RodoUnlockBadge docId={doc.id} className="mt-1" />
                 {doc.readOnly && <span className="mt-1 rounded bg-amber-950/60 px-1.5 py-0.5 text-[10px] text-amber-300">Tylko do odczytu</span>}
                 {arch.docMenuId === doc.id && !hideThreeDots && renderDocMenu(doc, 'right-2 top-9')}
               </div>
@@ -144,10 +149,10 @@ export default function ArchiveDesktop({
             </div>
           ))}
           {arch.visibleDocs.map(doc => (
-            <div key={doc.id} draggable onDragStart={() => arch.setDragItem({ kind: 'doc', id: doc.id })} onDragOver={e => e.preventDefault()} onDrop={() => arch.dropOnDoc(doc.id)} className="relative flex items-center justify-between border-b border-slate-700/60 px-4 py-3 hover:bg-slate-800/60">
+            <div key={doc.id} draggable onDragStart={() => arch.setDragItem({ kind: 'doc', id: doc.id })} onDragOver={e => e.preventDefault()} onDrop={() => arch.dropOnDoc(doc.id)} onClick={() => setActiveDocId(doc.id)} className={`relative flex items-center justify-between border-b border-slate-700/60 px-4 py-3 transition ${activeDocId === doc.id ? 'bg-cyan-950/35 ring-1 ring-inset ring-cyan-400' : 'hover:bg-slate-800/60'}`}>
               <div className="flex items-center gap-3">
                 <input type="checkbox" checked={selectedDocs.includes(doc.id)} onChange={() => onToggleSelect(doc.id)} className="h-4 w-4 accent-blue-500" />
-                <button type="button" onClick={() => onOpenPreview(doc)} onMouseEnter={e => onHoverEnter(doc, e.currentTarget)} onMouseLeave={onHoverLeave} className="font-medium text-slate-200 hover:text-white">{doc.title}</button>
+                <button type="button" onClick={() => { setActiveDocId(doc.id); onOpenPreview(doc); }} onMouseEnter={e => onHoverEnter(doc, e.currentTarget)} onMouseLeave={onHoverLeave} className="font-medium text-slate-200 hover:text-white">{doc.title}</button>
                 <RetentionBadge document={doc} />
                 {doc.readOnly && <span className="rounded bg-amber-950/60 px-2 py-0.5 text-xs text-amber-300">Tylko do odczytu</span>}
               </div>

@@ -11,8 +11,11 @@ export function encrypt(value: string) {
 }
 export function decrypt(value: string, decryptionKey: Buffer = key) {
   const [iv, tag, data] = value.split('.');
-  const decipher = crypto.createDecipheriv('aes-256-gcm', decryptionKey, Buffer.from(iv, 'base64url'));
-  decipher.setAuthTag(Buffer.from(tag, 'base64url'));
+  const ivBuf = Buffer.from(iv, 'base64url');
+  const tagBuf = Buffer.from(tag, 'base64url');
+  if (ivBuf.length !== 12 || tagBuf.length !== 16) throw new Error('Nieprawidłowy nagłówek szyfrowania.');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', decryptionKey, ivBuf, { authTagLength: 16 });
+  decipher.setAuthTag(tagBuf);
   return Buffer.concat([decipher.update(Buffer.from(data, 'base64url')), decipher.final()]).toString('utf8');
 }
 export function encryptBackup(data: Buffer) {
@@ -35,7 +38,7 @@ export function importRecoveryKey(contents: string, passphrase: string): Buffer 
     if (value.type !== 'eteczka-backup-recovery' || value.version !== 1 || !value.salt || !value.iv || !value.tag || !value.key) throw new Error();
     const salt = Buffer.from(value.salt, 'base64'); const iv = Buffer.from(value.iv, 'base64'); const tag = Buffer.from(value.tag, 'base64'); const encrypted = Buffer.from(value.key, 'base64');
     if (salt.length !== 16 || iv.length !== 12 || tag.length !== 16 || encrypted.length !== 32) throw new Error();
-    const decipher = crypto.createDecipheriv('aes-256-gcm', crypto.scryptSync(passphrase, salt, 32), iv); decipher.setAuthTag(tag);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', crypto.scryptSync(passphrase, salt, 32), iv, { authTagLength: 16 }); decipher.setAuthTag(tag);
     return Buffer.concat([decipher.update(encrypted), decipher.final()]);
   } catch { throw new Error('Nieprawidłowy plik klucza odzyskiwania lub hasło.'); }
 }
@@ -52,7 +55,7 @@ export function decryptBackup(data: Buffer, recoveryKey: Buffer = key) {
   if (!data.subarray(0, header.length).equals(header)) return data;
   const ivStart = header.length; const tagStart = ivStart + 12; const payloadStart = tagStart + 16;
   if (data.length <= payloadStart) throw new Error('Uszkodzona zaszyfrowana kopia.');
-  const decipher = crypto.createDecipheriv('aes-256-gcm', recoveryKey, data.subarray(ivStart, tagStart));
+  const decipher = crypto.createDecipheriv('aes-256-gcm', recoveryKey, data.subarray(ivStart, tagStart), { authTagLength: 16 });
   decipher.setAuthTag(data.subarray(tagStart, payloadStart));
   return Buffer.concat([decipher.update(data.subarray(payloadStart)), decipher.final()]);
 }

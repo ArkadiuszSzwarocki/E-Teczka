@@ -99,6 +99,17 @@ export function useAppSession({ apiUrl, fetcher, fetchData, onResetWorkspace, sh
     return () => { active = false; };
   }, [apiUrl, fetcher]);
 
+  useEffect(() => {
+    const onDeviceRevoked = () => {
+      localStorage.removeItem('eteczka_auth_token');
+      setCurrentUser(null);
+      setIsUserMenuOpen(false);
+      onResetWorkspace();
+    };
+    window.addEventListener('eteczka-device-revoked', onDeviceRevoked);
+    return () => window.removeEventListener('eteczka-device-revoked', onDeviceRevoked);
+  }, [onResetWorkspace]);
+
   const logoutAccount = useCallback(async () => {
     await runAutoBackup('on_logout');
     try {

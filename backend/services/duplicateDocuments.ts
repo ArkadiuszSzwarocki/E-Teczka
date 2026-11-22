@@ -19,10 +19,14 @@ export async function hashFile(filename: string): Promise<string> {
 export async function assertUniqueDocument(db: Db, ownerId: number, folderId: number, digest: string, excludeId?: number) {
   const records = await db.document.findMany({ where: { folderId, folder: { ownerId }, ...(excludeId === undefined ? {} : { id: { not: excludeId } }) }, select: { filePath: true, title: true } });
   for (const record of records) {
-    if (!record.filePath || path.basename(record.filePath) !== record.filePath) throw new Error('Nie można sprawdzić istniejącego pliku w kartotece.');
+    const cleanName = (record.filePath || '').replace(/^uploads[/\\]/i, '');
+    if (!cleanName || path.basename(cleanName) !== cleanName) throw new Error('Nie można sprawdzić istniejącego pliku w kartotece.');
     let existing: string;
-    try { existing = await hashFile(path.join(uploadsDir, record.filePath)); }
-    catch { throw new Error('Nie można sprawdzić istniejącego pliku w kartotece.'); }
+    try { existing = await hashFile(path.join(uploadsDir, cleanName)); }
+    catch (err) {
+      if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') continue;
+      throw new Error('Nie można sprawdzić istniejącego pliku w kartotece.');
+    }
     if (existing === digest) throw new DuplicateDocumentError(record.title);
   }
 }

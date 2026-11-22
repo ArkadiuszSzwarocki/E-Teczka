@@ -6,7 +6,7 @@ async function ensureBillingSchema(pool){await pool.query(`CREATE TABLE IF NOT E
 function createPlayBilling({pool,getSession,env=process.env,request=fetch,now=Date.now,getAccessToken,refreshAccountId}){
  const encryptionKey=()=>crypto.createHash('sha256').update(String(env.CENTRAL_ENTITLEMENT_PRIVATE_KEY)).digest();
  function encrypt(value){const iv=crypto.randomBytes(12),cipher=crypto.createCipheriv('aes-256-gcm',encryptionKey(),iv);const data=Buffer.concat([cipher.update(value,'utf8'),cipher.final()]);return [iv,cipher.getAuthTag(),data].map(v=>v.toString('base64url')).join('.');}
- function decrypt(value){const [iv,tag,data]=value.split('.').map(v=>Buffer.from(v,'base64url'));const cipher=crypto.createDecipheriv('aes-256-gcm',encryptionKey(),iv);cipher.setAuthTag(tag);return Buffer.concat([cipher.update(data),cipher.final()]).toString('utf8');}
+ function decrypt(value){const [iv,tag,data]=value.split('.').map(v=>Buffer.from(v,'base64url'));const cipher=crypto.createDecipheriv('aes-256-gcm',encryptionKey(),iv,{authTagLength:16});cipher.setAuthTag(tag);return Buffer.concat([cipher.update(data),cipher.final()]).toString('utf8');}
  async function account(raw){
   let user=await getSession(raw);
   if(!user){const device=await first(pool,'SELECT d.*, a.public_id FROM account_devices d JOIN accounts a ON a.id = d.account_id WHERE d.credential_hash = ?',[hash(raw||'')]);if(device)user={internal_id:device.account_id,id:device.public_id};}

@@ -4,10 +4,17 @@ export type ExtractedFinance = {
   dueDate: Date | null;
 };
 
-const AMOUNT_LINE_PATTERNS = [
-  /(?:razem\s+do\s+zap[łl]aty|do\s+zap[łl]aty|kwota\s+do\s+zap[łl]aty|suma\s+brutto|warto[śs][ćc]\s+brutto|razem|suma|total|amount\s+due)\s*[:\-]?\s*(\d{1,3}(?:[\s\u00A0]\d{3})*(?:[.,]\d{2})|\d+(?:[.,]\d{2}))\s*(pln|z[łl]|eur|usd)?/gi,
-  /(\d{1,3}(?:[\s\u00A0]\d{3})*(?:[.,]\d{2})|\d+(?:[.,]\d{2}))\s*(pln|z[łl])\b/gi,
-];
+const STRICT_AMOUNT_PATTERN =
+  /(?:razem\s+do\s+zap[łl]aty|do\s+zap[łl]aty|kwota\s+do\s+zap[łl]aty|pozosta[łl]o\s+do\s+zap[łl]aty|suma\s+brutto|warto[śs][ćc]\s+brutto|kwota\s+brutto|należność\s+og[óo][łl]em|nale[żz]no[śs][ćc]\s+do\s+zap[łl]aty|amount\s+due)\s*[:\-]?\s*(\d{1,3}(?:[\s\u00A0]\d{3})*(?:[.,]\d{2})|\d+(?:[.,]\d{2}))\s*(pln|z[łl]|eur|usd)?/gi;
+
+const GENERAL_TOTAL_PATTERN =
+  /(?:razem|suma|total)\s*[:\-]?\s*(\d{1,3}(?:[\s\u00A0]\d{3})*(?:[.,]\d{2})|\d+(?:[.,]\d{2}))\s*(pln|z[łl]|eur|usd)?/gi;
+
+const BILLABLE_DOC_RE =
+  /\b(faktura(?:\s+vat)?|rachunek|paragon(?:\s+fiskalny)?|nota\s+(?:ksi[ęe]gowa|obci[ąa][żz]eniowa)|wezwanie\s+do\s+zap[łl]aty|polecenie\s+przelewu|rozliczenie\s+zu[żz]ycia|invoice|receipt|amount\s+due|do\s+zap[łl]aty|termin\s+p[łl]atno[śs]ci)\b/i;
+
+const NON_BILLABLE_DOC_RE =
+  /\b(umowa|za[łl][ąa]cznik(?:i)?\s+do\s+umowy|regulamin|tabela\s+op[łl]at|tabela\s+prowizji|taryfa\s+op[łl]at|og[óo]lne\s+warunki|polityka\s+prywatno[śs]ci|deklaracja\s+przyst[ąa]pienia|pe[łl]nomocnictwo|aneks\s+do\s+umowy|pakiet\s+dokument[óo]w)\b/i;
 
 const DUE_DATE_PATTERNS = [
   /(?:termin\s+p[łl]atno[śs]ci|p[łl]atne\s+do|termin\s+zap[łl]aty|data\s+wa[żz]no[śs]ci|wa[żz]ne\s+do|due\s+date)\s*[:\-]?\s*(\d{4}[.\-/]\d{2}[.\-/]\d{2}|\d{2}[.\-/]\d{2}[.\-/]\d{4})/i,
@@ -34,25 +41,43 @@ function parseDateToken(token: string): Date | null {
   return null;
 }
 
+function extractLastAmount(text: string, pattern: RegExp): { amountCents: number; currency: string } | null {
+  pattern.lastIndex = 0;
+  let result: { amountCents: number; currency: string } | null = null;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text)) !== null) {
+    const cents = parseAmountToCents(match[1]);
+    if (cents === null) continue;
+    const unit = (match[2] || '').toUpperCase();
+    const currency = unit === 'EUR' || unit === 'USD' ? unit : 'PLN';
+    result = { amountCents: cents, currency };
+  }
+  return result;
+}
+
 /** Extracts invoice/receipt total amount and payment/validity due date from OCR text. */
-export function extractFinanceFromOcr(text: string): ExtractedFinance {
+export function extractFinanceFromOcr(text: string, title = ''): ExtractedFinance {
   if (!text || typeof text !== 'string') return { amountCents: null, currency: 'PLN', dueDate: null };
+  const headerSample = `${title}\n${text.slice(0, 2500)}`;
+  const isBillable = BILLABLE_DOC_RE.test(headerSample);
+  const isNonBillable = NON_BILLABLE_DOC_RE.test(headerSample);
+
   let amountCents: number | null = null;
   let currency = 'PLN';
 
-  for (const pattern of AMOUNT_LINE_PATTERNS) {
-    pattern.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = pattern.exec(text)) !== null) {
-      const cents = parseAmountToCents(match[1]);
-      if (cents !== null) {
-        amountCents = cents;
-        const unit = (match[2] || '').toUpperCase();
-        if (unit === 'EUR' || unit === 'USD') currency = unit;
-        else currency = 'PLN';
+  // Skip amount extraction on contracts, regulations, fee schedules, and attachments unless explicitly a billable invoice/receipt.
+  if (!isNonBillable || /\b(faktura(?:\s+vat)?|paragon(?:\s+fiskalny)?|rachunek|wezwanie\s+do\s+zap[łl]aty)\b/i.test(headerSample)) {
+    const strict = extractLastAmount(text, STRICT_AMOUNT_PATTERN);
+    if (strict) {
+      amountCents = strict.amountCents;
+      currency = strict.currency;
+    } else if (isBillable) {
+      const general = extractLastAmount(text, GENERAL_TOTAL_PATTERN);
+      if (general) {
+        amountCents = general.amountCents;
+        currency = general.currency;
       }
     }
-    if (amountCents !== null) break;
   }
 
   let dueDate: Date | null = null;

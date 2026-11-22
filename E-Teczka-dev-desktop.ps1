@@ -4,52 +4,26 @@ $env:NODE_ENV = 'development'
 $projectDir = $PSScriptRoot
 Set-Location -LiteralPath $projectDir
 
-$frontend = Get-NetTCPConnection -State Listen -LocalPort 5173 -ErrorAction SilentlyContinue
-if ($frontend) {
-    Write-Host 'Port 5173 jest zajety. Zamknij poprzednia wersje deweloperska lub program, ktory go uzywa.' -ForegroundColor Yellow
-    exit 1
+Write-Host 'Zamykanie poprzednich procesow E-Teczki...' -ForegroundColor Yellow
+
+# 1. Kill any Electron or Node processes launched from this E-Teczka workspace
+$workspaceProcs = Get-CimInstance Win32_Process -Filter "Name='node.exe' OR Name='electron.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -like "*$projectDir*" }
+foreach ($p in $workspaceProcs) {
+    Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
 }
-$backend = Get-NetTCPConnection -State Listen -LocalPort 3000 -ErrorAction SilentlyContinue | Select-Object -First 1
-$tls = Get-NetTCPConnection -State Listen -LocalPort 3443 -ErrorAction SilentlyContinue | Select-Object -First 1
-if ($backend) {
-    $devActive = $false
-    try {
-        $info = Invoke-RestMethod -Uri 'http://127.0.0.1:3000/api/network-info' -TimeoutSec 3
-        $cert = Invoke-RestMethod -Uri 'http://127.0.0.1:3000/api/local-ca-info' -TimeoutSec 3
-        if ($info.port -ne 3443 -or $cert.fingerprint -notmatch '^([A-Fa-f0-9]{2}:){31}[A-Fa-f0-9]{2}$' -or !$tls -or $tls.OwningProcess -ne $backend.OwningProcess) { throw 'not-eteczka' }
-        try {
-            $null = Invoke-RestMethod -Uri 'http://127.0.0.1:3000/api/dev/catalog/overrides' -Headers @{ Origin = 'http://127.0.0.1:5173' } -TimeoutSec 2
-            $devActive = $true
-        } catch {
-            $devActive = $false
-        }
-    } catch {
-        Write-Host 'Port 3000 jest zajety przez inny albo nieaktualny serwer. Nie zamykam go automatycznie.' -ForegroundColor Yellow
-        exit 1
-    }
-    if (-not $devActive) {
-        $procInfo = Get-CimInstance Win32_Process -Filter "ProcessId = $($backend.OwningProcess)" -ErrorAction SilentlyContinue
-        if ($procInfo -and $procInfo.CommandLine -like "*$projectDir*") {
-            Write-Host 'Zatrzymuje stary backend bez trybu deweloperskiego, aby uruchomic nodemon z ETECZKA_DEV_PLANS=1...' -ForegroundColor Yellow
-            Stop-Process -Id $backend.OwningProcess -Force
-            Start-Sleep -Milliseconds 600
-            & npm.cmd run 'dev:desktop'
-            exit $LASTEXITCODE
+
+# 2. Also free dev ports (3000, 3001, 3443, 5173) if still held by any process from this workspace or stale listeners
+foreach ($port in @(3000, 3001, 3443, 5173)) {
+    $conns = Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue
+    foreach ($c in $conns) {
+        if ($c.OwningProcess -and $c.OwningProcess -ne $PID) {
+            Stop-Process -Id $c.OwningProcess -Force -ErrorAction SilentlyContinue
         }
     }
-    Write-Host 'Korzystam z dzialajacego serwera E-Teczki. Interfejs bedzie odswiezany po zmianach.' -ForegroundColor Green
-    Write-Host 'Zmiany backendu wymagaja restartu serwera, jesli nie jest uruchomiony w trybie deweloperskim.' -ForegroundColor Yellow
-    $accounts = Get-NetTCPConnection -State Listen -LocalPort 3001 -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($accounts) {
-        & npm.cmd run 'dev:desktop:existing-backend'
-    } else {
-        & npm.cmd run 'dev:desktop:existing-backend-accounts'
-    }
-} else {
-    if ($tls) {
-        Write-Host 'Port 3443 jest zajety przez inny proces. Nie zamykam go automatycznie.' -ForegroundColor Yellow
-        exit 1
-    }
-    & npm.cmd run 'dev:desktop'
 }
+
+Start-Sleep -Milliseconds 800
+Write-Host 'Uruchamianie swiezej wersji deweloperskiej E-Teczki...' -ForegroundColor Green
+& npm.cmd run 'dev:desktop'
 exit $LASTEXITCODE

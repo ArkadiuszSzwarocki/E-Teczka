@@ -1,6 +1,6 @@
 import type { RetentionUnit } from '../types/domain';
 import { isLocalTesterFetcher } from './localTesterStore';
-import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.js?url';
+import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 
 export type UploadItem = { file: File; enabled: boolean; value: number; unit: RetentionUnit };
 export type PreparedUpload = { name: string; data: string; thumbnail: string | null };
@@ -25,7 +25,7 @@ type ThumbnailGenerator = (file: File) => Promise<string | null>;
 export async function generatePdfThumbnail(file: File): Promise<string | null> {
   try {
     const arrayBuffer = await file.arrayBuffer();
-    const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.js');
+    const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
     pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
     const page = await pdf.getPage(1);
@@ -35,9 +35,9 @@ export async function generatePdfThumbnail(file: File): Promise<string | null> {
     const context = canvas.getContext('2d');
     if (!context) return null;
     canvas.width = viewport.width; canvas.height = viewport.height;
-    await page.render({ canvasContext: context, viewport }).promise;
+    await page.render({ canvas, canvasContext: context, viewport }).promise;
     const thumbnail = canvas.toDataURL('image/jpeg', 0.78);
-    await pdf.destroy();
+    await pdf.cleanup();
     return thumbnail;
   } catch { return null; }
 }

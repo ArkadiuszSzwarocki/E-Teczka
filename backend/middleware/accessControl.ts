@@ -93,7 +93,8 @@ export function verifyAccountToken(token: string) {
   const [rawUserId, rawExpiry] = payload.split('.');
   const userId = Number(rawUserId);
   const expiresAt = Number(rawExpiry);
-  return Number.isInteger(userId) && userId > 0 && Number.isFinite(expiresAt) && expiresAt > 0 ? { userId } : null;
+  // Sliding idle expiry is enforced in DB via accountSessionIsActive (/api/auth/activity extends AuthSession.expiresAt).
+  return Number.isInteger(userId) && userId > 0 && Number.isFinite(expiresAt) ? { userId } : null;
 }
 
 export function registerPairingRoutes(app: express.Express, mobileLimit: (ownerKey: string) => Promise<number> = async () => 1) {

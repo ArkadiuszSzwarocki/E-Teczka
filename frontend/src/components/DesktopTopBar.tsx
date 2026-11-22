@@ -6,6 +6,7 @@ import bellIdleIcon from '../assets/sidebar-icons/bell-idle.png';
 import bellAlertIcon from '../assets/sidebar-icons/bell-alert.png';
 import { devReloadApp } from '../services/electron';
 import { getThemePreference, setThemePreference, type ThemePreference } from '../services/theme';
+import { useMailSyncProgress } from '../hooks/useMailSync';
 type AlertItem = { id: number; title: string; text: string; type: 'warning' | 'danger' };
 type BillingDetails = {
   interval?: 'month' | 'year' | null;
@@ -57,6 +58,11 @@ type Props = {
   adminReplyCount?: number;
   onOpenDeveloperFeedback?: () => void;
   onOpenDeveloper?: () => void;
+  mailSyncing?: boolean;
+  mailSyncPaused?: boolean;
+  onOpenMailInbox?: () => void;
+  onStopMailSync?: () => void;
+  onResumeMailSync?: () => void;
 };
 
 /** Search, connection status, notifications and current-user menu. */
@@ -78,10 +84,16 @@ export default function DesktopTopBar({
   adminReplyCount = 0,
   onOpenDeveloperFeedback,
   onOpenDeveloper,
+  mailSyncing = false,
+  mailSyncPaused = false,
+  onOpenMailInbox,
+  onStopMailSync,
+  onResumeMailSync,
 }: Props) {
   const [reloadingDev, setReloadingDev] = useState(false);
   const [theme, setTheme] = useState<ThemePreference>(getThemePreference);
   const classicIcons = useClassicIcons();
+  const mailSyncProgress = useMailSyncProgress(apiUrl, apiFetcher, mailSyncing);
   const notificationCount = retentionAlerts.length + scannerFileCount;
   const changeTheme = (next: ThemePreference) => { setTheme(next); setThemePreference(next); };
   const handleDevReload = async () => {
@@ -94,6 +106,52 @@ export default function DesktopTopBar({
       {activeView === 'folder' && <button onClick={onBack} className="cyber-btn-secondary shrink-0 whitespace-nowrap rounded-md border border-slate-600 bg-[#111827] px-2.5 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-700 hover:text-white sm:px-3 sm:py-2 sm:text-sm">← Cofnij</button>}
     </div>
     <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
+      {!mailSyncing && mailSyncPaused && (
+        <div className="flex items-center gap-1.5 rounded-lg border border-amber-500/50 bg-amber-950/40 px-2.5 py-1 text-xs text-amber-200">
+          <button type="button" onClick={onOpenMailInbox} className="font-semibold hover:text-white">
+            ⏸ Skan wstrzymany
+          </button>
+          {onResumeMailSync && (
+            <button type="button" onClick={onResumeMailSync} className="rounded bg-emerald-600 px-2 py-0.5 text-[11px] font-bold text-white hover:bg-emerald-500">
+              ▶ Wznów
+            </button>
+          )}
+        </div>
+      )}
+      {(mailSyncing || mailSyncProgress?.active) && (() => {
+        const isDownloading = mailSyncProgress?.phase === 'downloading';
+        const current = isDownloading ? (mailSyncProgress?.processedCandidates ?? 0) : (mailSyncProgress?.scannedMessages ?? 0);
+        const total = isDownloading ? (mailSyncProgress?.candidateMessages ?? 0) : (mailSyncProgress?.totalMessages ?? 0);
+        const pct = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 20;
+        return (
+          <div className="flex items-center gap-1 rounded-lg border border-cyan-500/50 bg-cyan-950/50 px-2.5 py-1 text-xs text-cyan-200">
+            <button
+              type="button"
+              onClick={onOpenMailInbox}
+              title={mailSyncProgress?.message || 'Kliknij, aby przejść do Poczty'}
+              className="flex items-center gap-2 text-left hover:text-white"
+            >
+              <span className="font-semibold">
+                {isDownloading ? '⬇️ Załączniki' : '🔍 Skan maili'}
+                {total > 0 ? `: ${current}/${total}` : '…'}
+              </span>
+              <span className="hidden h-1.5 w-16 overflow-hidden rounded-full bg-slate-800 sm:inline-block">
+                <span className="block h-full rounded-full bg-cyan-400 transition-all duration-300" style={{ width: `${pct}%` }} />
+              </span>
+            </button>
+            {onStopMailSync && (
+              <button
+                type="button"
+                onClick={onStopMailSync}
+                title="Zatrzymaj skanowanie poczty"
+                className="ml-1 rounded bg-rose-500/20 px-1.5 py-0.5 text-[11px] font-bold text-rose-200 hover:bg-rose-500/40"
+              >
+                ⏸
+              </button>
+            )}
+          </div>
+        );
+      })()}
       <SessionCountdown/>
       <div className="hidden xl:block">
         <DevPlanSwitch key={`${billingIsDev}:${billingPlan}`} apiUrl={apiUrl} fetcher={apiFetcher} onChanged={onDevPlanChanged} onOpenDeveloper={onOpenDeveloper} />

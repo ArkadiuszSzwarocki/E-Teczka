@@ -1,7 +1,6 @@
 import { getCatalog } from './planCatalog';
-import { centralEntitlement, hasCentralLink } from './centralEntitlements';
-import { centralPlanRequest } from './centralEntitlements';
-import { centralOwner, requireCentralPlanOwner, reserveCentralPlan, centralResourceOperation, markCentralInventoryDirty } from './centralPlanLedger';
+import { centralEntitlement, centralPlanRequest, hasCentralLink, isCentralUnavailable } from './centralEntitlements';
+import { centralOwner, requireCentralPlanOwner, reserveCentralPlan, markCentralInventoryDirty } from './centralPlanLedger';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { accountingKey, devPlan } from './devPlans';
 import { getDevOverrides } from './devOverrides';
@@ -31,7 +30,9 @@ export async function getPlan(db: Db, ownerKey: string, now = new Date()): Promi
 }
 /** Check or explicitly start a trial. Read-only checks never start the clock. */
 export async function featureTrial(db: Db, ownerKey: string, feature: TrialFeature, start: boolean, now = new Date()) {
-  if (isPublicTestMode() && !devPlan(ownerKey)) return { allowed: true, startedAt: null, endsAt: null };
+  const activeDevPlan = devPlan(ownerKey);
+  if (activeDevPlan && activeDevPlan !== 'free') return { allowed: true, startedAt: null, endsAt: null };
+  if (isPublicTestMode() && !activeDevPlan) return { allowed: true, startedAt: null, endsAt: null };
   const central=requireCentralPlanOwner(ownerKey);if(central){const result=await centralPlanRequest(central,'/ledger/trial',{feature,start});return {allowed:result.allowed,startedAt:result.startedAt===null?null:new Date(result.startedAt),endsAt:result.endsAt===null?null:new Date(result.endsAt)};}
   const plan = await getPlan(db, ownerKey, now);
   if (getCatalog().plans[plan][feature === 'ocr' ? 'ocr' : 'cloudBackup']) return { allowed: true, startedAt: null, endsAt: null };
@@ -59,15 +60,40 @@ export async function consumeUsage(db: Prisma.TransactionClient, ownerKey: strin
   await db.$executeRaw`INSERT INTO PlanUsage(ownerKey, feature, operationId, amount, usedAt) VALUES (${ownerKey}, ${feature}, ${operationId}, ${amount}, ${now.getTime()})`;
 }
 
-/** Counts all stored documents, including archive and trash, so users can free capacity by emptying trash. */
+/** Counts all stored documents in the active database, including archive and trash, so users can free capacity by emptying trash. */
 export async function checkDocumentCapacity(db: Db, ownerId: number, plan: Plan, amount: number): Promise<void> {
-  const central=requireCentralPlanOwner(`user:${ownerId}`);if(central){await reserveCentralPlan(db as Prisma.TransactionClient,central,'documents',centralResourceOperation(),amount);return;}
-  const limit = PLAN_LIMITS[plan].documents;
+  const central = requireCentralPlanOwner(`user:${ownerId}`);
+  let limit = PLAN_LIMITS[plan].documents;
+  if (central) {
+    try {
+      const status = await centralPlanRequest(central, '/ledger/status');
+      const centralLimit = status?.documents?.limit ?? status?.allowance?.documents;
+      limit = typeof centralLimit === 'number' ? centralLimit : null;
+    } catch (error) {
+      if (!isCentralUnavailable(error)) throw error;
+    }
+    markCentralInventoryDirty();
+  }
   if (limit === null) return;
   const count = await db.document.count({ where: { folder: { ownerId } } });
   if (count + amount > limit) throw new PlanLimitError('dokumenty', limit);
 }
-export async function checkTagCapacity(db:Db,ownerId:number,plan:Plan,localCount:number,amount=1){const central=requireCentralPlanOwner(`user:${ownerId}`);if(central){await reserveCentralPlan(db as Prisma.TransactionClient,central,'tags',centralResourceOperation(),amount);return;}const limit=PLAN_LIMITS[plan].tags;if(limit!==null&&localCount+amount>limit)throw new PlanLimitError('tagi',limit);}
+
+export async function checkTagCapacity(db: Db, ownerId: number, plan: Plan, localCount: number, amount = 1) {
+  const central = requireCentralPlanOwner(`user:${ownerId}`);
+  let limit = PLAN_LIMITS[plan].tags;
+  if (central) {
+    try {
+      const status = await centralPlanRequest(central, '/ledger/status');
+      const centralLimit = status?.tags?.limit ?? status?.allowance?.tags;
+      limit = typeof centralLimit === 'number' ? centralLimit : null;
+    } catch (error) {
+      if (!isCentralUnavailable(error)) throw error;
+    }
+    markCentralInventoryDirty();
+  }
+  if (limit !== null && localCount + amount > limit) throw new PlanLimitError('tagi', limit);
+}
 
 export type BackupPlanState = { trials: Array<{ feature: TrialFeature; startedAt: number }>; usage: Array<{ feature: MeteredFeature; operationId: string; amount: number; usedAt: number }> };
 export async function exportPlanState(db: Db, ownerKey: string): Promise<BackupPlanState> {

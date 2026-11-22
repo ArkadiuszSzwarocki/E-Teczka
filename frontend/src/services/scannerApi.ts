@@ -59,9 +59,9 @@ export async function scanViaBackend(
 }
 
 /** Keep each scanned page readable while making a multi-page upload fit the API limit. */
-export async function preparePrinterPage(base64: string): Promise<PrinterPage> {
+export async function preparePrinterPage(base64OrDataUrl: string): Promise<PrinterPage> {
   const image = new Image();
-  image.src = `data:image/jpeg;base64,${base64}`;
+  image.src = base64OrDataUrl.startsWith('data:') ? base64OrDataUrl : `data:image/jpeg;base64,${base64OrDataUrl}`;
   await image.decode();
   let maxSide = 2400;
   for (let attempt = 0; attempt < 5; attempt++) {

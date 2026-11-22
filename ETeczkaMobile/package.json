@@ -49,5 +49,10 @@
     "doctor": "npx expo-doctor",
     "check": "npm run typecheck && npm run doctor"
   },
-  "private": true
+  "private": true,
+  "overrides": {
+    "zod": "^4.6.6",
+    "minimatch": "^11.0.1",
+    "glob": "^14.0.2"
+  }
 }

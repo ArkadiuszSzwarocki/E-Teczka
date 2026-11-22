@@ -3,6 +3,7 @@ import path from 'node:path';
 import { createCanvas } from '@napi-rs/canvas';
 import { createWorker } from 'tesseract.js';
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { preprocessOcrImage } from './ocrPreprocess';
 
 type TextItem = { str?: string; hasEOL?: boolean };
 type Recognizer = { recognize: (input: Buffer) => Promise<string>; close: () => Promise<void> };
@@ -27,7 +28,11 @@ async function localRecognizer(languageDirectory?: string): Promise<Recognizer> 
 export async function extractDocumentText(file: string, mimeType: string, options: OcrOptions = {}): Promise<string> {
   const recognizerFactory = options.createRecognizer || (() => localRecognizer(options.languageDirectory || process.env.ETECZKA_OCR_LANG_PATH));
   let recognizer: Recognizer | undefined;
-  const recognize = async (image: Buffer) => { if (!recognizer) recognizer = await recognizerFactory(); return recognizer.recognize(image); };
+  const recognize = async (image: Buffer) => {
+    if (!recognizer) recognizer = await recognizerFactory();
+    const prepared = await preprocessOcrImage(image);
+    return recognizer.recognize(prepared);
+  };
   const pdf = mimeType.toLowerCase() === 'application/pdf' || path.extname(file).toLowerCase() === '.pdf';
   try {
     if (!pdf) {

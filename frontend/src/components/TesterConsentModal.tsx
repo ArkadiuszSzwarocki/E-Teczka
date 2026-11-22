@@ -16,7 +16,7 @@ type Props = {
 /** First-login privacy & local disk storage notice modal for public test users. */
 export default function TesterConsentModal({ userEmail, busy, error, onAccept, onDecline, onOpenLegalDoc }: Props) {
   const diskSupported = isDiskStorageSupported();
-  const [mode, setMode] = useState<TesterStorageMode>(diskSupported ? 'local_disk' : 'qnap_server');
+  const [mode, setMode] = useState<TesterStorageMode>(diskSupported ? 'local_disk' : 'local_browser');
   const [folderName, setFolderName] = useState<string | null>(null);
   const [localError, setLocalError] = useState('');
   const [checked, setChecked] = useState(false);
@@ -74,17 +74,22 @@ export default function TesterConsentModal({ userEmail, busy, error, onAccept, o
             </div>
           </label>
 
-          <label className={`block cursor-pointer rounded-xl border p-4 transition ${mode === 'qnap_server' ? 'border-blue-400 bg-blue-950/25' : 'border-slate-700 bg-slate-900/50 hover:border-slate-500'}`}>
-            <div className="flex items-start gap-3">
-              <input type="radio" name="storageMode" checked={mode === 'qnap_server'} onChange={() => setMode('qnap_server')} className="mt-1 accent-blue-400" />
-              <div>
-                <p className="font-bold text-white">Na serwerze testowym QNAP (wiele urządzeń / Pakiet Rodzinny)</p>
-                <p className="mt-1 text-xs text-slate-300">
-                  Dokumenty zapisywane są w testowej bazie SQLite na serwerze QNAP — dzięki temu działają na telefonie, wielu urządzeniach oraz w Pakiecie Rodzinnym.
-                </p>
+          {!diskSupported && (
+            <label className={`block cursor-pointer rounded-xl border p-4 transition ${mode === 'local_browser' ? 'border-blue-400 bg-blue-950/25' : 'border-slate-700 bg-slate-900/50 hover:border-slate-500'}`}>
+              <div className="flex items-start gap-3">
+                <input type="radio" name="storageMode" checked={mode === 'local_browser'} onChange={() => setMode('local_browser')} className="mt-1 accent-blue-400" />
+                <div>
+                  <p className="font-bold text-white">Lokalnie w pamięci przeglądarki (IndexedDB)</p>
+                  <p className="mt-1 text-xs text-slate-300">
+                    Kartoteki i dokumenty są zapisywane wyłącznie lokalnie w tej przeglądarce na Twoim urządzeniu.
+                  </p>
+                </div>
               </div>
-            </div>
-          </label>
+            </label>
+          )}
+          <div className="rounded-xl border border-blue-500/30 bg-blue-950/20 p-3 text-xs text-blue-200">
+            Kartoteki i pliki są zawsze osobiste i zapisywane wyłącznie lokalnie na Twoim urządzeniu — nigdy na serwerze QNAP NAS.
+          </div>
         </div>
 
         <div className="mt-3 flex flex-wrap gap-3 text-xs text-blue-300">

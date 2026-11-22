@@ -22,6 +22,13 @@ export type AnalyticsSummary = {
   costsThisMonth: { totalCents: number; paidCents: number; unpaidCents: number; currency: string };
   monthlyExpenses: Array<{ monthKey: string; label: string; totalCents: number }>;
   documentStats: { last30DaysCount: number; totalCount: number };
+  fileLocations?: {
+    foldersCount: number;
+    archiveCount: number;
+    trashCount: number;
+    totalCount: number;
+    byFolder: Array<{ folderId: number; name: string; count: number }>;
+  };
   vaultCount: number;
   structure: Array<{ folderId: number; name: string; count: number; percent: number }>;
   upcomingDeadlines: Array<{

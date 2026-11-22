@@ -8,12 +8,14 @@ import FolderCreateModal from './FolderCreateModal';
 import FolderVaultSetupModal from './FolderVaultSetupModal';
 import FolderVaultUnlockModal from './FolderVaultUnlockModal';
 import RetentionBadge from './RetentionBadge';
+import RodoUnlockBadge from './RodoUnlockBadge';
 import DocumentTagCorner, { getTagTileStyle } from './DocumentTagCorner';
 import FoldersFilterBar from './FoldersFilterBar';
 import { useFolderVaultGuard } from '../hooks/useFolderVaultGuard';
 import { useFoldersDragDrop } from '../hooks/useFoldersDragDrop';
 import { countFolderTreeStats } from '../utils/folderTree';
 import { collectDocumentTags, DEFAULT_DOC_FILTER, filterAndSortDocuments, type DocFilterState } from '../utils/documentFilterSort';
+import { isMobileBrowser } from '../services/platform';
 
 const VIEW_KEY = 'eteczka_folders_view_mode_v1';
 
@@ -48,6 +50,7 @@ export default function FoldersDesktop({
   const [renamingId, setRenamingId] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [docMenuId, setDocMenuId] = useState<number | null>(null);
+  const [activeDocId, setActiveDocId] = useState<number | null>(null);
   const [propertiesFolder, setPropertiesFolder] = useState<FolderRecord | null>(null);
   const [docFilter, setDocFilter] = useState<DocFilterState>(DEFAULT_DOC_FILTER);
 
@@ -76,11 +79,12 @@ export default function FoldersDesktop({
   }
 
   const visibleFolders = folders.filter(f => f.parentId === currentFolderId).sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.id - b.id);
-  const folderDocs = currentFolderId === null ? [] : documents.filter(d => d.folderId === currentFolderId && !d.isArchived && !d.isDeleted);
+  const folderDocs = currentFolderId === null ? [] : documents.filter(d => Number(d.folderId) === Number(currentFolderId) && !d.isArchived && !d.isDeleted);
   const availableTags = collectDocumentTags(folderDocs);
   const visibleDocs = filterAndSortDocuments(folderDocs, docFilter);
   const hasActiveFilter = docFilter.tagId !== '' || docFilter.retentionFilter !== 'all' || docFilter.retentionFrom !== '' || docFilter.retentionTo !== '' || docFilter.typeFilter !== 'all';
   const hideThreeDots = selectedDocs.length > 1;
+  const allowDrag = !isMobileBrowser();
 
   const dnd = useFoldersDragDrop({
     folders, visibleFolders, breadcrumbs, currentFolderId,
@@ -170,7 +174,7 @@ export default function FoldersDesktop({
             const isShiftedGhost = isDraggingThis && dnd.dragTargetIndex !== null && visibleFolders[dnd.dragTargetIndex]?.id !== folder.id;
             const isVaultCard = vault.icons[folder.id] === 'sejf';
             return (
-              <div key={folder.id} data-folder-slot={index} draggable onDragStart={e => dnd.startDrag(e, { kind: 'folder', id: folder.id })} onDragEnd={dnd.endDrag} {...dnd.dragOverTargetProps(folder.id)} onClick={() => { if (renamingId !== folder.id) void vault.openFolderGuarded(folder.id, () => setCurrentFolderId(folder.id)); }} className={`group relative flex cursor-pointer flex-col items-center rounded-xl border p-4 text-center transition-all duration-200 ${menuFolderId === folder.id || iconPickerId === folder.id ? 'z-30' : ''} ${isDraggingThis ? 'border-2 border-dashed border-blue-400 bg-blue-500/10 ring-2 ring-blue-400/40 opacity-80' : isDropHover ? 'scale-[1.03] border-blue-400 bg-blue-500/15 ring-2 ring-blue-400' : `${isVaultCard ? 'cyber-card cyber-card-vault' : 'cyber-card'} border-slate-700 bg-[#1e293b] hover:border-blue-400/70 hover:bg-slate-800/80`}`}>
+              <div key={folder.id} data-folder-slot={index} draggable={allowDrag} onDragStart={e => dnd.startDrag(e, { kind: 'folder', id: folder.id })} onDragEnd={dnd.endDrag} {...dnd.dragOverTargetProps(folder.id)} onClick={() => { if (renamingId !== folder.id) void vault.openFolderGuarded(folder.id, () => setCurrentFolderId(folder.id)); }} className={`group relative flex cursor-pointer flex-col items-center rounded-xl border p-4 text-center transition-all duration-200 ${menuFolderId === folder.id || iconPickerId === folder.id ? 'z-30' : ''} ${isDraggingThis ? 'border-2 border-dashed border-blue-400 bg-blue-500/10 ring-2 ring-blue-400/40 opacity-80' : isDropHover ? 'scale-[1.03] border-blue-400 bg-blue-500/15 ring-2 ring-blue-400' : `${isVaultCard ? 'cyber-card cyber-card-vault' : 'cyber-card'} border-slate-700 bg-[#1e293b] hover:border-blue-400/70 hover:bg-slate-800/80`}`}>
                 <div className={`cyber-card-orb pointer-events-none absolute -left-10 -top-10 h-24 w-24 rounded-full blur-2xl transition-all duration-300 ${isVaultCard ? 'bg-red-500/15 group-hover:bg-red-500/25' : 'bg-cyan-500/10 group-hover:bg-cyan-500/20'}`} />
                 {(isShiftedGhost || isDropHover) && (
                   <span className="pointer-events-none absolute -top-2.5 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded-full bg-blue-600 px-2.5 py-0.5 text-[10px] font-bold text-white shadow">Upuść tutaj</span>
@@ -195,22 +199,24 @@ export default function FoldersDesktop({
 
           {visibleDocs.map(doc => {
             const checked = selectedDocs.includes(doc.id);
+            const active = activeDocId === doc.id;
             const isDraggingDoc = dnd.dragItem?.kind === 'doc' && dnd.dragItem.id === doc.id;
             return (
-              <div key={doc.id} draggable onDragStart={e => dnd.startDrag(e, { kind: 'doc', id: doc.id })} onDragEnd={dnd.endDrag} onClick={() => onOpenPreview(doc)} style={getTagTileStyle(doc, checked)} className={`group relative flex cursor-pointer flex-col items-center rounded-xl border p-4 text-center transition ${isDraggingDoc ? 'scale-95 opacity-40' : checked ? 'border-blue-500 bg-blue-950/30' : 'border-slate-700 bg-[#1e293b] hover:border-slate-500'}`}>
+              <div key={doc.id} draggable={allowDrag} onDragStart={e => dnd.startDrag(e, { kind: 'doc', id: doc.id })} onDragEnd={dnd.endDrag} onClick={() => { setActiveDocId(doc.id); onOpenPreview(doc); }} style={getTagTileStyle(doc, checked)} className={`group relative flex cursor-pointer flex-col items-center rounded-xl border p-4 text-center transition ${isDraggingDoc ? 'scale-95 opacity-40' : active ? 'border-cyan-400 bg-cyan-950/35 ring-2 ring-cyan-400 shadow-[0_0_16px_rgba(34,211,238,0.25)]' : checked ? 'border-blue-500 bg-blue-950/30' : 'border-slate-700 bg-[#1e293b] hover:border-slate-500'}`}>
                 <input type="checkbox" checked={checked} onClick={e => e.stopPropagation()} onChange={() => onToggleSelect(doc.id)} aria-label={`Zaznacz ${doc.title}`} className="absolute left-2.5 top-2.5 h-4 w-4 accent-blue-500" />
                 <DocumentTagCorner document={doc} hideThreeDots={hideThreeDots} />
                 {!hideThreeDots && (
-                  <button type="button" aria-label="Menu dokumentu" onClick={e => { e.stopPropagation(); setDocMenuId(docMenuId === doc.id ? null : doc.id); setMenuFolderId(null); }} className="absolute right-2 top-2 rounded px-2 py-0.5 text-lg text-slate-400 hover:bg-slate-700 hover:text-white">⋮</button>
+                  <button type="button" aria-label="Menu dokumentu" onClick={e => { e.stopPropagation(); setActiveDocId(doc.id); setDocMenuId(docMenuId === doc.id ? null : doc.id); setMenuFolderId(null); }} className="absolute right-2 top-2 rounded px-2 py-0.5 text-lg text-slate-400 hover:bg-slate-700 hover:text-white">⋮</button>
                 )}
-                <button type="button" onClick={() => onOpenPreview(doc)} onMouseEnter={e => onHoverEnter(doc, e.currentTarget)} onMouseLeave={onHoverLeave} className="mt-3 flex h-16 w-14 items-center justify-center overflow-hidden rounded border border-slate-700 bg-slate-900">
+                <button type="button" onClick={e => { e.stopPropagation(); setActiveDocId(doc.id); onOpenPreview(doc); }} onMouseEnter={e => onHoverEnter(doc, e.currentTarget)} onMouseLeave={onHoverLeave} className="mt-3 flex h-16 w-14 items-center justify-center overflow-hidden rounded border border-slate-700 bg-slate-900">
                   <DocumentThumbnail apiUrl={apiUrl} fetcher={fetcher} document={doc} />
                 </button>
-                <span onClick={() => onOpenPreview(doc)} className="mt-2 line-clamp-2 cursor-pointer text-xs font-semibold text-slate-200">{doc.title}</span>
+                <span title={doc.title} onClick={e => { e.stopPropagation(); setActiveDocId(doc.id); onOpenPreview(doc); }} className="mt-2 line-clamp-2 w-full min-w-0 max-w-full break-all cursor-pointer text-xs font-semibold text-slate-200">{doc.title}</span>
                 {typeof doc.fileSize === 'number' && doc.fileSize > 0 && (
                   <span className="mt-0.5 text-[11px] text-slate-400">{formatBytes(doc.fileSize)}</span>
                 )}
                 <RetentionBadge document={doc} className="mt-1" />
+                <RodoUnlockBadge docId={doc.id} className="mt-1" />
                 {doc.readOnly && <span className="mt-1 rounded bg-amber-950/60 px-1.5 py-0.5 text-[10px] text-amber-300">Tylko do odczytu</span>}
                 {docMenuId === doc.id && !hideThreeDots && (
                   <div onClick={e => e.stopPropagation()} className="absolute right-2 top-9 z-40 w-48 rounded-lg border border-slate-600 bg-[#111827] py-1 text-left text-xs shadow-2xl">
@@ -245,10 +251,10 @@ export default function FoldersDesktop({
             );
           })}
           {visibleDocs.map(doc => (
-            <div key={doc.id} draggable onDragStart={e => dnd.startDrag(e, { kind: 'doc', id: doc.id })} onDragEnd={dnd.endDrag} className="relative flex items-center justify-between border-b border-slate-700/60 px-4 py-3 hover:bg-slate-800/60">
+            <div key={doc.id} draggable onDragStart={e => dnd.startDrag(e, { kind: 'doc', id: doc.id })} onDragEnd={dnd.endDrag} onClick={() => setActiveDocId(doc.id)} className={`relative flex items-center justify-between border-b border-slate-700/60 px-4 py-3 transition ${activeDocId === doc.id ? 'bg-cyan-950/35 ring-1 ring-inset ring-cyan-400' : 'hover:bg-slate-800/60'}`}>
               <div className="flex items-center gap-3">
                 <input type="checkbox" checked={selectedDocs.includes(doc.id)} onChange={() => onToggleSelect(doc.id)} className="h-4 w-4 accent-blue-500" />
-                <button type="button" onClick={() => onOpenPreview(doc)} onMouseEnter={e => onHoverEnter(doc, e.currentTarget)} onMouseLeave={onHoverLeave} className="font-medium text-slate-200 hover:text-white">{doc.title}</button>
+                <button type="button" onClick={() => { setActiveDocId(doc.id); onOpenPreview(doc); }} onMouseEnter={e => onHoverEnter(doc, e.currentTarget)} onMouseLeave={onHoverLeave} className="font-medium text-slate-200 hover:text-white">{doc.title}</button>
                 {typeof doc.fileSize === 'number' && doc.fileSize > 0 && (
                   <span className="text-xs text-slate-400">({formatBytes(doc.fileSize)})</span>
                 )}

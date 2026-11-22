@@ -165,7 +165,7 @@ function createShareRouter({ dataDir, masterKey, publisherSecret, publicBase, no
       }
     }
     try {
-      const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(record.iv, 'hex'));
+      const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(record.iv, 'hex'), { authTagLength: 16 });
       decipher.setAAD(Buffer.from(id));
       decipher.setAuthTag(Buffer.from(record.tag, 'hex'));
       const bytes = Buffer.concat([decipher.update(Buffer.from(record.ciphertext, 'base64')), decipher.final()]);

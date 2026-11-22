@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { PrismaClient } from '@prisma/client';
 import { securityDir, uploadsDir } from '../config/paths';
+import { mailInboxDir } from './mailInboxStore';
 import { decrypt, encrypt } from './backupCrypto';
 import { centralAccountOrigin } from './centralAccountLink';
 
@@ -123,11 +124,22 @@ export async function eraseLocalAccountCompletely(
 
   const workspaceFile = path.join(securityDir, `archive-workspace-${userId}.json`);
   try { if (fs.existsSync(workspaceFile)) fs.unlinkSync(workspaceFile); } catch { /* ignore */ }
+  try { await fs.promises.rm(mailInboxDir(userId), { recursive: true, force: true }); } catch { /* ignore */ }
 
   for (const encFile of ['folder-vaults.enc', 'folder-vault.enc']) {
     removeFromEncryptedJson(path.join(securityDir, encFile), key => key.startsWith(`${userId}:`));
   }
-  for (const encFile of ['central-entitlements.enc', 'central-plan-snapshots.enc', 'central-plan-journal.enc', 'backup-mfa.enc', 'account-login-mfa.enc', 'hello-credentials.enc']) {
+  for (const encFile of [
+    'central-entitlements.enc',
+    'central-plan-snapshots.enc',
+    'central-plan-journal.enc',
+    'backup-mfa.enc',
+    'account-login-mfa.enc',
+    'hello-credentials.enc',
+    'mail-accounts.enc',
+    'mail-filters.enc',
+    'folder-learning.enc',
+  ]) {
     removeFromEncryptedJson(path.join(securityDir, encFile), key => key === String(userId) || key === `user:${userId}`);
   }
 

@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import sejfIcon from '../assets/folder-icons/sejf.png';
 import fakturyIcon from '../assets/folder-icons/faktury.png';
 import inboxIcon from '../assets/folder-icons/inbox.png';
 import { useAnalyticsSummary } from '../hooks/useAnalyticsSummary';
 import AnalyticsBarChart from './AnalyticsBarChart';
 import AnalyticsDonutChart from './AnalyticsDonutChart';
+import AnalyticsFileLocationsCard from './AnalyticsFileLocationsCard';
 import ReceiptInsightsPanel from './ReceiptInsightsPanel';
 
 type Props = {
@@ -34,6 +36,37 @@ export default function AnalyticsDashboard({
   onOpenDocument,
 }: Props) {
   const { selectedMonth, setSelectedMonth, summary, usage, loading, error, reload, markPaymentStatus } = useAnalyticsSummary(apiUrl, fetcher);
+  const [bundleBusy, setBundleBusy] = useState(false);
+  const [bundleError, setBundleError] = useState('');
+
+  const downloadAccountantBundle = async () => {
+    setBundleBusy(true);
+    setBundleError('');
+    try {
+      const res = await fetcher(`${apiUrl}/api/automation/accountant-bundle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ month: selectedMonth }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error || 'Nie udało się wygenerować paczki dla księgowej.');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `paczka-ksiegowa-${selectedMonth}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setBundleError(err instanceof Error ? err.message : 'Błąd eksportu paczki ZIP.');
+    } finally {
+      setBundleBusy(false);
+    }
+  };
 
   const focusExpensesMonth = (monthKey?: string) => {
     if (monthKey) setSelectedMonth(monthKey);
@@ -67,10 +100,16 @@ export default function AnalyticsDashboard({
           <h2 className="text-2xl font-bold text-white">Podsumowanie i analizy</h2>
           <p className="text-sm text-slate-400">Analiza kosztów, dokumentów oraz nadchodzących terminów płatności w E‑Teczce</p>
         </div>
-        <button type="button" onClick={() => void reload()} className="cyber-btn-secondary rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-700">
-          ↻ Odśwież dane
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" disabled={bundleBusy} onClick={() => void downloadAccountantBundle()} className="rounded-lg border border-amber-500/60 bg-amber-500/15 px-3 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-500/25 disabled:opacity-50">
+            {bundleBusy ? 'Pakowanie ZIP…' : `📦 Paczka dla księgowej (${selectedMonth})`}
+          </button>
+          <button type="button" onClick={() => void reload()} className="cyber-btn-secondary rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-700">
+            ↻ Odśwież dane
+          </button>
+        </div>
       </div>
+      {bundleError && <p role="alert" className="rounded-lg border border-red-500/40 bg-red-950/30 px-3 py-2 text-xs text-red-200">{bundleError}</p>}
 
       {summary.receiptReadingLocked && (
         <div role="status" className="rounded-xl border border-amber-500/40 bg-amber-950/30 px-4 py-3 text-xs text-amber-200">
@@ -200,6 +239,8 @@ export default function AnalyticsDashboard({
         items={summary.receiptItems}
         onOpenDocument={onOpenDocument}
       />
+
+      <AnalyticsFileLocationsCard fileLocations={summary.fileLocations} />
     </div>
   );
 }

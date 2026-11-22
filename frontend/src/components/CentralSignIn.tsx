@@ -39,12 +39,14 @@ export default function CentralSignIn({ apiUrl, origin, deviceId, onAuthenticate
   const input = 'mt-2 w-full rounded-lg border border-slate-600 bg-[#111827] p-3 text-white';
   const button = 'mt-3 w-full rounded-lg bg-blue-600 px-4 py-3 font-bold text-white disabled:opacity-50';
 
+  const hideHello = s.deviceLimitReached || (() => { try { return sessionStorage.getItem('eteczka_hide_hello_signin') === '1'; } catch { return false; } })();
+
   return (
     <div>
       {googleRegistration && !s.start && <div className="mt-4 border-t border-slate-700 pt-3"><p className="text-center text-sm text-slate-400">lub utwórz konto przez Google</p><button type="button" disabled={s.busy} onClick={() => void s.beginBrowser(isElectron ? { x: 0, y: 0, width: 320, height: 340 } : undefined)} className="mt-3 w-full rounded-xl border border-slate-600 px-4 py-3 font-semibold text-white hover:bg-slate-800 disabled:opacity-50"><span className="flex items-center justify-center gap-3"><GoogleIcon />{s.busy ? 'Otwieranie Google…' : 'Zarejestruj przez Google'}</span></button></div>}
       {!googleRegistration && !s.start && s.tab !== 'reset' && (
         <div className="mt-4">
-          <HelloSignIn onAuthenticated={onAuthenticated}/>
+          {!hideHello && <HelloSignIn onAuthenticated={onAuthenticated}/>}
           <input aria-label="E-mail konta" value={s.centralEmail} onChange={e => s.setCentralEmail(e.target.value)} placeholder="E-mail" type="email" autoComplete="email" className={input} />
           <input aria-label="Hasło konta" value={s.centralPassword} onChange={e => s.setCentralPassword(e.target.value)} placeholder="Hasło (min. 8 znaków)" type="password" autoComplete="current-password" className={input} />
           <button disabled={s.busy} onClick={() => void s.submitDirect()} className={button}>Zaloguj e-mailem</button>

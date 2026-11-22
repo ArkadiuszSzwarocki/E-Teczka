@@ -1,12 +1,54 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useSensitiveMasking } from '../hooks/useSensitiveMasking';
+import { maskRodoText, shouldProtectDocument } from '../services/rodoProtection';
+import {
+  addDocumentRodoPhrase,
+  getDocumentRodoPhrases,
+  getDocumentRodoUnlockRemainingSeconds,
+  maskCustomRodoPhrases,
+  removeDocumentRodoPhrase,
+  RODO_UNLOCK_EVENT,
+  unlockDocumentRodo,
+} from '../services/rodoRegions';
+import SensitiveUnmaskPrompt from './SensitiveUnmaskPrompt';
 
 type Props = { apiUrl: string; documentId: number; title: string; fetcher: typeof fetch; onClose: () => void };
 type Status = { state: 'not_started' | 'queued' | 'processing' | 'done' | 'error' | 'paused'; error?: string | null; text?: string };
 const labels: Record<Status['state'], string> = { not_started: 'Nie uruchomiono', queued: 'W kolejce', processing: 'Rozpoznawanie…', done: 'Gotowe', error: 'Błąd', paused: 'Wstrzymane' };
 
 export default function OcrPanel({ apiUrl, documentId, title, fetcher, onClose }: Props) {
+  const { maskingEnabled, rodoCategories, smartRodoEnabled } = useSensitiveMasking();
+  const [unmaskSecondsLeft, setUnmaskSecondsLeft] = useState(() => getDocumentRodoUnlockRemainingSeconds(documentId));
+  const unmasked = unmaskSecondsLeft > 0;
+  const [showUnmaskPrompt, setShowUnmaskPrompt] = useState(false);
+  const [customPhrases, setCustomPhrases] = useState<string[]>(() => getDocumentRodoPhrases(documentId));
+  const [selectedFragment, setSelectedFragment] = useState('');
   const [status, setStatus] = useState<Status | null>(null); const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false); const [draft, setDraft] = useState('');
+  useEffect(() => {
+    const sync = () => setUnmaskSecondsLeft(getDocumentRodoUnlockRemainingSeconds(documentId));
+    sync();
+    window.addEventListener(RODO_UNLOCK_EVENT, sync);
+    const timer = window.setInterval(sync, 1000);
+    return () => {
+      window.removeEventListener(RODO_UNLOCK_EVENT, sync);
+      window.clearInterval(timer);
+    };
+  }, [documentId]);
+  const protection = shouldProtectDocument({
+    docId: documentId,
+    title,
+    ocrText: status?.text,
+    maskingEnabled,
+    categories: rodoCategories,
+    smartEnabled: smartRodoEnabled,
+  });
+  const isLocked = (protection.protect || customPhrases.length > 0) && !unmasked;
+  const captureSelection = () => {
+    const sel = window.getSelection()?.toString().trim() || '';
+    if (sel.length >= 2 && sel.length <= 200) setSelectedFragment(sel);
+    else setSelectedFragment('');
+  };
   const load = useCallback(async () => {
     try { const response = await fetcher(`${apiUrl}/api/ocr/${documentId}`); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Nie udało się pobrać wyniku OCR.'); setStatus(data); setError(''); }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Nie udało się pobrać wyniku OCR.'); }
@@ -29,7 +71,23 @@ export default function OcrPanel({ apiUrl, documentId, title, fetcher, onClose }
     <p className="mt-4 text-sm">Stan: <strong>{status ? labels[status.state] : 'Pobieranie…'}</strong></p>
     {(error || status?.error) && <p role="alert" className="mt-2 text-sm text-red-300">{error || status?.error}</p>}
     <p className="mt-2 text-xs text-slate-400">Rozpoznawanie odbywa się lokalnie. Oryginalny dokument nie jest zmieniany. Wynik może zawierać błędy.</p>
-    <div className="mt-4 flex flex-wrap gap-2"><button type="button" disabled={busy || editing || status?.state === 'queued' || status?.state === 'processing'} onClick={() => void start()} className="rounded bg-blue-600 px-4 py-2 font-semibold text-white disabled:opacity-50">{status?.state === 'done' ? 'Rozpoznaj ponownie' : 'Rozpoznaj tekst'}</button>{!editing && <button type="button" disabled={busy || !status?.text || status.state === 'queued' || status.state === 'processing'} onClick={() => { setDraft(status?.text || ''); setEditing(true); }} className="rounded border border-slate-500 px-4 py-2 disabled:opacity-50">Popraw tekst</button>}{editing && <><button type="button" disabled={busy} onClick={() => void save()} className="rounded bg-emerald-700 px-4 py-2 disabled:opacity-50">Zapisz tekst</button><button type="button" disabled={busy} onClick={() => setEditing(false)} className="rounded border border-slate-500 px-4 py-2">Anuluj</button></>}</div>
-    {editing ? <textarea value={draft} maxLength={2_000_000} onChange={event => setDraft(event.target.value)} aria-label="Rozpoznany tekst dokumentu" className="mt-4 min-h-48 w-full resize-y rounded border border-slate-700 bg-[#111827] p-4 text-sm" /> : <pre className="mt-4 min-h-32 overflow-auto whitespace-pre-wrap break-words rounded border border-slate-700 bg-[#111827] p-4 font-sans text-sm">{status?.text || 'Tutaj pojawi się rozpoznany tekst.'}</pre>}
+    <div className="mt-4 flex flex-wrap gap-2"><button type="button" disabled={busy || editing || status?.state === 'queued' || status?.state === 'processing'} onClick={() => void start()} className="rounded bg-blue-600 px-4 py-2 font-semibold text-white disabled:opacity-50">{status?.state === 'done' ? 'Rozpoznaj ponownie' : 'Rozpoznaj tekst'}</button>{!editing && <button type="button" disabled={busy || !status?.text || isLocked || status.state === 'queued' || status.state === 'processing'} onClick={() => { setDraft(status?.text || ''); setEditing(true); }} className="rounded border border-slate-500 px-4 py-2 disabled:opacity-50">Popraw tekst</button>}{!editing && selectedFragment && <button type="button" onClick={() => { setCustomPhrases(addDocumentRodoPhrase(documentId, selectedFragment)); setSelectedFragment(''); }} className="rounded bg-cyan-600 px-3 py-2 text-xs font-bold text-white hover:bg-cyan-500">▪ Zamaskuj zaznaczony tekst (RODO)</button>}{isLocked && <button type="button" onClick={() => setShowUnmaskPrompt(true)} className="rounded bg-amber-500 px-4 py-2 font-bold text-slate-950 hover:bg-amber-400">🔓 Odkoduj wrażliwe dane</button>}{unmasked && (protection.protect || customPhrases.length > 0) && <span className="self-center rounded border border-emerald-500/40 bg-emerald-950/40 px-2.5 py-1 text-xs font-semibold text-emerald-200">🔓 {Math.floor(unmaskSecondsLeft / 60)}:{String(unmaskSecondsLeft % 60).padStart(2, '0')}</span>}{editing && <><button type="button" disabled={busy} onClick={() => void save()} className="rounded bg-emerald-700 px-4 py-2 disabled:opacity-50">Zapisz tekst</button><button type="button" disabled={busy} onClick={() => setEditing(false)} className="rounded border border-slate-500 px-4 py-2">Anuluj</button></>}</div>
+    {unmasked && customPhrases.length > 0 && (
+      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+        <span className="text-slate-400">Ręcznie ukryte frazy:</span>
+        {customPhrases.map(p => (
+          <span key={p} className="inline-flex items-center gap-1 rounded border border-slate-600 bg-slate-800 px-2 py-0.5 text-slate-200">
+            {p}
+            <button type="button" onClick={() => setCustomPhrases(removeDocumentRodoPhrase(documentId, p))} className="text-red-300 hover:text-red-200">×</button>
+          </span>
+        ))}
+      </div>
+    )}
+    {showUnmaskPrompt && isLocked && (
+      <div className="mt-4 flex justify-center">
+        <SensitiveUnmaskPrompt apiUrl={apiUrl} fetcher={fetcher} onUnlocked={() => { unlockDocumentRodo(documentId); setUnmaskSecondsLeft(getDocumentRodoUnlockRemainingSeconds(documentId)); setShowUnmaskPrompt(false); }} onCancel={() => setShowUnmaskPrompt(false)} />
+      </div>
+    )}
+    {editing ? <textarea value={draft} maxLength={2_000_000} onChange={event => setDraft(event.target.value)} aria-label="Rozpoznany tekst dokumentu" className="mt-4 min-h-48 w-full resize-y rounded border border-slate-700 bg-[#111827] p-4 text-sm" /> : <pre onMouseUp={captureSelection} onKeyUp={captureSelection} className="mt-4 min-h-32 overflow-auto whitespace-pre-wrap break-words rounded border border-slate-700 bg-[#111827] p-4 font-sans text-sm">{status?.text ? (isLocked ? maskCustomRodoPhrases(protection.protect ? maskRodoText(status.text, rodoCategories) : status.text, customPhrases) : status.text) : 'Tutaj pojawi się rozpoznany tekst.'}</pre>}
   </section></div>;
 }

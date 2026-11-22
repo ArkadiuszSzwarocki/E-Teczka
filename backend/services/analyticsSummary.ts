@@ -35,7 +35,7 @@ export async function buildAnalyticsSummary(
   const vaultStore = createFolderVaultStore(path.join(securityDir, 'folder-vaults.enc'));
 
   const accessibleIds = await getAccessibleFolderIds(prisma, ownerId);
-  const [folders, rawDocuments] = await Promise.all([
+  const [folders, rawDocuments, trashCount] = await Promise.all([
     prisma.folder.findMany({ where: { id: { in: accessibleIds } }, select: { id: true, name: true, parentId: true } }),
     prisma.document.findMany({
       where: { folderId: { in: accessibleIds }, isDeleted: false },
@@ -47,6 +47,7 @@ export async function buildAnalyticsSummary(
       },
       orderBy: { createdAt: 'desc' },
     }),
+    prisma.document.count({ where: { folderId: { in: accessibleIds }, isDeleted: true } }),
   ]);
 
   // Backfill existing OCR-processed receipts that were uploaded before line-item parsing was added.
@@ -218,6 +219,12 @@ export async function buildAnalyticsSummary(
     const refDate = doc.dueDate || doc.createdAt;
     const docMonth = `${refDate.getFullYear()}-${String(refDate.getMonth() + 1).padStart(2, '0')}`;
     if (docMonth !== targetMonth) continue;
+    const isExplicitReceiptOrInvoice = Boolean(
+      doc.merchantName ||
+      doc.lineItems.length > 0 ||
+      /\b(paragon|rachunek|faktura|fv)\b/i.test(doc.title)
+    );
+    if (!isExplicitReceiptOrInvoice) continue;
     if (!doc.merchantName && doc.lineItems.length === 0 && !(typeof doc.amountCents === 'number' && doc.amountCents > 0)) continue;
 
     const docTotal = doc.amountCents ?? doc.lineItems.reduce((sum, i) => sum + i.totalCents, 0);
@@ -267,6 +274,29 @@ export async function buildAnalyticsSummary(
     }
   }
 
+  const folderLabel = (folderId: number): string => {
+    const parts: string[] = [];
+    let current = folderMap.get(folderId);
+    let guard = 0;
+    while (current && guard < 20) {
+      parts.unshift(current.name);
+      current = current.parentId !== null ? folderMap.get(current.parentId) : undefined;
+      guard++;
+    }
+    return parts.join(' / ') || 'Bez kartoteki';
+  };
+
+  let archiveCount = 0;
+  const activeByFolder = new Map<number, number>();
+  for (const doc of documents) {
+    if (doc.isArchived) archiveCount++;
+    else activeByFolder.set(doc.folderId, (activeByFolder.get(doc.folderId) || 0) + 1);
+  }
+  const foldersCount = documents.length - archiveCount;
+  const byFolder = Array.from(activeByFolder.entries())
+    .map(([folderId, count]) => ({ folderId, name: folderLabel(folderId), count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'pl'));
+
   return {
     selectedMonth: targetMonth,
     receiptReadingLocked: !allowReceiptInvoiceReading,
@@ -274,6 +304,13 @@ export async function buildAnalyticsSummary(
     costsThisMonth: allowReceiptInvoiceReading ? { totalCents, paidCents, unpaidCents, currency: 'PLN' } : { totalCents: 0, paidCents: 0, unpaidCents: 0, currency: 'PLN' },
     monthlyExpenses: allowReceiptInvoiceReading ? monthlyExpenses : [],
     documentStats: { last30DaysCount, totalCount: documents.length },
+    fileLocations: {
+      foldersCount,
+      archiveCount,
+      trashCount,
+      totalCount: documents.length + trashCount,
+      byFolder,
+    },
     vaultCount,
     structure: topFour,
     upcomingDeadlines: upcomingDeadlines.slice(0, 8),

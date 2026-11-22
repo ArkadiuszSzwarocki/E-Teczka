@@ -16,9 +16,12 @@ import { createTagRouter } from './routes/tags';
 import { createFolderRouter } from './routes/folders';
 import { createPrinterScanRouter } from './routes/printerScan';
 import { createScannerInboxRouter } from './routes/scannerInbox';
+import { createMailInboxRouter } from './routes/mailInbox';
+import { createAutomationRouter } from './routes/automation';
 import { createDocumentRouter } from './routes/documents';
 import { createSyncRouter } from './routes/sync';
 import { createMobileScanRouter } from './routes/mobileScan';
+import { getAccessibleFolderIds } from './services/familyAccess';
 import { errorMessage } from './utils/errors';
 import { createBillingRouter, createBillingWebhookHandler } from './routes/billing';
 import { createAuthRouter } from './routes/auth';
@@ -55,14 +58,27 @@ instrumentPlanTransactions(prisma);
 const idlePolicyReady=ensureIdleSessionPolicy(prisma);
 configureAccountSessionValidator(async (token, userId) => Boolean(await prisma.authSession.findFirst({ where: { tokenHash: createHash('sha256').update(token).digest('hex'), userId, ...activeSessionWhere() }, select: { id: true } })));
 const app = express();
+app.disable('x-powered-by');
 const ocrQueue = createOcrQueue(prisma, { file: path.join(securityDir, 'ocr-queue.enc'), uploadsDirectory: uploadsDir });
 
 const localTls = makeLocalTls(securityDir);
-app.use(cors());
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin) return callback(null, true);
+    const allowed =
+      /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin) ||
+      origin === 'https://e-teczkatest.arecki.pl';
+    callback(null, allowed);
+  },
+}));
 app.use((_req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; frame-src 'self' blob:; connect-src 'self' http://127.0.0.1:* http://localhost:* https:;",
+  );
   next();
 });
 // Local desktop can keep using loopback HTTP. Remote clients must use TLS;
@@ -123,9 +139,29 @@ if (hasFrontendBundle) {
   app.use(express.static(frontendDistDir));
 }
 
+const verifyUploadAccess: express.RequestHandler = async (req, res, next) => {
+  const userId = res.locals.userId ? Number(res.locals.userId) : null;
+  if (!userId) return next();
+  const rel = decodeURIComponent(req.path.replace(/^\/+/, ''));
+  if (!rel || rel.includes('/') || rel.includes('\\') || rel.includes('..')) return res.sendStatus(404);
+  try {
+    const accessibleIds = await getAccessibleFolderIds(prisma, userId);
+    const owned = await prisma.document.findFirst({
+      where: {
+        filePath: rel,
+        OR: [{ userId }, { folderId: { in: accessibleIds } }],
+      },
+      select: { id: true },
+    });
+    if (!owned) return res.sendStatus(403);
+    return next();
+  } catch {
+    return res.sendStatus(503);
+  }
+};
+
 app.use('/api', requireAccess, centralDeviceGate);
-app.use('/uploads', requireAccess, centralDeviceGate, express.static(uploadsDir));
-app.use(requireAccess, centralDeviceGate, express.static(uploadsDir));
+app.use('/uploads', requireAccess, centralDeviceGate, verifyUploadAccess, express.static(uploadsDir));
 
 void applyRetentionPolicy(prisma).catch((error: unknown) => console.error('[retention] Błąd polityki terminu życia:', errorMessage(error)));
 setInterval(() => {
@@ -171,6 +207,8 @@ app.use('/api/sync', createSyncRouter(prisma));
 app.use('/api', createMobileScanRouter(prisma, ocrQueue));
 
 app.use('/api/scanner', createScannerInboxRouter(prisma, ocrQueue));
+app.use('/api/mail-inbox', createMailInboxRouter(prisma, ocrQueue));
+app.use('/api/automation', createAutomationRouter(prisma));
 
 if (hasFrontendBundle) {
   app.use((req, res, next) => {
@@ -179,23 +217,35 @@ if (hasFrontendBundle) {
   });
 }
 
+const logStamp = () => {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `[${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}]`;
+};
+
 // ==========================================
 // GLOBALNA PUŁAPKA NA NIEPRZEWIDZIANE BŁĘDY (CRASH CATCHER)
 // ==========================================
 app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
   const details = errorMessage(err);
-  console.error("!!! KRYTYCZNY BŁĄD SERWERA !!! Ścieżka:", req.url);
-  console.error("Szczegóły:", details);
-  res.status(500).json({ error: "Krytyczny błąd serwera", details });
+  const ts = logStamp();
+  console.error(`${ts} !!! KRYTYCZNY BŁĄD SERWERA !!! Ścieżka:`, req.url);
+  console.error(`${ts} Szczegóły:`, details);
+  res.status(500).json({
+    error: "Krytyczny błąd serwera",
+    ...(process.env.NODE_ENV === 'production' ? {} : { details }),
+  });
 });
 
-app.listen(3000, '0.0.0.0', () => { console.log('Serwer lokalny HTTP: port 3000 (tylko komputer).'); void ocrQueue.process().catch(() => console.error('[ocr] Nie udało się wznowić kolejki.')); });
+const httpBindHost = process.env.ETECZKA_PUBLIC_TEST_MODE === '1' ? '0.0.0.0' : '127.0.0.1';
+void prisma.$executeRawUnsafe("UPDATE Document SET filePath = substr(filePath, 9) WHERE filePath LIKE 'uploads/%'").catch(() => undefined);
+app.listen(3000, httpBindHost, () => { console.log(`${logStamp()} Serwer lokalny HTTP: port 3000 (${httpBindHost}).`); void ocrQueue.process().catch(() => console.error(`${logStamp()} [ocr] Nie udało się wznowić kolejki.`)); });
 const httpsServer = https.createServer({ key: localTls.key, cert: localTls.cert, minVersion: 'TLSv1.2' }, app);
 httpsServer.on('error', (err: NodeJS.ErrnoException) => {
   if (err.code === 'EADDRINUSE' && process.env.ETECZKA_PUBLIC_TEST_MODE === '1') {
-    console.warn('[tls] Port 3443 zajęty — w trybie testowym WWW ruch idzie przez port 3000.');
+    console.warn(`${logStamp()} [tls] Port 3443 zajęty — w trybie testowym WWW ruch idzie przez port 3000.`);
     return;
   }
   throw err;
 });
-httpsServer.listen(3443, '0.0.0.0', () => console.log('Bezpieczne połączenia HTTPS: port 3443.'));
+httpsServer.listen(3443, '0.0.0.0', () => console.log(`${logStamp()} Bezpieczne połączenia HTTPS: port 3443.`));

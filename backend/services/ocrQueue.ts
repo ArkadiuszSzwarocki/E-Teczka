@@ -59,14 +59,14 @@ export function createOcrQueue(prisma: PrismaClient, options: Options) {
         if (!(await featureTrial(prisma, next.ownerKey, 'ocr', false)).allowed) { update(next.documentId, next.ownerKey, { state: 'paused', error: 'Okres próbny OCR zakończył się. Funkcja wymaga planu Premium.' }); continue; }
         update(next.documentId, next.ownerKey, { state: 'processing', error: undefined });
         try {
-          const document = await prisma.document.findUnique({ where: { id: next.documentId }, select: { id: true, filePath: true, mimeType: true, isDeleted: true, merchantName: true, amountCents: true, dueDate: true, paymentStatus: true } });
+          const document = await prisma.document.findUnique({ where: { id: next.documentId }, select: { id: true, title: true, filePath: true, mimeType: true, isDeleted: true, merchantName: true, amountCents: true, dueDate: true, paymentStatus: true } });
           if (!document || document.isDeleted) throw new Error('Dokument nie jest dostępny.');
           const fullPath = path.resolve(options.uploadsDirectory, document.filePath);
           const relative = path.relative(path.resolve(options.uploadsDirectory), fullPath);
           if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('Nieprawidłowa ścieżka dokumentu.');
           const text = await extract(fullPath, document.mimeType);
           if (text.length > 2_000_000) throw new Error('Dokument przekracza limit 2 milionów znaków tekstu OCR.');
-          const extracted = extractFinanceFromOcr(text);
+          const extracted = extractFinanceFromOcr(text, document.title);
           const receipt = parseReceiptFromOcr(text);
           const financePatch: { merchantName?: string; amountCents?: number; currency?: string; dueDate?: Date; paymentStatus?: string } = {};
           if (!document.merchantName && receipt.merchantName) financePatch.merchantName = receipt.merchantName;

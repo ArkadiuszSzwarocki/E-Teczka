@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
-import { hasActiveDiskPermission, requestSavedDiskPermission, pickTesterDiskDirectory } from '../services/localTesterStore';
+import { getElectronIpc } from '../services/electron';
+import { hasActiveDiskPermission, requestSavedDiskPermission, pickTesterDiskDirectory, isDiskStorageSupported } from '../services/localTesterStore';
 import { errorMessage } from '../utils/errors';
 
 export type TesterStorageMode = 'local_disk' | 'local_browser' | 'qnap_server';
+const resolveLocalMode = (mode: TesterStorageMode): TesterStorageMode => {
+  if (getElectronIpc()) return mode;
+  if (mode === 'local_disk' && isDiskStorageSupported()) return 'local_disk';
+  return isDiskStorageSupported() ? 'local_disk' : 'local_browser';
+};
 
 type ConsentState = {
   required: boolean;
@@ -25,7 +31,10 @@ export function useTesterConsent(apiUrl: string, fetcher: typeof fetch, userEmai
   const [diskReconnect, setDiskReconnect] = useState<{ needed: boolean; folderName: string | null }>({ needed: false, folderName: null });
 
   const checkDisk = useCallback(async (email: string | null, mode: TesterStorageMode) => {
-    if (!email || mode !== 'local_disk') { setDiskReconnect({ needed: false, folderName: null }); return; }
+    if (getElectronIpc() || !email || mode !== 'local_disk') {
+      setDiskReconnect({ needed: false, folderName: null });
+      return;
+    }
     const status = await hasActiveDiskPermission(email);
     setDiskReconnect({ needed: !status.hasHandle || !status.granted, folderName: status.folderName });
   }, []);
@@ -39,7 +48,8 @@ export function useTesterConsent(apiUrl: string, fetcher: typeof fetch, userEmai
       if (!res.ok) throw new Error();
       const loaded = (await res.json()) as ConsentState;
       setState(loaded);
-      const effectiveMode: TesterStorageMode = loaded.required && loaded.consent?.accepted ? loaded.consent.storageMode : 'qnap_server';
+      const rawMode: TesterStorageMode = loaded.required && loaded.consent?.accepted ? loaded.consent.storageMode : 'local_disk';
+      const effectiveMode = resolveLocalMode(rawMode);
       await checkDisk(userEmail, effectiveMode);
     } catch {
       setState(null);
@@ -96,9 +106,10 @@ export function useTesterConsent(apiUrl: string, fetcher: typeof fetch, userEmai
     && state?.required
     && (state.needsConsent ?? (!state.consent || !state.consent.accepted || state.consent.storageMode === 'local_browser')),
   );
-  const storageMode: TesterStorageMode = state?.required && state?.consent?.accepted
+  const rawStorageMode: TesterStorageMode = state?.required && state?.consent?.accepted
     ? state.consent.storageMode
-    : 'qnap_server';
+    : 'local_disk';
+  const storageMode: TesterStorageMode = resolveLocalMode(rawStorageMode);
 
   return { checking, needsConsent, storageMode, diskReconnect, reconnectDisk, busy, error, submitConsent };
 }

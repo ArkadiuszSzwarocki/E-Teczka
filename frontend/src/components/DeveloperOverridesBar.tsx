@@ -1,13 +1,34 @@
 import { useEffect, useState } from 'react';
 import { resolveApiBase } from '../services/apiBase';
 
-type Plan = 'free' | 'standard' | 'premium';
+type Plan = 'free' | 'standard' | 'premium' | 'family' | 'business';
 type Overrides = { bypassDeviceLimit: boolean; bypassPlanLimits: boolean; bypassRateLimit: boolean };
+type CurrentUserInfo = { email?: string; name?: string | null } | null;
 const api = resolveApiBase(window.location, import.meta.env.VITE_API_URL);
 
-export default function DeveloperOverridesBar({ onRefresh, onStatus }: { onRefresh: () => void; onStatus: (msg: string) => void }) {
+const PLAN_LABELS: Record<Plan, string> = {
+  free: 'Darmowy',
+  standard: 'Standard',
+  premium: 'Premium',
+  family: 'Rodzinny',
+  business: 'Firmowy',
+};
+
+export default function DeveloperOverridesBar({
+  currentUser,
+  onRefresh,
+  onPlanChanged,
+  onStatus,
+}: {
+  currentUser?: CurrentUserInfo;
+  onRefresh: () => void;
+  onPlanChanged?: () => void;
+  onStatus: (msg: string) => void;
+}) {
   const [overrides, setOverrides] = useState<Overrides>({ bypassDeviceLimit: false, bypassPlanLimits: false, bypassRateLimit: false });
   const [planOverride, setPlanOverride] = useState<Plan | null>(null);
+  const [effectivePlan, setEffectivePlan] = useState<string>('');
+  const [resolvedUser, setResolvedUser] = useState<CurrentUserInfo>(currentUser ?? null);
   const [busy, setBusy] = useState(false);
 
   function authHeaders(): Record<string, string> {
@@ -16,16 +37,31 @@ export default function DeveloperOverridesBar({ onRefresh, onStatus }: { onRefre
   }
 
   async function loadAll() {
-    const [ovRes, plRes] = await Promise.all([
+    const headers = authHeaders();
+    const [ovRes, plRes, meRes, bilRes] = await Promise.all([
       fetch(`${api}/api/dev/catalog/overrides`),
-      fetch(`${api}/api/dev/plan`, { headers: authHeaders() })
+      fetch(`${api}/api/dev/plan`, { headers }),
+      fetch(`${api}/api/auth/me`, { headers }).catch(() => null),
+      fetch(`${api}/api/billing/status`, { headers }).catch(() => null),
     ]);
     if (ovRes.ok) setOverrides(await ovRes.json() as Overrides);
     if (plRes.ok) {
       const p = await plRes.json() as { override?: Plan | null };
       setPlanOverride(p.override ?? null);
     }
+    if (meRes?.ok) {
+      const me = await meRes.json() as { user?: { email?: string; name?: string | null } };
+      if (me?.user?.email) setResolvedUser(me.user);
+    }
+    if (bilRes?.ok) {
+      const bil = await bilRes.json() as { plan?: string };
+      if (bil?.plan) setEffectivePlan(bil.plan);
+    }
   }
+
+  useEffect(() => {
+    if (currentUser?.email) setResolvedUser(currentUser);
+  }, [currentUser]);
 
   useEffect(() => { void loadAll().catch(() => undefined); }, []);
 
@@ -55,7 +91,10 @@ export default function DeveloperOverridesBar({ onRefresh, onStatus }: { onRefre
       });
       if (!res.ok) throw new Error('Nie udało się zmienić planu testowego.');
       setPlanOverride(plan);
-      onStatus(`Aktywny plan testowy: ${plan ?? 'rzeczywisty'}.`);
+      if (plan) setEffectivePlan(plan);
+      onPlanChanged?.();
+      void loadAll();
+      onStatus(`Aktywny plan testowy: ${plan ? PLAN_LABELS[plan] : 'rzeczywisty (domyślny)'}.`);
     } catch (e) {
       onStatus(e instanceof Error ? e.message : 'Błąd zmiany planu.');
     } finally { setBusy(false); }
@@ -79,7 +118,23 @@ export default function DeveloperOverridesBar({ onRefresh, onStatus }: { onRefre
   return (
     <section className="mb-6 rounded-2xl border border-emerald-600/40 bg-slate-900 p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold text-white">Narzędzia deweloperskie i omijanie blokad</h2>
+        <div>
+          <h2 className="text-lg font-semibold text-white">Narzędzia deweloperskie i omijanie blokad</h2>
+          <p className="mt-1 text-xs text-slate-300">
+            Zalogowane konto:{' '}
+            <strong className="text-cyan-300">{resolvedUser?.email || 'Nieznane / niezalogowane'}</strong>
+            {resolvedUser?.name ? <span className="text-slate-400"> ({resolvedUser.name})</span> : null}
+            {effectivePlan && (
+              <>
+                {' · '}Aktywny plan:{' '}
+                <strong className="text-amber-300">
+                  {PLAN_LABELS[effectivePlan as Plan] || effectivePlan}
+                </strong>
+                {planOverride ? ' (ręczne nadpisanie)' : ' (rzeczywisty)'}
+              </>
+            )}
+          </p>
+        </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" disabled={busy} onClick={() => { void loadAll(); onRefresh(); }} className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-40">
             ↻ Odśwież
@@ -123,14 +178,14 @@ export default function DeveloperOverridesBar({ onRefresh, onStatus }: { onRefre
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <span className="mr-2 text-xs text-slate-400">Aktywny plan testowy:</span>
-        {(['free', 'standard', 'premium'] as Plan[]).map(p => (
-          <button key={p} type="button" disabled={busy} onClick={() => void choosePlan(p)} className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${planOverride === p ? 'bg-amber-400 text-slate-950' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'}`}>
-            {p === 'free' ? 'Darmowy' : p === 'standard' ? 'Standard' : 'Premium'}
+        <span className="mr-2 text-xs font-semibold text-slate-300">Ręczna zmiana planu:</span>
+        {(['free', 'standard', 'premium', 'family', 'business'] as Plan[]).map(p => (
+          <button key={p} type="button" disabled={busy} onClick={() => void choosePlan(p)} className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${planOverride === p ? 'bg-amber-400 text-slate-950' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'}`}>
+            {PLAN_LABELS[p]}
           </button>
         ))}
-        <button type="button" disabled={busy || planOverride === null} onClick={() => void choosePlan(null)} className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-200 disabled:opacity-40">
-          Rzeczywisty
+        <button type="button" disabled={busy || planOverride === null} onClick={() => void choosePlan(null)} className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800 disabled:opacity-40">
+          Domyślny (rzeczywisty)
         </button>
       </div>
     </section>

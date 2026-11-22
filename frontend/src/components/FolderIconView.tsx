@@ -32,7 +32,7 @@ export function FolderIconView({ icon, size = 'lg' }: { icon: string; size?: 'xs
     return <img src={presetSrc} alt="" draggable={false} className={`${SIZE_CLASSES[size].img} ${glow}`} />;
   }
   if (icon.startsWith('data:image/')) {
-    return <img src={icon} alt="" draggable={false} className={size === 'sm' ? 'inline-block h-4 w-4 rounded object-contain' : 'h-12 w-12 rounded-lg object-contain'} />;
+    return <img src={icon} alt="" draggable={false} className={`${SIZE_CLASSES[size].img} cyber-icon-glow`} />;
   }
   return <span className={SIZE_CLASSES[size].emoji}>{icon}</span>;
 }

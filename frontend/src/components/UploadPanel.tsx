@@ -3,6 +3,7 @@ import type { RetentionUnit } from '../types/domain';
 import { formatBytes, type UploadItem } from '../services/documentUpload';
 import type { UploadUsageSummary } from '../hooks/useBatchUpload';
 import { AppFolderIcon } from './FolderIconPicker';
+import { isMobileBrowser } from '../services/platform';
 
 type Props = {
   uploadUsage: UploadUsageSummary | null;
@@ -45,8 +46,9 @@ export default function UploadPanel({
   mergedRetentionUnit, setMergedRetentionUnit, mergedRetentionEnabled, setMergedRetentionEnabled,
   onFileSelect, onSubmit, onOpenPlans, onRetryFetch,
 }: Props) {
+  const isMobile = isMobileBrowser();
   return (
-    <div className="mb-10 h-fit w-full max-w-5xl rounded-lg border border-slate-700 bg-[#1e293b] p-6 shadow-xl">
+    <div className="mb-10 h-fit w-full max-w-5xl rounded-lg border border-slate-700 bg-[#1e293b] p-4 shadow-xl sm:p-6">
       <div className="mb-4 flex items-center justify-between">
         <h2 className="flex items-center gap-2 text-xl font-bold text-white">📦 Rejestracja Dokumentów</h2>
       </div>
@@ -121,10 +123,18 @@ export default function UploadPanel({
         <div>
           <label className="mb-2 block text-sm font-semibold text-slate-300">Wybierz lub przeciągnij pliki do archiwizacji</label>
           <div className="flex flex-col gap-4 rounded-lg border border-slate-600 bg-[#111827]/50 p-4">
-            <div className="flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-blue-500/40 bg-[#111827] p-6 transition-colors hover:bg-[#1f2937]">
+            <div className="flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-blue-500/40 bg-[#111827] p-5 text-center transition-colors hover:bg-[#1f2937] sm:p-6">
               <div className="opacity-90"><AppFolderIcon size="lg" /></div>
-              <div className="text-sm font-medium text-slate-400">Przeciągnij pliki tutaj lub kliknij przycisk poniżej</div>
-              <input type="file" multiple accept=".png,.jpg,.jpeg,.pdf" onChange={onFileSelect} className="cursor-pointer text-sm text-slate-400 file:mr-4 file:rounded-md file:border-0 file:bg-blue-600 file:px-6 file:py-2 file:text-sm file:font-bold file:text-white hover:file:bg-blue-500" />
+              <div className="text-sm font-medium text-slate-400">{isMobile ? 'Wybierz pliki z telefonu lub zrób zdjęcie aparatem' : 'Przeciągnij pliki tutaj lub kliknij przycisk poniżej'}</div>
+              <div className="flex flex-wrap items-center justify-center gap-3">
+                <input type="file" multiple accept=".png,.jpg,.jpeg,.pdf" onChange={onFileSelect} className="max-w-full cursor-pointer text-sm text-slate-400 file:mr-3 file:rounded-md file:border-0 file:bg-blue-600 file:px-4 file:py-2 file:text-sm file:font-bold file:text-white hover:file:bg-blue-500" />
+                {isMobile && (
+                  <label className="cursor-pointer rounded-md bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-500">
+                    📷 Zrób zdjęcie
+                    <input type="file" accept="image/*" capture="environment" multiple onChange={onFileSelect} className="hidden" />
+                  </label>
+                )}
+              </div>
             </div>
             {filesToUpload.length > 0 && (
               <div className="mt-2 border-t border-slate-700 pt-4">

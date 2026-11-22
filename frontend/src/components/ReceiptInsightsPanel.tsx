@@ -60,7 +60,7 @@ export default function ReceiptInsightsPanel({
             value={itemQuery}
             onChange={e => setItemQuery(e.target.value)}
             placeholder="Szukaj artykułu (np. mleko, paliwo)…"
-            className="cyber-input w-56 rounded-lg border border-slate-600 bg-slate-900 px-3 py-1.5 text-xs text-white"
+            className="cyber-input w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-1.5 text-xs text-white sm:w-56"
           />
         </div>
       </div>
@@ -119,7 +119,7 @@ export default function ReceiptInsightsPanel({
             </div>
           </div>
 
-          <div className="max-h-72 overflow-y-auto rounded-lg border border-slate-700/80">
+          <div className="max-h-72 overflow-x-auto overflow-y-auto rounded-lg border border-slate-700/80">
             <table className="w-full text-left text-xs">
               <thead className="sticky top-0 bg-slate-900/95 text-[11px] uppercase tracking-wider text-slate-400">
                 <tr>
