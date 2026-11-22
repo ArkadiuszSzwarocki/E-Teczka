@@ -1,8 +1,8 @@
 {
   "version": 1,
   "usageDays": 7,
-  "ocrTrialDays": 30,
-  "standardOcrTrialDays": 60,
+  "ocrTrialDays": 14,
+  "standardOcrTrialDays": 30,
   "backupTrialMonths": 2,
   "plans": {
     "free": {
@@ -15,11 +15,11 @@
       "mobileDevices": 1,
       "accountDevices": 1,
       "limits": {
-        "documents": 200,
+        "documents": 20,
         "tags": 3,
-        "cameraScan": 50,
-        "printerScan": 50,
-        "merge": 10
+        "cameraScan": 20,
+        "printerScan": 20,
+        "merge": 3
       }
     },
     "standard": {
@@ -32,11 +32,11 @@
       "mobileDevices": 1,
       "accountDevices": 2,
       "limits": {
-        "documents": 400,
+        "documents": 40,
         "tags": 6,
-        "cameraScan": 100,
-        "printerScan": 100,
-        "merge": 20
+        "cameraScan": 40,
+        "printerScan": 40,
+        "merge": 10
       }
     },
     "premium": {
