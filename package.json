@@ -32,11 +32,17 @@
       "main.js",
       "preload.js",
       "desktop/**/*",
+      "!desktop/test/**/*",
       "assets/icon.ico",
       "assets/icon.png",
       "frontend/dist/**/*",
       "backend/dist/**/*",
-      "backend/prisma/**/*"
+      "backend/node_modules/**/*",
+      "!backend/node_modules/.cache/**/*",
+      "backend/prisma/**/*",
+      "!backend/prisma/**/*.db",
+      "!backend/prisma/**/*.db-shm",
+      "!backend/prisma/**/*.db-wal"
     ],
     "win": {
       "icon": "assets/icon.ico",

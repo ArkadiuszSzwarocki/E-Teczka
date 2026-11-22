@@ -36,14 +36,22 @@ function documentUpdate(body: unknown): Record<string, unknown> | null {
   if (source.retentionUnit !== undefined && (typeof source.retentionUnit !== 'string' || !retentionUnits.has(source.retentionUnit))) return null;
   if (source.isArchived !== undefined && typeof source.isArchived !== 'boolean') return null;
   if (source.isDeleted !== undefined && typeof source.isDeleted !== 'boolean') return null;
-  if (source.deletedAt !== undefined && source.deletedAt !== null && typeof source.deletedAt !== 'string') return null;
+  if (source.deletedAt !== undefined && source.deletedAt !== null && (typeof source.deletedAt !== 'string' || Number.isNaN(new Date(source.deletedAt).getTime()))) return null;
   if (source.createdAt !== undefined && (typeof source.createdAt !== 'string' || Number.isNaN(new Date(source.createdAt).getTime()))) return null;
   if (source.tagIds !== undefined && (!Array.isArray(source.tagIds) || source.tagIds.some((id) => !Number.isInteger(Number(id)) || Number(id) < 1))) return null;
   if (source.amountCents !== undefined && source.amountCents !== null && (!Number.isInteger(Number(source.amountCents)) || Number(source.amountCents) < 0 || Number(source.amountCents) > 1_000_000_000)) return null;
   if (source.currency !== undefined && (typeof source.currency !== 'string' || !/^[A-Z]{3}$/.test(source.currency))) return null;
   if (source.dueDate !== undefined && source.dueDate !== null && (typeof source.dueDate !== 'string' || Number.isNaN(new Date(source.dueDate).getTime()))) return null;
   if (source.paymentStatus !== undefined && source.paymentStatus !== null && !['paid', 'unpaid'].includes(String(source.paymentStatus))) return null;
-  return source;
+  const normalized: Record<string, unknown> = { ...source };
+  if (typeof source.deletedAt === 'string') normalized.deletedAt = new Date(source.deletedAt);
+  if (typeof source.createdAt === 'string') normalized.createdAt = new Date(source.createdAt);
+  if (typeof source.dueDate === 'string') normalized.dueDate = new Date(source.dueDate);
+  return normalized;
+}
+
+function safeErrorPayload(message: string, details: string) {
+  return process.env.NODE_ENV === 'production' ? { error: message } : { error: message, details };
 }
 
 /** Document listing, metadata changes and desktop Base64 uploads. */
@@ -155,7 +163,7 @@ export function createDocumentRouter(prisma: PrismaClient, ocrQueue?: ReturnType
     } catch (error: unknown) {
       const details = errorMessage(error);
       console.error('[GET /api/documents] Błąd pobierania:', details);
-      res.status(500).json({ error: 'Błąd pobierania dokumentów', details });
+      res.status(500).json(safeErrorPayload('Błąd pobierania dokumentów', details));
     }
   });
 
@@ -180,7 +188,7 @@ export function createDocumentRouter(prisma: PrismaClient, ocrQueue?: ReturnType
     } catch (error: unknown) {
       const details = errorMessage(error);
       console.error(`[GET /api/documents/${req.params.id}] Błąd pobierania:`, details);
-      return res.status(500).json({ error: 'Błąd pobierania dokumentu', details });
+      return res.status(500).json(safeErrorPayload('Błąd pobierania dokumentu', details));
     }
   });
 
@@ -232,7 +240,7 @@ export function createDocumentRouter(prisma: PrismaClient, ocrQueue?: ReturnType
       if (error instanceof DuplicateDocumentError) return res.status(409).json({ code: error.code, error: error.message, existingTitle: error.existingTitle });
       const details = errorMessage(error);
       console.error(`[PATCH /api/documents/${req.params.id}] Błąd aktualizacji:`, details);
-      res.status(500).json({ error: 'Błąd edycji dokumentu', details });
+      res.status(500).json(safeErrorPayload('Błąd edycji dokumentu', details));
     }
   });
 
@@ -241,7 +249,7 @@ export function createDocumentRouter(prisma: PrismaClient, ocrQueue?: ReturnType
     catch (error: unknown) {
       const details = errorMessage(error);
       console.error(`[DELETE /api/documents/${req.params.id}] Błąd usuwania:`, details);
-      res.status(500).json({ error: 'Błąd usuwania dokumentu', details });
+      res.status(500).json(safeErrorPayload('Błąd usuwania dokumentu', details));
     }
   });
 
@@ -291,7 +299,7 @@ export function createDocumentRouter(prisma: PrismaClient, ocrQueue?: ReturnType
       if (error instanceof DuplicateDocumentError) return res.status(409).json({ code: error.code, error: error.message, existingTitle: error.existingTitle });
       const details = errorMessage(error);
       console.error('[POST /api/documents/upload-base64] Błąd dekodowania:', details);
-      res.status(500).json({ error: details ? `Błąd wgrywania Base64: ${details}` : 'Błąd wgrywania Base64', details });
+      res.status(500).json(safeErrorPayload(process.env.NODE_ENV === 'production' || !details ? 'Błąd wgrywania Base64' : `Błąd wgrywania Base64: ${details}`, details));
     }
   });
 
@@ -326,7 +334,7 @@ export function createDocumentRouter(prisma: PrismaClient, ocrQueue?: ReturnType
       if (error instanceof DuplicateDocumentError) return res.status(409).json({ code: error.code, error: error.message, existingTitle: error.existingTitle });
       const details = errorMessage(error);
       console.error('[POST /api/documents/upload-binary]', details);
-      return res.status(500).json({ error: details ? `Błąd wgrywania: ${details}` : 'Błąd wgrywania', details });
+      return res.status(500).json(safeErrorPayload(process.env.NODE_ENV === 'production' || !details ? 'Błąd wgrywania' : `Błąd wgrywania: ${details}`, details));
     }
   });
 

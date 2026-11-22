@@ -81,7 +81,7 @@ function detectMerchant(lines: string[], fullText: string): { name: string | nul
 }
 
 function parsePriceToCents(raw: string): number | null {
-  const normalized = raw.replace(/\s+/g, '').replace(',', '.');
+  const normalized = raw.replace(/[\s\u00A0]+/g, '').replace(',', '.');
   const val = Number.parseFloat(normalized);
   if (!Number.isFinite(val) || val <= 0 || val > 500_000) return null;
   return Math.round(val * 100);
@@ -109,7 +109,7 @@ export function parseReceiptFromOcr(text: string): ParsedReceipt {
   const merchant = detectMerchant(lines, text);
 
   let amountCents: number | null = null;
-  const sumMatch = text.match(/(?:suma\s*(?:pln)?|razem\s*(?:pln)?|do\s+zap[łl]aty(?:\s+pln)?)\s*[:\-\r\n]*\s*(\d{1,5}(?:[.,]\d{2}))/i);
+  const sumMatch = text.match(/(?:suma\s*(?:pln)?|razem\s*(?:pln)?|do\s+zap[łl]aty(?:\s+pln)?)\s*[:\-\r\n]*\s*((?:\d{1,3}(?:[\s\u00A0]\d{3})+|\d{1,6})[.,]\d{2})/i);
   if (sumMatch?.[1]) amountCents = parsePriceToCents(sumMatch[1]);
 
   const items: ParsedReceiptItem[] = [];
@@ -121,8 +121,8 @@ export function parseReceiptFromOcr(text: string): ParsedReceipt {
     if (inBody && END_BODY_RE.test(line)) break;
     if (!inBody || IGNORE_LINE_RE.test(line)) { pendingName = null; continue; }
 
-    // Two-line format: line 2 contains only quantity x unitPrice total[VAT] (e.g. "1 x38,00 38,00B")
-    const qtyPriceOnly = line.match(/^(\d+(?:[.,]\d{1,3})?)\s*(?:szt\.?|kg|l)?\s*[x×*]\s*\d+[.,]\d{2}\s+(\d{1,5}[.,]\d{2})\s*\*?\s*[A-Da-d]?$/);
+    // Two-line format: line 2 contains only quantity x unitPrice total[VAT] (e.g. "1 x1 299,00 1 299,00A")
+    const qtyPriceOnly = line.match(/^(\d+(?:[.,]\d{1,3})?)\s*(?:szt\.?|kg|l)?\s*[x×*]\s*(?:\d{1,3}(?:[\s\u00A0]\d{3})+|\d{1,6})[.,]\d{2}\s+((?:\d{1,3}(?:[\s\u00A0]\d{3})+|\d{1,6})[.,]\d{2})\s*\*?\s*[A-Da-d]?$/);
     if (qtyPriceOnly && pendingName) {
       const totalCents = parsePriceToCents(qtyPriceOnly[2]);
       const qtyRaw = Number.parseFloat(qtyPriceOnly[1].replace(',', '.'));
@@ -138,8 +138,8 @@ export function parseReceiptFromOcr(text: string): ParsedReceipt {
       continue;
     }
 
-    // Single-line format: "Chleb wiejski 5,99A" or "Mleko 2 x 4,50 9,00 A"
-    const singleLine = line.match(/^(.{2,65}?)\s+(?:(\d+(?:[.,]\d{1,3})?)\s*(?:szt\.?|kg|l)?\s*[x×*]\s*\d+[.,]\d{2}\s+)?(\d{1,5}[.,]\d{2})\s*\*?\s*[A-Da-d]?$/);
+    // Single-line format: "Chleb wiejski 5,99A" or "Telewizor OLED 1 x 3 499,00 3 499,00 A"
+    const singleLine = line.match(/^(.{2,65}?)\s+(?:(\d+(?:[.,]\d{1,3})?)\s*(?:szt\.?|kg|l)?\s*[x×*]\s*(?:\d{1,3}(?:[\s\u00A0]\d{3})+|\d{1,6})[.,]\d{2}\s+)?((?:\d{1,3}(?:[\s\u00A0]\d{3})+|\d{1,6})[.,]\d{2})\s*\*?\s*[A-Da-d]?$/);
     if (singleLine) {
       const name = cleanProductName(singleLine[1]);
       const totalCents = parsePriceToCents(singleLine[3]);

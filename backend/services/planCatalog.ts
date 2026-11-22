@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { securityDir } from '../config/paths';
 export const planIds = ['free', 'standard', 'premium', 'family', 'business'] as const;
 export type CatalogPlan = typeof planIds[number];
 export const limitKeys = ['documents', 'tags', 'cameraScan', 'printerScan', 'merge'] as const;
@@ -13,7 +14,7 @@ export const defaultCatalog: Catalog = { version: 1, usageDays: 7, ocrTrialDays:
  family: { name: 'Rodzinny', ocr: true, cloudBackup: true, premiumTools: true, monthly: 1499, yearly: 14990, mobileDevices: 4, accountDevices: null, limits: { documents: null, tags: null, cameraScan: null, printerScan: null, merge: null } },
  business: { name: 'Firmowy', ocr: true, cloudBackup: true, premiumTools: true, monthly: 2999, yearly: 29990, mobileDevices: 10, accountDevices: null, limits: { documents: null, tags: null, cameraScan: null, printerScan: null, merge: null } }
 }, promotions: [] };
-const catalogDirectory = () => path.join(process.cwd(), 'security');
+const catalogDirectory = () => securityDir;
 const catalogFile = () => path.join(catalogDirectory(), 'developer-plan-catalog.json');
 export function catalogEnabled() { return process.env.ETECZKA_DEV_PLANS === '1' && process.env.NODE_ENV !== 'production'; }
 export function validateCatalog(value: unknown): Catalog {

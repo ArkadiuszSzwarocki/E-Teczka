@@ -68,7 +68,10 @@ function createHttpApp(accounts, { ledger, catalog, playBilling, entitlements, f
     const crypto = require('node:crypto');
     const expected = String(catalog?.adminToken || '');
     const actual = String(req.get('authorization') || '').replace(/^Bearer /, '');
-    return expected.length >= 43 && actual.length === expected.length && crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(actual));
+    if (expected.length < 43) return false;
+    const expectedBuf = Buffer.from(expected, 'utf8');
+    const actualBuf = Buffer.from(actual, 'utf8');
+    return expectedBuf.length === actualBuf.length && crypto.timingSafeEqual(expectedBuf, actualBuf);
   };
   if(catalog){app.get('/catalog',async(_req,res)=>res.json(await catalog.get()));app.put('/admin/catalog',async(req,res)=>{if(!hasAdminAccess(req))return res.sendStatus(403);try{return res.json(await catalog.save(req.body));}catch{return res.status(400).json({error:'Nieprawidłowa konfiguracja planów.'});}});}
   if (feedback) {

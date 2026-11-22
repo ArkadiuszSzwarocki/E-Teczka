@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { securityDir } from '../config/paths';
 import { centralAccountOrigin } from './centralAccountLink';
 import type { Plan } from './planPolicy';
 
@@ -8,7 +9,7 @@ type Lease={version:1;accountId:string;deviceId:string;kind:string;plan:Plan;iss
 type SignedLease={payload:string;signature:string;publicKey:string};
 type Entry={origin:string;accountId:string;deviceId:string;credential:string;publicKey?:string;lease?:SignedLease;checkedAt?:number;blocked?:boolean};
 export async function hasCentralLink(db:{ $queryRawUnsafe?: (...args:any[])=>Promise<any> },localUserId:number):Promise<boolean>{if(!db.$queryRawUnsafe)return false;const tables=await db.$queryRawUnsafe("SELECT name FROM sqlite_master WHERE type='table' AND name='CentralAccountLink'");if(!tables.length)return false;const rows=await db.$queryRawUnsafe('SELECT centralId FROM CentralAccountLink WHERE localUserId = ?',localUserId);return rows.length>0;}
-const filename=()=>path.join(process.cwd(),'security','central-entitlements.enc');
+const filename=()=>path.join(securityDir,'central-entitlements.enc');
 function read():Record<string,Entry>{try{const text=fs.readFileSync(filename(),'utf8');return JSON.parse(require('./backupCrypto').decrypt(text));}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return {};throw error;}}
 function writeAtomic(file:string,encrypted:string){fs.mkdirSync(path.dirname(file),{recursive:true});const tmp=`${file}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2,8)}.tmp`;fs.writeFileSync(tmp,encrypted,{mode:0o600});try{fs.renameSync(tmp,file);}catch(err){try{fs.unlinkSync(tmp);}catch{}throw err;}}
 function write(data:Record<string,Entry>){writeAtomic(filename(),require('./backupCrypto').encrypt(JSON.stringify(data)));}
@@ -37,7 +38,7 @@ export function centralDeviceRegistered(localUserId:number){return Boolean(read(
 export function centralDeviceUsers(){return Object.keys(read()).map(Number);}
 export function isCentralUnavailable(error:unknown){const e=error as {code?:string;name?:string};return ['CENTRAL_OFFLINE','LEDGER_UNAVAILABLE','CENTRAL_LEDGER_UNAVAILABLE'].includes(e?.code||'')||['TypeError','TimeoutError','AbortError'].includes(e?.name||'');}
 const failedAt=new Map<number,number>();
-const snapshotFile=()=>path.join(process.cwd(),'security','central-plan-snapshots.enc');
+const snapshotFile=()=>path.join(securityDir,'central-plan-snapshots.enc');
 function snapshots():Record<string,{time:number;accountId?:string;deviceId?:string;values:Record<string,any>}>{try{return JSON.parse(require('./backupCrypto').decrypt(fs.readFileSync(snapshotFile(),'utf8')));}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return {};throw error;}}
 function snapshot(userId:number,key:string,value?:any){const data=snapshots();if(value!==undefined){const entry=read()[userId];if(!data[userId]||data[userId].accountId!==entry?.accountId||data[userId].deviceId!==entry?.deviceId)data[userId]={time:0,accountId:entry?.accountId,deviceId:entry?.deviceId,values:{}};data[userId].time=Math.max(data[userId].time,Date.now());data[userId].values[key]=value;writeAtomic(snapshotFile(),require('./backupCrypto').encrypt(JSON.stringify(data)));}return data[userId];}
 export function centralOfflineLease(localUserId:number){const entry=read()[localUserId];if(!entry||entry.blocked)throw new Error('CENTRAL_ACCOUNT_REQUIRED');return verifyEntitlement(entry.lease!,entry);}

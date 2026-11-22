@@ -33,7 +33,7 @@ async function savePlan(origin:string,userId:string,signed:{payload:string}) {
 }
 export async function refreshCentralPlan(origin:string):Promise<CentralPlan|null>{
   const session=await getCentralSession(origin);if(!session)return null;const device=await mobileDevice(session.user.id);
-  try{return await savePlan(origin,session.user.id,await post(origin,'/entitlements/refresh',{},device.credential));}catch(error){if([401,403].includes(Number((error as Error&{status?:number}).status))){await SecureStore.deleteItemAsync(`${PLAN_KEY}_${session.user.id}`);await SecureStore.deleteItemAsync(SESSION_KEY);}throw error;}
+  try{return await savePlan(origin,session.user.id,await post(origin,'/entitlements/refresh',{},device.credential));}catch(error){if([401,403].includes(Number((error as Error&{status?:number}).status))){await closeMobileProfile().catch(()=>undefined);await SecureStore.deleteItemAsync(`${PLAN_KEY}_${session.user.id}`);await SecureStore.deleteItemAsync(SESSION_KEY);DeviceEventEmitter.emit('eteczka-central-logout');}throw error;}
 }
 export async function getCachedCentralPlan(origin:string):Promise<CentralPlan|null>{const session=await getCentralSession(origin);if(!session)return null;try{const raw=await SecureStore.getItemAsync(`${PLAN_KEY}_${session.user.id}`);const cached=raw?JSON.parse(raw):null;return cached?.origin===centralAccountOrigin(origin)&&cached.lease?.expiresAt>Date.now()&&cached.lease?.accountId===session.user.id?cached.lease:null;}catch{return null;}}
 export type CentralAccountUser = { id: string; email: string; name: string | null };

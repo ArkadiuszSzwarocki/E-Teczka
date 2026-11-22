@@ -75,11 +75,11 @@ function createWindowAndTrayController({ app, BrowserWindow, Tray, Menu, ipcMain
       mainWindow.setTitle('MojaTeczka - TEST NOWEGO UZYTKOWNIKA');
     }
 
-    const startUrl = process.env.ETECZKA_DEV_URL || `file://${path.join(rootDir, 'frontend', 'dist', 'index.html')}`;
-    mainWindow.loadURL(startUrl);
-
     if (process.env.ETECZKA_DEV_URL) {
+      mainWindow.loadURL(process.env.ETECZKA_DEV_URL);
       mainWindow.webContents.openDevTools({ mode: 'detach' });
+    } else {
+      mainWindow.loadFile(path.join(rootDir, 'frontend', 'dist', 'index.html'));
     }
 
     mainWindow.on('closed', () => { mainWindow = null; });

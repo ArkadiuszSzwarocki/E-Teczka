@@ -76,27 +76,50 @@ export function useDocumentAndFolderActions({
         showToast('Zarchiwizowano dokument (termin życia usunięty).', 'success');
       } else if (type === 'bulk_trash') {
         const ids = pendingAction.docIds || selectedDocs;
-        await Promise.all(ids.map(async docId => {
+        const results = await Promise.allSettled(ids.map(async docId => {
           const res = await patchDocument(apiUrl, fetch, docId, { isDeleted: true });
-          if (!res.ok) throw new Error('Nie udało się przenieść wszystkich dokumentów do kosza.');
+          if (!res.ok) throw new Error('Nie udało się przenieść dokumentu do kosza.');
+          return docId;
         }));
-        if (!pendingAction.docIds) setSelectedDocs([]);
+        const failedIds = ids.filter((_, idx) => results[idx].status === 'rejected');
+        const okCount = ids.length - failedIds.length;
+        if (!pendingAction.docIds) setSelectedDocs(failedIds);
         pendingAction.onAfter?.();
-        showToast(`Przeniesiono do kosza: ${ids.length}.`, 'success');
+        if (failedIds.length > 0) {
+          showToast(okCount > 0 ? `Przeniesiono do kosza: ${okCount}, nie udało się: ${failedIds.length}.` : `Nie udało się przenieść do kosza: ${failedIds.length}.`, 'error');
+        } else {
+          showToast(`Przeniesiono do kosza: ${okCount}.`, 'success');
+        }
       } else if (type === 'bulk_archive') {
-        await Promise.all(selectedDocs.map(async docId => {
+        const ids = [...selectedDocs];
+        const results = await Promise.allSettled(ids.map(async docId => {
           const res = await patchDocument(apiUrl, fetch, docId, { isArchived: true, retentionEnabled: false });
-          if (!res.ok) throw new Error('Nie udało się zarchiwizować wszystkich dokumentów.');
+          if (!res.ok) throw new Error('Nie udało się zarchiwizować dokumentu.');
+          return docId;
         }));
-        setSelectedDocs([]);
-        showToast(`Zarchiwizowano dokumentów: ${selectedDocs.length}.`, 'success');
+        const failedIds = ids.filter((_, idx) => results[idx].status === 'rejected');
+        const okCount = ids.length - failedIds.length;
+        setSelectedDocs(failedIds);
+        if (failedIds.length > 0) {
+          showToast(okCount > 0 ? `Zarchiwizowano: ${okCount}, nie udało się: ${failedIds.length}.` : `Nie udało się zarchiwizować: ${failedIds.length}.`, 'error');
+        } else {
+          showToast(`Zarchiwizowano dokumentów: ${okCount}.`, 'success');
+        }
       } else if (type === 'bulk_delete') {
-        await Promise.all(selectedDocs.map(async docId => {
+        const ids = [...selectedDocs];
+        const results = await Promise.allSettled(ids.map(async docId => {
           const res = await deleteDocument(apiUrl, fetch, docId);
-          if (!res.ok) throw new Error('Nie udało się usunąć wszystkich dokumentów.');
+          if (!res.ok) throw new Error('Nie udało się usunąć dokumentu.');
+          return docId;
         }));
-        setSelectedDocs([]);
-        showToast(`Usunięto trwale: ${selectedDocs.length}.`, 'success');
+        const failedIds = ids.filter((_, idx) => results[idx].status === 'rejected');
+        const okCount = ids.length - failedIds.length;
+        setSelectedDocs(failedIds);
+        if (failedIds.length > 0) {
+          showToast(okCount > 0 ? `Usunięto trwale: ${okCount}, nie udało się: ${failedIds.length}.` : `Nie udało się usunąć: ${failedIds.length}.`, 'error');
+        } else {
+          showToast(`Usunięto trwale: ${okCount}.`, 'success');
+        }
       } else if (type === 'delete_doc') {
         const response = await deleteDocument(apiUrl, fetch, id);
         const result = await response.json();

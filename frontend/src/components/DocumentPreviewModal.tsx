@@ -35,18 +35,27 @@ type Props = {
 export default function DocumentPreviewModal({ apiUrl, fetcher, document, zoom, onZoomChange, onClose }: Props) {
   const { maskingEnabled, rodoCategories, smartRodoEnabled } = useSensitiveMasking();
   const [liveOcrText, setLiveOcrText] = useState<string | null>(document.ocrText ?? null);
+  const needsAsyncRodoOcr = Boolean(document.id && !document.ocrText && maskingEnabled && smartRodoEnabled);
+  const [ocrCheckedForId, setOcrCheckedForId] = useState<number | undefined>(() => (needsAsyncRodoOcr ? undefined : document.id));
   useEffect(() => {
     setLiveOcrText(document.ocrText ?? null);
-    if (!document.id || document.ocrText) return;
+    if (!document.id || document.ocrText) {
+      setOcrCheckedForId(document.id);
+      return;
+    }
     let active = true;
     void fetcher(`${apiUrl}/api/ocr/${document.id}`)
       .then(res => (res.ok ? res.json() : null))
       .then((data: { text?: string } | null) => {
         if (active && data?.text) setLiveOcrText(data.text);
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => {
+        if (active) setOcrCheckedForId(document.id);
+      });
     return () => { active = false; };
   }, [apiUrl, document.id, document.ocrText, fetcher]);
+  const rodoCheckPending = Boolean(needsAsyncRodoOcr && ocrCheckedForId !== document.id);
   const protection = shouldProtectDocument({
     docId: document.id,
     title: document.title,
@@ -212,7 +221,9 @@ export default function DocumentPreviewModal({ apiUrl, fetcher, document, zoom, 
         <button type="button" aria-label="Powiększ obraz" onClick={() => onZoomChange(current => Math.min(current + 0.25, 3))} className="rounded bg-slate-700 px-3 py-1 text-white hover:bg-slate-600">+</button>
       </>}<button type="button" onClick={onClose} aria-label="Zamknij podgląd" className="ml-2 rounded px-2 text-3xl leading-none text-slate-300 hover:text-white">×</button></div>
     </div>
-    {protection.protect && !unmasked ? (
+    {rodoCheckPending ? (
+      <p role="status" className="m-auto p-6 text-slate-300">Sprawdzanie ochrony RODO…</p>
+    ) : protection.protect && !unmasked ? (
       <div className="flex flex-1 flex-col items-center justify-center gap-4 bg-[#0b1120] p-6 text-center">
         {showUnmaskPrompt ? (
           <SensitiveUnmaskPrompt
