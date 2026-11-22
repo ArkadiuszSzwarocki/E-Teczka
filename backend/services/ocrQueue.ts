@@ -72,9 +72,15 @@ export function createOcrQueue(prisma: PrismaClient, options: Options) {
         }
       }
       if (changed) write(jobs);
+      const ocrAccessCache = new Map<string, boolean>();
       for (;;) {
         const next = read().find(job => job.state === 'queued'); if (!next) break;
-        if (!(await featureTrial(prisma, next.ownerKey, 'ocr', false)).allowed) { update(next.documentId, next.ownerKey, { state: 'paused', error: 'Okres próbny OCR zakończył się. Funkcja wymaga planu Premium.' }); continue; }
+        let allowed = ocrAccessCache.get(next.ownerKey);
+        if (allowed === undefined) {
+          allowed = Boolean((await featureTrial(prisma, next.ownerKey, 'ocr', false)).allowed);
+          ocrAccessCache.set(next.ownerKey, allowed);
+        }
+        if (!allowed) { update(next.documentId, next.ownerKey, { state: 'paused', error: 'Okres próbny OCR zakończył się. Funkcja wymaga planu Premium.' }); continue; }
         update(next.documentId, next.ownerKey, { state: 'processing', error: undefined });
         try {
           const document = await prisma.document.findUnique({ where: { id: next.documentId }, select: { id: true, title: true, filePath: true, mimeType: true, isDeleted: true, merchantName: true, amountCents: true, dueDate: true, paymentStatus: true } });

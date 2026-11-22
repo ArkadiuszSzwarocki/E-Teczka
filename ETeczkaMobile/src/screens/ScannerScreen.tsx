@@ -52,11 +52,20 @@ export default function ScannerScreen() {
   };
 
   useEffect(() => {
+    let active = true;
     void (async () => {
       const draft = await loadScanDraft(targetFolderId);
-      if (!draft) return;
+      if (!active) return;
+      if (!draft) {
+        uploadId.current = null;
+        setPages([]);
+        setTitle("");
+        setRetentionEnabled(false);
+        return;
+      }
       uploadId.current = draft.uploadId || null; setPages(draft.pages); setTitle(draft.title); setRetentionValue(draft.retentionValue); setRetentionUnit(draft.retentionUnit); setRetentionEnabled(Boolean(draft.retentionEnabled));
     })();
+    return () => { active = false; };
   }, [targetFolderId]);
 
   useEffect(() => {

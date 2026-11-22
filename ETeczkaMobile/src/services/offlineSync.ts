@@ -244,26 +244,40 @@ async function mergeRemote(changes: any, state: SyncState) {
   }
   const knownFolderIds = Array.from(new Set([...currentFolders.map(f => f.id), ...folders.map(f => f.id)]));
   const docs = [...(changes?.documents?.created || []), ...(changes?.documents?.updated || [])] as RetentionDocument[];
-  for (const doc of docs) {
-    const folderId = Number(doc.folderId);
-    if (!folderId) continue;
-    const pending = state.queue.find(item => item.entity === "documents" && Number(item.value.id) === doc.id);
-    if (pending && !newer(doc as any, pending.value)) {
-      state.conflicts++;
-      continue;
-    }
-    for (const otherId of knownFolderIds) {
-      if (otherId === folderId) continue;
-      const otherDocs = await loadCachedDocuments(otherId);
-      if (otherDocs.some(d => d.id === doc.id)) {
-        await saveCachedDocuments(otherId, otherDocs.filter(d => d.id !== doc.id));
+  if (docs.length) {
+    const folderCaches = new Map<number, Map<number, RetentionDocument>>();
+    const dirtyFolders = new Set<number>();
+    const getFolderMap = async (fId: number) => {
+      let m = folderCaches.get(fId);
+      if (!m) {
+        const loaded = await loadCachedDocuments(fId);
+        m = new Map(loaded.map(item => [item.id, item]));
+        folderCaches.set(fId, m);
       }
+      return m;
+    };
+    for (const doc of docs) {
+      const folderId = Number(doc.folderId);
+      if (!folderId) continue;
+      const pending = state.queue.find(item => item.entity === "documents" && Number(item.value.id) === doc.id);
+      if (pending && !newer(doc as any, pending.value)) {
+        state.conflicts++;
+        continue;
+      }
+      for (const otherId of knownFolderIds) {
+        if (otherId === folderId) continue;
+        const otherMap = await getFolderMap(otherId);
+        if (otherMap.delete(doc.id)) dirtyFolders.add(otherId);
+      }
+      const targetMap = await getFolderMap(folderId);
+      if (doc.isDeleted || doc.isArchived) targetMap.delete(doc.id);
+      else targetMap.set(doc.id, doc);
+      dirtyFolders.add(folderId);
     }
-    const current = await loadCachedDocuments(folderId);
-    const map = new Map(current.map(item => [item.id, item]));
-    if (doc.isDeleted || doc.isArchived) map.delete(doc.id);
-    else map.set(doc.id, doc);
-    await saveCachedDocuments(folderId, [...map.values()]);
+    for (const fId of dirtyFolders) {
+      const map = folderCaches.get(fId);
+      if (map) await saveCachedDocuments(fId, [...map.values()]);
+    }
   }
 }
 async function syncNowImpl() { return exclusive(syncNowLocked); }
