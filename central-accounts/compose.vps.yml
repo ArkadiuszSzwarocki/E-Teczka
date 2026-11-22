@@ -1,0 +1,99 @@
+services:
+  mariadb:
+    image: mariadb:11
+    container_name: mojateczka-mariadb
+    restart: unless-stopped
+    env_file:
+      - .env.vps
+    environment:
+      MARIADB_DATABASE: ${CENTRAL_MARIADB_DATABASE:-E-Teczka}
+      MARIADB_USER: ${CENTRAL_MARIADB_USER}
+      MARIADB_PASSWORD: ${CENTRAL_MARIADB_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  accounts:
+    build:
+      context: .
+    image: mojateczka-accounts:prod
+    container_name: mojateczka-accounts
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    env_file:
+      - .env.vps
+    environment:
+      NODE_ENV: production
+      CENTRAL_LISTEN_HOST: 0.0.0.0
+      CENTRAL_PORT: 3001
+      CENTRAL_MARIADB_HOST: mariadb
+      CENTRAL_MARIADB_PORT: 3306
+    ports:
+      - "127.0.0.1:3001:3001"
+    networks:
+      - internal
+    read_only: true
+    volumes:
+      - share_data:/app/share-data
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  mariadb-backup:
+    image: mariadb:11
+    container_name: mojateczka-mariadb-backup
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    env_file:
+      - .env.vps
+    volumes:
+      - ./backups:/backups
+    networks:
+      - internal
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >
+        while true; do
+          TS=$$(date +%Y-%m-%d_%H-%M);
+          mariadb-dump -h mariadb -u "$${CENTRAL_MARIADB_USER}" -p"$${CENTRAL_MARIADB_PASSWORD}" --single-transaction "$${CENTRAL_MARIADB_DATABASE:-E-Teczka}" | gzip -9 > "/backups/accounts_$${TS}.sql.gz";
+          find /backups -name 'accounts_*.sql.gz' -mtime +14 -delete;
+          sleep 86400;
+        done
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  mariadb_data:
+  share_data:
