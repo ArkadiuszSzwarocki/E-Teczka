@@ -9,6 +9,8 @@ import { classifyDocumentOffline } from './documentFolderClassifier';
 import { getLearnedFolderBoosts } from './folderLearningStore';
 import { listMailItems, saveMailItem, type MailInboxItem } from './mailInboxStore';
 import { extractQuickPdfText } from './pdfQuickText';
+import { parseKsefXml } from './ksefXmlParser';
+import { parseEReceiptPayload } from './eReceiptParser';
 
 export type WatchFolderConfig = {
   folderPath: string;
@@ -16,7 +18,7 @@ export type WatchFolderConfig = {
 };
 
 const WATCH_FILE = path.join(securityDir, 'watch-folders.enc');
-const ALLOWED_EXT = new Set(['.pdf', '.png', '.jpg', '.jpeg']);
+const ALLOWED_EXT = new Set(['.pdf', '.png', '.jpg', '.jpeg', '.xml', '.json']);
 const MAX_BYTES = 25 * 1024 * 1024;
 
 function readAll(): Record<string, WatchFolderConfig> {
@@ -56,6 +58,8 @@ export function saveWatchFolderConfig(ownerId: number, config: WatchFolderConfig
 function guessMime(ext: string): string {
   if (ext === '.pdf') return 'application/pdf';
   if (ext === '.png') return 'image/png';
+  if (ext === '.xml') return 'application/xml';
+  if (ext === '.json') return 'application/json';
   return 'image/jpeg';
 }
 
@@ -83,7 +87,9 @@ async function ingestWatchBuffer(
   if (!ALLOWED_EXT.has(ext)) return false;
 
   const pdfText = ext === '.pdf' ? await extractQuickPdfText(buffer) : '';
-  const extractedText = [name, pdfText].filter(Boolean).join('\n');
+  const ksefText = ext === '.xml' ? (parseKsefXml(buffer.toString('utf8'))?.summaryText || '') : '';
+  const eReceiptText = ext === '.json' ? (parseEReceiptPayload(buffer.toString('utf8'))?.summaryText || '') : '';
+  const extractedText = [name, pdfText, ksefText, eReceiptText].filter(Boolean).join('\n');
   const learnedBoosts = getLearnedFolderBoosts(ownerId, extractedText);
   const classified = classifyDocumentOffline(extractedText, folders, learnedBoosts);
   const top = classified.suggestions[0] || null;

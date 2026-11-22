@@ -45,7 +45,7 @@ export default function ReceiptInsightsPanel({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300">Paragony: zakupy wg sklepów i artykułów</h3>
-          <p className="mt-1 text-xs text-slate-400">Automatycznie odczytane z OCR zdjęć i skanów paragonów</p>
+          <p className="mt-1 text-xs text-slate-400">Automatycznie odczytane z OCR zdjęć i skanów, e-Paragonów (QR/JSON) oraz faktur KSeF (XML)</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <input

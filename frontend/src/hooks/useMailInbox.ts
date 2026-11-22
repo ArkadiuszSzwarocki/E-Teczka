@@ -255,9 +255,9 @@ export function useMailInbox({ apiUrl, fetcher, syncing, billingPlan, onAssigned
   };
 
   const uploadWatchFolderFiles = async (files: File[], folderName: string) => {
-    const supported = files.filter(f => /\.(pdf|png|jpe?g)$/i.test(f.name) && f.size > 0).slice(0, 30);
+    const supported = files.filter(f => /\.(pdf|png|jpe?g|xml|json)$/i.test(f.name) && f.size > 0).slice(0, 30);
     if (!supported.length) {
-      showToast('Wybrany folder nie zawiera plików PDF, PNG ani JPG.', 'error');
+      showToast('Wybrany folder nie zawiera plików PDF, PNG, JPG, KSeF XML ani e-Paragonów JSON.', 'error');
       return;
     }
     setWatchBusy(true);

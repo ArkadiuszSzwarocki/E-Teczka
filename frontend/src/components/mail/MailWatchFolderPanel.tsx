@@ -31,7 +31,7 @@ export function MailWatchFolderPanel({ watchPath, watchAllowed, watchBusy, pendi
     const handleMobileFilesSelected = (list: FileList | null, fromDirectory: boolean) => {
       if (!list || !list.length) return;
       const all = Array.from(list);
-      const supported = all.filter(f => /\.(pdf|png|jpe?g)$/i.test(f.name) && f.size > 0);
+      const supported = all.filter(f => /\.(pdf|png|jpe?g|xml|json)$/i.test(f.name) && f.size > 0);
       const firstRel = (all[0] as File & { webkitRelativePath?: string }).webkitRelativePath || '';
       const folderLabel = fromDirectory && firstRel.includes('/')
         ? firstRel.split('/')[0]
@@ -79,7 +79,7 @@ export function MailWatchFolderPanel({ watchPath, watchAllowed, watchBusy, pendi
           ref={filesInputRef}
           type="file"
           multiple
-          accept=".pdf,.png,.jpg,.jpeg"
+          accept=".pdf,.png,.jpg,.jpeg,.xml,.json"
           onChange={e => { handleMobileFilesSelected(e.target.files, false); e.target.value = ''; }}
           className="hidden"
         />

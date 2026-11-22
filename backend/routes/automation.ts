@@ -1,10 +1,18 @@
 import express from 'express';
+import fs from 'node:fs';
+import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import multer from 'multer';
 import type { PrismaClient } from '@prisma/client';
+import { uploadsDir } from '../config/paths';
+import { canAccessFolder } from '../services/familyAccess';
+import { isDocumentFolder } from '../services/folders';
 import { ocrOwnerKey } from '../services/ocrPremium';
-import { getPlan } from '../services/planLedger';
+import { checkDocumentCapacity, getPlan } from '../services/planLedger';
 import { getWatchFolderConfig, ingestWatchUploadBatch, saveWatchFolderConfig, scanWatchFolder } from '../services/watchFolderService';
 import { createAccountantZipArchive } from '../services/accountantExport';
+import { parseEReceiptPayload } from '../services/eReceiptParser';
+import { protectOcrText } from '../services/ocrText';
 
 const PREMIUM_PLANS = new Set(['premium', 'family', 'business']);
 const watchUpload = multer({ storage: multer.memoryStorage(), limits: { files: 30, fileSize: 25 * 1024 * 1024 } });
@@ -69,6 +77,76 @@ export function createAutomationRouter(prisma: PrismaClient) {
       res.json(result);
     } catch (error) {
       res.status(400).json({ error: error instanceof Error ? error.message : 'Nie udało się przetworzyć plików z folderu.' });
+    }
+  });
+
+  router.post('/e-receipt/import', async (req, res) => {
+    if (!await requirePremium(res)) return;
+    try {
+      const folderId = Number(req.body?.folderId);
+      const rawPayload = typeof req.body?.payload === 'string' ? req.body.payload : JSON.stringify(req.body?.payload ?? '');
+      if (!Number.isInteger(folderId) || folderId < 1) {
+        res.status(400).json({ error: 'Wybierz docelową kartotekę dla e-Paragonu.' });
+        return;
+      }
+      const owner = ownerIdOf(res);
+      if (!await canAccessFolder(prisma, owner, folderId) || !await isDocumentFolder(prisma, folderId)) {
+        res.status(403).json({ error: 'Brak dostępu do wybranej kartoteki.' });
+        return;
+      }
+      const parsed = parseEReceiptPayload(rawPayload);
+      if (!parsed) {
+        res.status(400).json({ error: 'Nie rozpoznano prawidłowego e-Paragonu (QR / JSON).' });
+        return;
+      }
+      const plan = await getPlan(prisma, ocrOwnerKey(res));
+      const fileName = `DOC_${Date.now()}_${randomUUID()}.json`;
+      const fullPath = path.join(uploadsDir, fileName);
+      const serialized = JSON.stringify({ rawPayload, parsed }, null, 2);
+      fs.writeFileSync(fullPath, serialized, 'utf8');
+      try {
+        const title = typeof req.body?.title === 'string' && req.body.title.trim()
+          ? req.body.title.trim().slice(0, 255)
+          : `e-Paragon ${parsed.merchantName} ${(parsed.amountCents / 100).toFixed(2)} ${parsed.currency}`;
+        const created = await prisma.$transaction(async tx => {
+          await checkDocumentCapacity(tx, owner, plan, 1);
+          const doc = await tx.document.create({
+            data: {
+              title,
+              filePath: fileName,
+              mimeType: 'application/json',
+              folderId,
+              userId: owner,
+              merchantName: parsed.merchantName,
+              amountCents: parsed.amountCents,
+              currency: parsed.currency,
+              paymentStatus: 'paid',
+              retentionEnabled: Boolean(parsed.suggestWarrantyYears),
+              retentionValue: parsed.suggestWarrantyYears || 2,
+              retentionUnit: 'years',
+              ocrText: protectOcrText(parsed.summaryText),
+            },
+          });
+          if (parsed.items.length > 0) {
+            await tx.documentLineItem.createMany({
+              data: parsed.items.map(item => ({
+                documentId: doc.id,
+                name: item.name,
+                quantity: item.quantity,
+                totalCents: item.totalCents,
+                category: item.category,
+              })),
+            });
+          }
+          return doc;
+        });
+        res.status(201).json({ document: created, parsed });
+      } catch (err) {
+        fs.rmSync(fullPath, { force: true });
+        throw err;
+      }
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : 'Nie udało się zaimportować e-Paragonu.' });
     }
   });
 

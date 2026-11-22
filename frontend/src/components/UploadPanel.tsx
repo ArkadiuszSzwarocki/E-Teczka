@@ -126,8 +126,9 @@ export default function UploadPanel({
             <div className="flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-blue-500/40 bg-[#111827] p-5 text-center transition-colors hover:bg-[#1f2937] sm:p-6">
               <div className="opacity-90"><AppFolderIcon size="lg" /></div>
               <div className="text-sm font-medium text-slate-400">{isMobile ? 'Wybierz pliki z telefonu lub zrób zdjęcie aparatem' : 'Przeciągnij pliki tutaj lub kliknij przycisk poniżej'}</div>
+              <div className="text-xs text-slate-500">Obsługiwane: PDF, obrazy (PNG/JPG), faktury KSeF (.xml) oraz e-Paragony (.json)</div>
               <div className="flex flex-wrap items-center justify-center gap-3">
-                <input type="file" multiple accept=".png,.jpg,.jpeg,.pdf" onChange={onFileSelect} className="max-w-full cursor-pointer text-sm text-slate-400 file:mr-3 file:rounded-md file:border-0 file:bg-blue-600 file:px-4 file:py-2 file:text-sm file:font-bold file:text-white hover:file:bg-blue-500" />
+                <input type="file" multiple accept=".png,.jpg,.jpeg,.pdf,.xml,.json" onChange={onFileSelect} className="max-w-full cursor-pointer text-sm text-slate-400 file:mr-3 file:rounded-md file:border-0 file:bg-blue-600 file:px-4 file:py-2 file:text-sm file:font-bold file:text-white hover:file:bg-blue-500" />
                 {isMobile && (
                   <label className="cursor-pointer rounded-md bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-500">
                     📷 Zrób zdjęcie
