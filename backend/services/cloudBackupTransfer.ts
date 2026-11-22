@@ -1,11 +1,13 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
-import { PassThrough } from 'node:stream';
+import { PassThrough, Readable } from 'node:stream';
 import * as archiver from 'archiver';
 import type { PrismaClient } from '@prisma/client';
 import { uploadsDir } from '../config/paths';
 import { exportPlanState } from './planLedger';
-import { decrypt, encrypt, encryptBackup } from './backupCrypto';
+import { decrypt, encrypt, encryptBackupStreamToFile } from './backupCrypto';
 import { findLatestWebDavBackup, listWebDavBackups, webDavFileUrl, webDavFolderUrl } from './webdavFolders';
 
 export const oauthConfig: Record<string, { authorize: string; token: string; scope: string; clientId?: string; clientSecret?: string }> = {
@@ -31,7 +33,11 @@ export function requireBackupFiles(files: ReturnType<typeof backupFiles>) {
 
 export async function buildBackupArchive(prisma: PrismaClient, ownerIdValue: number, planKey: string) {
   const folders = await prisma.folder.findMany({ where: { ownerId: ownerIdValue }, orderBy: { id: 'asc' } });
-  const documents = await prisma.document.findMany({ where: { folder: { ownerId: ownerIdValue } }, include: { tags: { include: { tag: true } } }, orderBy: { id: 'asc' } });
+  const documents = await prisma.document.findMany({
+    where: { folder: { ownerId: ownerIdValue } },
+    include: { tags: { include: { tag: true } }, lineItems: { orderBy: { id: 'asc' } } },
+    orderBy: { id: 'asc' },
+  });
   const files = backupFiles(documents);
   requireBackupFiles(files);
   const manifest = {
@@ -39,25 +45,41 @@ export async function buildBackupArchive(prisma: PrismaClient, ownerIdValue: num
     exportedAt: new Date().toISOString(),
     planState: await exportPlanState(prisma, planKey),
     folders,
-    documents: documents.map(({ tags, ...document }) => ({ ...document, tags: tags.map(({ tag }) => tag) })),
+    documents: documents.map(({ tags, lineItems, ...document }) => ({
+      ...document,
+      tags: tags.map(({ tag }) => tag),
+      lineItems: lineItems.map(({ name, quantity, totalCents, category }) => ({ name, quantity, totalCents, category })),
+    })),
   };
   return { manifest, files };
 }
 
-export async function buildEncryptedBackupBuffer(prisma: PrismaClient, ownerIdValue: number, planKey: string): Promise<Buffer> {
+export async function buildEncryptedBackupFile(prisma: PrismaClient, ownerIdValue: number, planKey: string): Promise<{ filePath: string; size: number; cleanup: () => void }> {
   const { manifest, files } = await buildBackupArchive(prisma, ownerIdValue, planKey);
+  const tempPath = path.join(os.tmpdir(), `mojateczka-backup-${crypto.randomUUID()}.zip.enc`);
   const pass = new PassThrough();
-  const chunks: Buffer[] = [];
-  pass.on('data', chunk => chunks.push(Buffer.from(chunk)));
   const archive = new (archiver as any).ZipArchive({ zlib: { level: 6 } });
   archive.on('error', (error: Error) => pass.destroy(error));
   archive.pipe(pass);
+  const encryptPromise = encryptBackupStreamToFile(pass, tempPath);
   archive.append(JSON.stringify(manifest), { name: 'manifest.json' });
   for (const file of files) archive.file(file.source, { name: file.archiveName });
-  const complete = new Promise<void>((resolve, reject) => { pass.on('end', () => resolve()); pass.on('error', reject); });
   await archive.finalize();
-  await complete;
-  return encryptBackup(Buffer.concat(chunks));
+  const size = await encryptPromise;
+  return {
+    filePath: tempPath,
+    size,
+    cleanup: () => { try { fs.unlinkSync(tempPath); } catch { /* ignore cleanup errors */ } },
+  };
+}
+
+export async function buildEncryptedBackupBuffer(prisma: PrismaClient, ownerIdValue: number, planKey: string): Promise<Buffer> {
+  const built = await buildEncryptedBackupFile(prisma, ownerIdValue, planKey);
+  try {
+    return await fs.promises.readFile(built.filePath);
+  } finally {
+    built.cleanup();
+  }
 }
 
 export async function refreshOAuthCredentials(prisma: PrismaClient, destination: { id: number; ownerKey: string; provider: string; encryptedCredentials: string | null }) {
@@ -76,6 +98,37 @@ export async function refreshOAuthCredentials(prisma: PrismaClient, destination:
 
 type DestinationRecord = { provider: string; endpoint: string | null; remoteFolder: string | null };
 type CloudCredentials = { accessToken?: string; username?: string; password?: string };
+
+export async function uploadEncryptedBackupFileToCloud(destination: DestinationRecord, credentials: CloudCredentials, filePath: string, size: number, filename = backupFilename()): Promise<Response> {
+  const folder = destination.remoteFolder ? destination.remoteFolder.replace(/^\/+|\/+$/g, '') : '';
+  const streamBody = () => Readable.toWeb(fs.createReadStream(filePath)) as unknown as BodyInit;
+  const streamInit = { duplex: 'half' } as Record<string, unknown>;
+  if (destination.provider === 'webdav') {
+    const target = webDavFileUrl(destination.endpoint!, destination.remoteFolder || '', filename);
+    return fetch(target, { method: 'PUT', headers: { Authorization: `Basic ${Buffer.from(`${credentials.username || ''}:${credentials.password || ''}`).toString('base64')}`, 'Content-Type': 'application/zip', 'Content-Length': String(size) }, body: streamBody(), ...streamInit });
+  }
+  if (destination.provider === 'dropbox') {
+    return fetch('https://content.dropboxapi.com/2/files/upload', { method: 'POST', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Dropbox-API-Arg': JSON.stringify({ path: `/${folder ? `${folder}/` : ''}${filename}`, mode: 'add', autorename: true }), 'Content-Type': 'application/octet-stream', 'Content-Length': String(size) }, body: streamBody(), ...streamInit });
+  }
+  if (destination.provider === 'onedrive') {
+    return fetch(`https://graph.microsoft.com/v1.0/me/drive/special/approot:/${folder ? `${folder}/` : ''}${filename}:/content`, { method: 'PUT', headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Content-Type': 'application/zip', 'Content-Length': String(size) }, body: streamBody(), ...streamInit });
+  }
+  const metadata = JSON.stringify({ name: filename, mimeType: 'application/zip', ...(destination.remoteFolder ? { parents: [destination.remoteFolder] } : {}) });
+  const multipart = `----MojaTeczkaBoundary${Date.now()}`;
+  const head = Buffer.from(`--${multipart}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${multipart}\r\nContent-Type: application/zip\r\n\r\n`);
+  const tail = Buffer.from(`\r\n--${multipart}--`);
+  async function* multipartChunks() {
+    yield head;
+    for await (const chunk of fs.createReadStream(filePath)) yield chunk;
+    yield tail;
+  }
+  return fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Content-Type': `multipart/related; boundary=${multipart}`, 'Content-Length': String(head.length + size + tail.length) },
+    body: Readable.toWeb(Readable.from(multipartChunks())) as unknown as BodyInit,
+    ...streamInit,
+  });
+}
 
 export async function uploadEncryptedBackupToCloud(destination: DestinationRecord, credentials: CloudCredentials, data: Buffer, filename = backupFilename()): Promise<Response> {
   const folder = destination.remoteFolder ? destination.remoteFolder.replace(/^\/+|\/+$/g, '') : '';

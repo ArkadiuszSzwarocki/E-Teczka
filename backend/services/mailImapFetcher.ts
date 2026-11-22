@@ -1,5 +1,6 @@
 import path from 'node:path';
 import type { PrismaClient } from '@prisma/client';
+import { getAccessibleFolderIds } from './familyAccess';
 import { buildMailAutoAssigner, type AutoAssignHandler } from './mailAutoAssigner';
 import { extractAndSaveMessageAttachments, hasCandidateAttachment, type AttachmentKind } from './mailAttachmentExtractor';
 import { computeScanEta, runImapWorkerPool } from './mailImapPool';
@@ -278,7 +279,10 @@ export async function syncMailboxAttachments(
 
   activeSyncOwners.add(ownerId);
   try {
-    const folders = await prisma.folder.findMany({ where: { ownerId }, select: { id: true, name: true, parentId: true } });
+    const accessibleFolderIds = await getAccessibleFolderIds(prisma, ownerId);
+    const folders = accessibleFolderIds.length > 0
+      ? await prisma.folder.findMany({ where: { id: { in: accessibleFolderIds } }, select: { id: true, name: true, parentId: true } })
+      : [];
     const existingDocs = await prisma.document.findMany({ where: { userId: ownerId }, select: { title: true } });
     const existingTitles = new Set(existingDocs.flatMap(d => [d.title.trim().toLowerCase(), path.parse(d.title.trim().toLowerCase()).name]));
     const filters = getMailFilters(ownerId);

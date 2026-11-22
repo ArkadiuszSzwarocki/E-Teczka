@@ -35,7 +35,7 @@ import { useDocumentAndFolderActions } from './hooks/useDocumentAndFolderActions
 import { createApiFetch } from './services/apiFetch';
 import { resolveApiBase } from './services/apiBase';
 import { getElectronIpc } from './services/electron';
-import { getBillingStatus } from './services/billing';
+import { getBillingStatus, type BillingPlan } from './services/billing';
 import { getRetentionAlerts } from './services/retentionAlerts';
 import { buildFolderOptions } from './utils/folderTree';
 import type { DocumentRecord, FolderRecord, Tag } from './types/domain';
@@ -91,7 +91,8 @@ export default function App() {
   const [feedbackDraft, setFeedbackDraft] = useState<{ screenshot: string | null; appVersion?: string; platform?: string } | null>(null);
   const [mailAutoPromptCount, setMailAutoPromptCount] = useState(0);
   const [devPlanNonce, setDevPlanNonce] = useState(0);
-  const syncBillingRef = useRef<(plan: 'free' | 'standard' | 'premium', isDev: boolean) => void>(() => { });
+  const syncBillingRef = useRef<(plan: BillingPlan, isDev: boolean) => void>(() => { });
+  const displayedDocsRef = useRef<DocumentRecord[]>([]);
   const testerBlockedRef = useRef(false);
   const autoMailCheckedRef = useRef(false);
   const toastTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
@@ -164,7 +165,11 @@ export default function App() {
       setFoldersUnavailable(resFolders === null);
       if (resScanner) setScannerFiles(resScanner as InboxScan[]);
       if (resTags) setTags(resTags as Tag[]);
-      if (resBilling) syncBillingRef.current(resBilling.plan === 'premium' || resBilling.plan === 'standard' ? resBilling.plan : 'free', Boolean(resBilling.developmentOverride));
+      if (resBilling) {
+        const validPlans: BillingPlan[] = ['free', 'standard', 'premium', 'family', 'business'];
+        const plan: BillingPlan = validPlans.includes(resBilling.plan as BillingPlan) ? (resBilling.plan as BillingPlan) : 'free';
+        syncBillingRef.current(plan, Boolean(resBilling.developmentOverride));
+      }
     } catch { /* ignore */ }
   }, []);
 
@@ -212,7 +217,7 @@ export default function App() {
   });
   const actions = useDocumentAndFolderActions({
     apiUrl: API_URL, fetcher: fetch, activeView, setActiveView, setSelectedFolderId,
-    selectedDocs, setSelectedDocs, displayedDocs: [], billingPlan: billing.billingPlan,
+    selectedDocs, setSelectedDocs, displayedDocs: () => displayedDocsRef.current, billingPlan: billing.billingPlan,
     setPlanLimitMessage: billing.setPlanLimitMessage, searchQuery, fetchData, showToast,
   });
 
@@ -225,6 +230,8 @@ export default function App() {
     if (activeView === 'folder') return doc.folderId === selectedFolderId && !doc.isDeleted && !doc.isArchived && matchesSearch;
     return false;
   });
+  displayedDocsRef.current = displayedDocs;
+  const isPremiumTier = billing.billingPlan === 'premium' || billing.billingPlan === 'family' || billing.billingPlan === 'business';
 
   const toggleUserMenu = useCallback(async () => {
     const willOpen = !session.isUserMenuOpen;
@@ -342,7 +349,7 @@ export default function App() {
           onOpenMailInbox={() => setActiveView('mail-inbox')} onStopMailSync={() => void mailSync.stopMailSync()}
           onResumeMailSync={() => void mailSync.startMailSync(undefined, 'incremental')}
         />
-        {billing.billingPlan !== 'premium' && <PromotionBanner apiUrl={API_URL} fetcher={apiFetch} currentPlan={billing.billingPlan} onOpenPlans={() => setIsBillingPlansOpen(true)} />}
+        {!isPremiumTier && <PromotionBanner apiUrl={API_URL} fetcher={apiFetch} currentPlan={billing.billingPlan} onOpenPlans={() => setIsBillingPlansOpen(true)} />}
         {mailAutoPromptCount > 0 && activeView !== 'mail-inbox' && (
           <div role="status" className="mx-4 mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-cyan-500/40 bg-cyan-950/50 px-4 py-2.5 text-sm text-cyan-100">
             <p>📧 Automatyczne skanowanie poczty: znaleziono <strong>{mailAutoPromptCount}</strong> załączników w poczekalni. Czy chcesz je teraz przydzielić do kartotek?</p>
@@ -363,9 +370,9 @@ export default function App() {
             onClearSelected={actions.clearSelectedDocs}
           />
           {isSettingsMenuOpen ? (
-            <SettingsDialog embedded isPremiumPlan={billing.billingPlan === 'premium'} accountEmail={session.currentUser?.email || ''} onClose={() => setIsSettingsMenuOpen(false)} onPair={() => pairing.setIsPairingGuideOpen(true)} onSecurity={() => setIsAccessSettingsOpen(true)} onTags={() => setIsTagManagerOpen(true)} onBackup={() => setBackupSection('settings')} onBackupSecurity={() => setIsBackupSecurityOpen(true)} onSelfHostGuide={() => setIsSelfHostGuideOpen(true)} onDeleteAccount={() => setIsDeleteAccountOpen(true)} onLogout={() => void session.logoutAccount()} />
+            <SettingsDialog embedded isPremiumPlan={isPremiumTier} accountEmail={session.currentUser?.email || ''} onClose={() => setIsSettingsMenuOpen(false)} onPair={() => pairing.setIsPairingGuideOpen(true)} onSecurity={() => setIsAccessSettingsOpen(true)} onTags={() => setIsTagManagerOpen(true)} onBackup={() => setBackupSection('settings')} onBackupSecurity={() => setIsBackupSecurityOpen(true)} onSelfHostGuide={() => setIsSelfHostGuideOpen(true)} onDeleteAccount={() => setIsDeleteAccountOpen(true)} onLogout={() => void session.logoutAccount()} />
           ) : backupSection ? (
-            <BackupModal embedded key={backupSection} section={backupSection} apiUrl={API_URL} fetcher={apiFetch} isPremiumPlan={billing.billingPlan === 'premium'} onClose={() => setBackupSection(null)} onDone={msg => { setBackupSection(null); if (msg) showToast(msg, 'success', 6000); void fetchData(); }} />
+            <BackupModal embedded key={backupSection} section={backupSection} apiUrl={API_URL} fetcher={apiFetch} isPremiumPlan={isPremiumTier} onClose={() => setBackupSection(null)} onDone={msg => { setBackupSection(null); if (msg) showToast(msg, 'success', 6000); void fetchData(); }} />
           ) : isBackupSecurityOpen ? (
             <BackupSecurityModal embedded apiUrl={API_URL} fetcher={fetch} onClose={() => setIsBackupSecurityOpen(false)} />
           ) : activeView === 'options' ? (

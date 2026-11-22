@@ -22,12 +22,12 @@ test('pattern setup rejects repeated points, preserves an existing vault and ver
  await assert.rejects(api.createVault('0-1-2','pattern'),/4/);
  await api.createVault('0-1-2-5','pattern');
  assert.equal(await api.vaultMode(),'pattern');assert.equal(await api.unlockWithPin('0-1-2-5'),true);
- const key=values.get('eteczka.vault.key');await assert.rejects(api.createVault('123456','pin'),/już istnieje/);assert.equal(values.get('eteczka.vault.key'),key);
+ const key=values.get('mojateczka.vault.key');await assert.rejects(api.createVault('123456','pin'),/już istnieje/);assert.equal(values.get('mojateczka.vault.key'),key);
 });
 test('failed PIN attempts trigger a persistent cooldown without deleting vault contents',async()=>{
  const {api,values,advance}=vault();await api.createVault('123456','pin');
  for(let i=0;i<5;i++)assert.equal(await api.unlockWithPin('000000'),false);
  await assert.rejects(api.unlockWithPin('123456'),/Zbyt wiele prób/);
- assert.ok(values.get('eteczka.vault.key'));advance();assert.equal(await api.unlockWithPin('123456'),true);
- assert.equal(values.has('eteczka.vault.attempts'),false);
+ assert.ok(values.get('mojateczka.vault.key'));advance();assert.equal(await api.unlockWithPin('123456'),true);
+ assert.equal(values.has('mojateczka.vault.attempts'),false);
 });

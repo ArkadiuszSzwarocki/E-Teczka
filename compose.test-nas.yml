@@ -1,10 +1,10 @@
 services:
-  eteczka-test:
+  mojateczka-test:
     build:
       context: .
       dockerfile: Dockerfile.test-nas
-    image: eteczka-test:local
-    container_name: eteczka-test
+    image: mojateczka-test:local
+    container_name: mojateczka-test
     restart: unless-stopped
     env_file:
       - .env.nas
@@ -13,9 +13,9 @@ services:
       MOJATECZKA_PUBLIC_TEST_MODE: "1"
       DATABASE_URL: "file:/app/backend/prisma/data/eteczka.db"
     volumes:
-      - eteczka_test_db:/app/backend/prisma/data
-      - eteczka_test_uploads:/app/backend/uploads
-      - eteczka_test_security:/app/backend/security
+      - mojateczka_test_db:/app/backend/prisma/data
+      - mojateczka_test_uploads:/app/backend/uploads
+      - mojateczka_test_security:/app/backend/security
     logging:
       driver: json-file
       options:
@@ -24,11 +24,11 @@ services:
 
   cloudflared:
     image: cloudflare/cloudflared:latest
-    container_name: eteczka-test-tunnel
+    container_name: mojateczka-test-tunnel
     restart: unless-stopped
-    network_mode: "service:eteczka-test"
+    network_mode: "service:mojateczka-test"
     depends_on:
-      - eteczka-test
+      - mojateczka-test
     command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TEST_TUNNEL_TOKEN}
     logging:
       driver: json-file
@@ -37,6 +37,6 @@ services:
         max-file: "3"
 
 volumes:
-  eteczka_test_db:
-  eteczka_test_uploads:
-  eteczka_test_security:
+  mojateczka_test_db:
+  mojateczka_test_uploads:
+  mojateczka_test_security:

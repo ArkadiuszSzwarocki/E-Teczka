@@ -11,16 +11,16 @@ import { createOfflineChunkCodec } from './offlineChunkCodec';
 import { getOfflineCacheBytes, removeOfflineFiles } from './offlineCleanup';
 import type { MobileDocument } from "../types/navigation";
 
-const KEY = "eteczka.vault.key";
-const PIN_HASH = "eteczka.vault.pin";
-const MODE = "eteczka.vault.mode";
-const BACKUP_MODE = "eteczka.vault.backup-mode";
+const KEY = "mojateczka.vault.key";
+const PIN_HASH = "mojateczka.vault.pin";
+const MODE = "mojateczka.vault.mode";
+const BACKUP_MODE = "mojateczka.vault.backup-mode";
 const ROOT = () => profileDirectory(`${FileSystem.documentDirectory}mojateczka-vault/`);
 const INDEX = () => `${ROOT()}index.enc`;
-const SELECTED_FOLDERS = "eteczka.vault.offline-folders";
+const SELECTED_FOLDERS = "mojateczka.vault.offline-folders";
 const { decryptFileInChunks, encryptFileInChunks, readChunkManifest } = createOfflineChunkStore(FileSystem, Crypto.getRandomBytesAsync);
 
-const hashPin = (pin: string) => Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, `eteczka:${pin}`);
+const hashPin = (pin: string) => Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, `mojateczka:${pin}`);
 async function key(): Promise<CryptoJS.lib.WordArray> {
   const value = await SecureStore.getItemAsync(profileKey(KEY));
   if (!value) throw new Error("Sejf nie jest skonfigurowany.");
@@ -73,12 +73,12 @@ async function changeVaultAccessImpl(secret: string, mode: VaultMode, backup?: {
   await SecureStore.setItemAsync(profileKey(MODE), mode);
 }
 async function unlockWithPinImpl(pin: string) {
-  const raw = await SecureStore.getItemAsync(profileKey('eteczka.vault.attempts'));
+  const raw = await SecureStore.getItemAsync(profileKey('mojateczka.vault.attempts'));
   const attempts = raw ? JSON.parse(raw) as { count: number; blockedUntil: number } : { count: 0, blockedUntil: 0 };
   if (attempts.blockedUntil > Date.now()) throw new Error('Zbyt wiele prób. Poczekaj chwilę i spróbuj ponownie.');
   const valid = (await SecureStore.getItemAsync(profileKey(PIN_HASH))) === await hashPin(pin);
-  if (valid) await SecureStore.deleteItemAsync(profileKey('eteczka.vault.attempts'));
-  else { attempts.count++; attempts.blockedUntil = attempts.count >= 5 ? Date.now() + Math.min(300000, 30000 * (attempts.count - 4)) : 0; await SecureStore.setItemAsync(profileKey('eteczka.vault.attempts'), JSON.stringify(attempts)); }
+  if (valid) await SecureStore.deleteItemAsync(profileKey('mojateczka.vault.attempts'));
+  else { attempts.count++; attempts.blockedUntil = attempts.count >= 5 ? Date.now() + Math.min(300000, 30000 * (attempts.count - 4)) : 0; await SecureStore.setItemAsync(profileKey('mojateczka.vault.attempts'), JSON.stringify(attempts)); }
   return valid;
 }
 async function getOfflineFolderIdsImpl(): Promise<number[]> { try { return JSON.parse(await SecureStore.getItemAsync(profileKey(SELECTED_FOLDERS)) || "[]"); } catch { return []; } }

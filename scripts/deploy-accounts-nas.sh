@@ -5,7 +5,7 @@ base=$1
 release_id=$2
 expected_hash=$3
 update_secrets=$4
-case "$base" in /share/Container/eteczka-accounts) ;; *) echo 'Unexpected deployment path'; exit 1;; esac
+case "$base" in /share/Container/mojateczka-accounts) ;; *) echo 'Unexpected deployment path'; exit 1;; esac
 case "$release_id" in *[!a-zA-Z0-9_-]*|'') echo 'Invalid release'; exit 1;; esac
 archive="$base/incoming/$release_id.tar.gz"
 release="$base/releases/$release_id"
@@ -79,27 +79,27 @@ fi
 rm -f "$release/.env.nas"
 ln -s "$base/shared/.env.nas" "$release/.env.nas"
 cd "$release"
-docker compose -p eteczka-accounts -f compose.nas.yml config --quiet
-docker compose -p eteczka-accounts -f compose.nas.yml build --pull
-docker compose -p eteczka-accounts -f compose.nas.yml run --rm --no-deps accounts node -e '
+docker compose -p mojateczka-accounts -f compose.nas.yml config --quiet
+docker compose -p mojateczka-accounts -f compose.nas.yml build --pull
+docker compose -p mojateczka-accounts -f compose.nas.yml run --rm --no-deps accounts node -e '
 const {createDatabasePool}=require("./mariadb/database");
 (async()=>{const pool=createDatabasePool();try{for(const table of ["accounts","identities","verifications","sessions","password_resets","google_challenges","sign_in_handoffs","auth_rate_limits"])await pool.query("SELECT * FROM `"+table+"` LIMIT 0");console.log("MariaDB: connection and required tables OK");}finally{await pool.end();}})().catch(e=>{console.error("Database check failed:",e.code||"CONFIG_ERROR");process.exitCode=1});'
-docker compose -p eteczka-accounts -f compose.nas.yml up -d --no-build
+docker compose -p mojateczka-accounts -f compose.nas.yml up -d --no-build
 count=0
 while [ "$count" -lt 30 ]; do
-  state=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' eteczka-accounts)
+  state=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' mojateczka-accounts)
   if [ "$state" = 'healthy' ]; then
     printf '%s\n' "$release" > "$base/current-release.txt"
     rm -f "$archive"
-    echo 'SUCCESS: eteczka-accounts is healthy; no NAS port was published.'
-    echo 'Nginx Proxy Manager: konto.arecki.pl -> http://eteczka-accounts:3001'
+    echo 'SUCCESS: mojateczka-accounts is healthy; no NAS port was published.'
+    echo 'Nginx Proxy Manager: konto.arecki.pl -> http://mojateczka-accounts:3001'
     exit 0
   fi
   count=$((count + 1))
   sleep 2
 done
 echo 'Container did not become healthy. Previous releases remain in releases/.'
-docker compose -p eteczka-accounts -f compose.nas.yml ps
+docker compose -p mojateczka-accounts -f compose.nas.yml ps
 if [ -f "$base/current-release.txt" ]; then
   previous=$(cat "$base/current-release.txt")
   case "$previous" in
@@ -110,8 +110,8 @@ if [ -f "$base/current-release.txt" ]; then
           cp "$base/shared/.env.nas.previous" "$base/shared/.env.nas"
         fi
         cd "$previous"
-        docker compose -p eteczka-accounts -f compose.nas.yml build
-        docker compose -p eteczka-accounts -f compose.nas.yml up -d --no-build
+        docker compose -p mojateczka-accounts -f compose.nas.yml build
+        docker compose -p mojateczka-accounts -f compose.nas.yml up -d --no-build
       fi
       ;;
   esac

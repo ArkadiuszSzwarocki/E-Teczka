@@ -3,6 +3,9 @@ const express = require('express');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const { promisify } = require('node:util');
+
+const scryptAsync = promisify(crypto.scrypt);
 
 const MAX_BYTES = 50 * 1024 * 1024;
 const MIN_LIFETIME = 60_000;
@@ -51,7 +54,7 @@ function createShareRouter({ dataDir, masterKey, publisherSecret, publicBase, no
     next();
   };
 
-  router.post('/admin/shares', publisher, largeJson, (req, res) => {
+  router.post('/admin/shares', publisher, largeJson, async (req, res) => {
     const { content, mimeType, expiresInSeconds, pin, singleUse } = req.body || {};
     if (typeof content !== 'string' || content.length > Math.ceil(MAX_BYTES / 3) * 4 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(content)) {
       return res.status(400).json({ error: 'Nieprawidłowy plik.' });
@@ -68,6 +71,7 @@ function createShareRouter({ dataDir, masterKey, publisherSecret, publicBase, no
     cipher.setAAD(Buffer.from(id));
     const ciphertext = Buffer.concat([cipher.update(bytes), cipher.final()]);
     const salt = pin ? crypto.randomBytes(16) : null;
+    const pinHash = pin ? (await scryptAsync(pin, salt, 32)).toString('hex') : null;
     const record = {
       version: 1,
       expiresAt: now() + lifetime,
@@ -76,7 +80,7 @@ function createShareRouter({ dataDir, masterKey, publisherSecret, publicBase, no
       tag: cipher.getAuthTag().toString('hex'),
       ciphertext: ciphertext.toString('base64'),
       salt: salt?.toString('hex') || null,
-      pinHash: pin ? crypto.scryptSync(pin, salt, 32).toString('hex') : null,
+      pinHash,
       attempts: 0,
       blockedUntil: 0,
       singleUse: Boolean(singleUse)
@@ -93,7 +97,7 @@ function createShareRouter({ dataDir, masterKey, publisherSecret, publicBase, no
 
   router.get('/s', shareSecurityHeaders, (_req, res) => res.type('html').send(
     '<!doctype html><html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Bezpieczny dokument — MojaTeczka</title><link rel="stylesheet" href="/share.css"></head>' +
-    '<body><main class="shell"><header class="brand">E<span>‑</span>Teczka <small>Twoje archiwum</small></header>' +
+    '<body><main class="shell"><header class="brand">Moja<span>Teczka</span> <small>Twoje archiwum</small></header>' +
     '<div class="grid">' +
     '<section class="promo">' +
     '<p class="eyebrow">Mniej papieru. Więcej porządku.</p>' +
@@ -145,7 +149,7 @@ function createShareRouter({ dataDir, masterKey, publisherSecret, publicBase, no
   ));
   router.get('/share.js', shareSecurityHeaders, (_req, res) => res.type('application/javascript').send(`document.getElementById('download').addEventListener('click',async()=>{const btn=document.getElementById('download'),status=document.getElementById('status'),token=location.hash.slice(1);status.className='';status.textContent='Pobieranie i odszyfrowywanie…';btn.disabled=true;try{const r=await fetch('/public/redeem',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token,pin:document.getElementById('pin').value})});if(!r.ok){const x=await r.json();throw Error(x.error||'Nie udało się pobrać dokumentu.')}const b=await r.blob(),u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download=b.type==='application/pdf'?'dokument.pdf':'dokument';a.click();setTimeout(()=>URL.revokeObjectURL(u),10000);status.className='ok';status.textContent='Dokument został pobrany.';}catch(e){status.className='err';status.textContent=e.message;}finally{btn.disabled=false;}});`));
 
-  router.post('/public/redeem', shareSecurityHeaders, express.json({ limit: '2kb' }), (req, res) => {
+  router.post('/public/redeem', shareSecurityHeaders, express.json({ limit: '2kb' }), async (req, res) => {
     const { token, pin } = req.body || {};
     if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(token)) return res.status(404).json({ error: GENERIC_ERROR });
     const id = digest(token);
@@ -156,7 +160,7 @@ function createShareRouter({ dataDir, masterKey, publisherSecret, publicBase, no
     }
     if (record.blockedUntil > now()) return res.status(429).json({ error: 'Zbyt wiele prób. Spróbuj ponownie później.' });
     if (record.pinHash) {
-      const valid = typeof pin === 'string' && /^\d{6}$/.test(pin) && secureEqual(crypto.scryptSync(pin, Buffer.from(record.salt, 'hex'), 32).toString('hex'), record.pinHash);
+      const valid = typeof pin === 'string' && /^\d{6}$/.test(pin) && secureEqual((await scryptAsync(pin, Buffer.from(record.salt, 'hex'), 32)).toString('hex'), record.pinHash);
       if (!valid) {
         record.attempts = (record.attempts || 0) + 1;
         if (record.attempts >= 5) { record.blockedUntil = now() + 15 * 60_000; record.attempts = 0; }

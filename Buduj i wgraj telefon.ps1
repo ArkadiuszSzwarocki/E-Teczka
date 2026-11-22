@@ -40,8 +40,8 @@ try {
     Write-Host "Projekt: $projectDir"
     if ($CheckOnly) { Write-Host 'Kontrola wstepna zakonczona.'; exit 0 }
 
-    $env:GRADLE_USER_HOME = 'A:\ETeczkaGradle'
-    $env:TEMP = 'A:\ETeczkaTemp'
+    $env:GRADLE_USER_HOME = 'A:\MojaTeczkaGradle'
+    $env:TEMP = 'A:\MojaTeczkaTemp'
     $env:TMP = $env:TEMP
     $env:NODE_ENV = 'production'
     foreach ($dir in @($env:GRADLE_USER_HOME, $env:TEMP)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }

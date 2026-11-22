@@ -2,8 +2,8 @@ services:
   accounts:
     build:
       context: .
-    image: eteczka-accounts:local
-    container_name: eteczka-accounts
+    image: mojateczka-accounts:local
+    container_name: mojateczka-accounts
     restart: unless-stopped
     env_file:
       - .env.nas

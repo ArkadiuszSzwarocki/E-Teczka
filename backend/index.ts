@@ -174,6 +174,7 @@ const verifyUploadAccess: express.RequestHandler = async (req, res, next) => {
 };
 
 app.use('/api', requireAccess, centralDeviceGate);
+app.get('/api/health', (_req, res) => res.json({ ok: true }));
 app.use('/uploads', requireAccess, centralDeviceGate, verifyUploadAccess, express.static(uploadsDir, {
   setHeaders(res, filePath) {
     res.setHeader('X-Content-Type-Options', 'nosniff');

@@ -3,7 +3,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as SecureStore from 'expo-secure-store';
 import { isRetentionUnit, type RetentionUnit } from '../types/domain';
 
-const DRAFT_KEY = 'eteczka.scan-draft.v1';
+const DRAFT_KEY = 'mojateczka.scan-draft.v1';
 
 export type ScanDraft = {
   folderId: number;

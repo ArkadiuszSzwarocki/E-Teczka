@@ -10,7 +10,7 @@ Dokument zbiera kluczowe wyróżniki przewagi konkurencyjnej dla rynku polskiego
 
 ### Zakres i wpięcie w architekturę
 - **Źródła danych:**
-  - Skanowanie kodu QR e-paragonu w `CameraCaptureModal` / aplikacji mobilnej (`ETeczkaMobile`).
+  - Skanowanie kodu QR e-paragonu w `CameraCaptureModal` / aplikacji mobilnej (`MojaTeczkaMobile`).
   - Import e-paragonów PDF/JSON z aplikacji sieciowych (Biedronka, Lidl, Rossmann, Orlen) oraz rządowego HUB-a e-Paragonów (przez poczekalnię `mailInbox` i `watchFolder`).
 - **Backend (`backend/services/eReceiptParser.ts`):**
   - Deterministyczne wyciąganie nazwy sklepu (`merchantName`), kwoty (`amountCents`), daty zakupu oraz pozycji (`DocumentLineItem`) z automatyczną kategoryzacją.

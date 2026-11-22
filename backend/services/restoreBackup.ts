@@ -11,7 +11,17 @@ import { decryptBackup } from './backupCrypto';
 import { protectOcrText, readOcrText } from './ocrText';
 
 type SourceFolder = { id: number; name: string; parentId?: number | null; order?: number; createdAt?: string };
-type SourceDocument = { id: number; title: string; filePath: string; mimeType: string; folderId: number; retentionEnabled?: boolean; retentionValue?: number; retentionUnit?: string; isArchived?: boolean; isDeleted?: boolean; deletedAt?: string | null; createdAt?: string; physicalLocation?: string | null; thumbnail?: string | null; ocrText?: string | null; tags?: Array<{ name: string; color?: string }> };
+type SourceLineItem = { name: string; quantity?: number; totalCents: number; category?: string };
+type SourceDocument = {
+  id: number; title: string; filePath: string; mimeType: string; folderId: number;
+  retentionEnabled?: boolean; retentionValue?: number; retentionUnit?: string;
+  isArchived?: boolean; isDeleted?: boolean; deletedAt?: string | null; createdAt?: string;
+  physicalLocation?: string | null; thumbnail?: string | null; ocrText?: string | null;
+  merchantName?: string | null; amountCents?: number | null; currency?: string | null;
+  dueDate?: string | null; paymentStatus?: string | null;
+  tags?: Array<{ name: string; color?: string }>;
+  lineItems?: SourceLineItem[];
+};
 type Manifest = { version: number; folders: SourceFolder[]; documents: SourceDocument[] };
 
 function parseManifest(zip: AdmZip): Manifest {
@@ -53,7 +63,7 @@ export async function restoreBackup(prisma: PrismaClient, encryptedData: Buffer,
     return date;
   };
   for (const folder of manifest.folders) parseDate(folder.createdAt);
-  for (const document of manifest.documents) { parseDate(document.createdAt); parseDate(document.deletedAt); }
+  for (const document of manifest.documents) { parseDate(document.createdAt); parseDate(document.deletedAt); parseDate(document.dueDate); }
   const writtenFiles: string[] = [];
   const folderMap = new Map<number, number>();
   try {
@@ -90,7 +100,44 @@ export async function restoreBackup(prisma: PrismaClient, encryptedData: Buffer,
         const filepath = path.join(targetDir, filename);
         fs.writeFileSync(filepath, entry.getData(), { flag: 'wx' });
         writtenFiles.push(filepath);
-        const created = await tx.document.create({ data: { id: otherDocuments.has(source.id) ? nextDocumentId++ : source.id, title: source.title.slice(0, 255), filePath: filename, mimeType: String(source.mimeType || 'application/octet-stream'), folderId: folderMap.get(source.folderId)!, userId, retentionEnabled: source.retentionEnabled !== false, retentionValue: Number(source.retentionValue) || 5, retentionUnit: String(source.retentionUnit || 'years'), isArchived: Boolean(source.isArchived), isDeleted: Boolean(source.isDeleted), deletedAt: source.isDeleted ? (parseDate(source.deletedAt) || new Date()) : null, createdAt: parseDate(source.createdAt), physicalLocation: source.physicalLocation ?? null, thumbnail: source.thumbnail ?? null, ocrText: typeof source.ocrText === 'string' ? source.ocrText : null } });
+        const amountCents = typeof source.amountCents === 'number' && Number.isFinite(source.amountCents) ? Math.round(source.amountCents) : null;
+        const created = await tx.document.create({
+          data: {
+            id: otherDocuments.has(source.id) ? nextDocumentId++ : source.id,
+            title: source.title.slice(0, 255),
+            filePath: filename,
+            mimeType: String(source.mimeType || 'application/octet-stream'),
+            folderId: folderMap.get(source.folderId)!,
+            userId,
+            retentionEnabled: source.retentionEnabled !== false,
+            retentionValue: Number(source.retentionValue) || 5,
+            retentionUnit: String(source.retentionUnit || 'years'),
+            isArchived: Boolean(source.isArchived),
+            isDeleted: Boolean(source.isDeleted),
+            deletedAt: source.isDeleted ? (parseDate(source.deletedAt) || new Date()) : null,
+            createdAt: parseDate(source.createdAt),
+            physicalLocation: source.physicalLocation ?? null,
+            thumbnail: source.thumbnail ?? null,
+            ocrText: typeof source.ocrText === 'string' ? source.ocrText : null,
+            merchantName: typeof source.merchantName === 'string' ? source.merchantName.slice(0, 160) : null,
+            amountCents,
+            currency: typeof source.currency === 'string' && source.currency.trim() ? source.currency.trim().slice(0, 12) : 'PLN',
+            dueDate: parseDate(source.dueDate) ?? null,
+            paymentStatus: typeof source.paymentStatus === 'string' ? source.paymentStatus.slice(0, 32) : null,
+          },
+        });
+        if (Array.isArray(source.lineItems) && source.lineItems.length > 0) {
+          const validItems = source.lineItems
+            .filter(item => item && typeof item.name === 'string' && item.name.trim() && typeof item.totalCents === 'number' && Number.isFinite(item.totalCents))
+            .map(item => ({
+              documentId: created.id,
+              name: item.name.trim().slice(0, 200),
+              quantity: typeof item.quantity === 'number' && Number.isFinite(item.quantity) && item.quantity > 0 ? item.quantity : 1,
+              totalCents: Math.round(item.totalCents),
+              category: typeof item.category === 'string' && item.category.trim() ? item.category.trim().slice(0, 80) : 'Inne',
+            }));
+          if (validItems.length > 0) await tx.documentLineItem.createMany({ data: validItems });
+        }
         for (const tag of source.tags || []) {
           const name = String(tag.name || 'tag').slice(0, 80);
           const record = await tx.tag.upsert({ where: { name }, create: { name, color: String(tag.color || '#2563eb') }, update: {} });

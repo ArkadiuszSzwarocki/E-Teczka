@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import fs from 'fs';
+import { pipeline } from 'stream/promises';
 import { authSecret } from '../security/authSecret';
 
 const key = crypto.createHash('sha256').update(authSecret()).digest();
@@ -24,6 +26,28 @@ export function encryptBackup(data: Buffer) {
   const iv = crypto.randomBytes(12); const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
   const encrypted = Buffer.concat([cipher.update(data), cipher.final()]);
   return Buffer.concat([header, iv, cipher.getAuthTag(), encrypted]);
+}
+/** Streams plaintext through AES-256-GCM directly to disk without holding the archive in RAM. */
+export async function encryptBackupStreamToFile(source: NodeJS.ReadableStream, targetPath: string): Promise<number> {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const prefixSize = header.length + iv.length + 16;
+  const placeholder = Buffer.concat([header, iv, Buffer.alloc(16)]);
+  fs.writeFileSync(targetPath, placeholder);
+  try {
+    const out = fs.createWriteStream(targetPath, { flags: 'r+', start: prefixSize });
+    await pipeline(source, cipher, out);
+    const fd = fs.openSync(targetPath, 'r+');
+    try {
+      fs.writeSync(fd, cipher.getAuthTag(), 0, 16, header.length + iv.length);
+    } finally {
+      fs.closeSync(fd);
+    }
+    return fs.statSync(targetPath).size;
+  } catch (error) {
+    try { fs.unlinkSync(targetPath); } catch { /* ignore cleanup errors */ }
+    throw error;
+  }
 }
 export function exportRecoveryKey(passphrase: string): string {
   if (passphrase.length < 12) throw new Error('Hasło klucza odzyskiwania musi mieć co najmniej 12 znaków.');

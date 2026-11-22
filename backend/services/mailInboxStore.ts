@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { securityDir, uploadsDir } from '../config/paths';
@@ -82,11 +83,30 @@ function readAllFilters(): Record<string, MailFilterState> {
   }
 }
 
+function atomicWriteEncrypted(targetFile: string, encryptedPayload: string): void {
+  fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+  const tmp = `${targetFile}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+  fs.writeFileSync(tmp, encryptedPayload, { mode: 0o600 });
+  try {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        fs.renameSync(tmp, targetFile);
+        return;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException)?.code;
+        lastError = error;
+        if (code !== 'EPERM' && code !== 'EBUSY') throw error;
+      }
+    }
+    throw lastError;
+  } finally {
+    try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch { /* ignore cleanup errors */ }
+  }
+}
+
 function writeAllFilters(data: Record<string, MailFilterState>): void {
-  fs.mkdirSync(path.dirname(FILTERS_FILE), { recursive: true });
-  const tmp = `${FILTERS_FILE}.tmp`;
-  fs.writeFileSync(tmp, encrypt(JSON.stringify(data)), { mode: 0o600 });
-  fs.renameSync(tmp, FILTERS_FILE);
+  atomicWriteEncrypted(FILTERS_FILE, encrypt(JSON.stringify(data)));
 }
 
 export function getMailFilters(ownerId: number): MailFilterState {
@@ -255,10 +275,7 @@ function readAllConfigs(): Record<string, MailAccountConfig[]> {
 }
 
 function writeAllConfigs(data: Record<string, MailAccountConfig[]>): void {
-  fs.mkdirSync(path.dirname(CONFIG_FILE), { recursive: true });
-  const tmp = `${CONFIG_FILE}.tmp`;
-  fs.writeFileSync(tmp, encrypt(JSON.stringify(data)), { mode: 0o600 });
-  fs.renameSync(tmp, CONFIG_FILE);
+  atomicWriteEncrypted(CONFIG_FILE, encrypt(JSON.stringify(data)));
 }
 
 export function getMailAccounts(ownerId: number): MailAccountConfig[] {

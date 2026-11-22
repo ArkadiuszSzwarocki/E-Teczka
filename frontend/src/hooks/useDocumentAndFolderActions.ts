@@ -17,7 +17,7 @@ type Args = {
   setSelectedFolderId: (id: number | null) => void;
   selectedDocs: number[];
   setSelectedDocs: React.Dispatch<React.SetStateAction<number[]>>;
-  displayedDocs: DocumentRecord[];
+  displayedDocs: DocumentRecord[] | (() => DocumentRecord[]);
   billingPlan: 'free' | 'standard' | 'premium' | 'family' | 'business';
   setPlanLimitMessage: (msg: string) => void;
   searchQuery: string;
@@ -197,7 +197,10 @@ export function useDocumentAndFolderActions({
   };
 
   const toggleDocSelection = (id: number) => setSelectedDocs(prev => (prev.includes(id) ? prev.filter(dId => dId !== id) : [...prev, id]));
-  const selectAllVisibleDocs = () => setSelectedDocs(displayedDocs.map(doc => doc.id));
+  const selectAllVisibleDocs = () => {
+    const visible = typeof displayedDocs === 'function' ? displayedDocs() : displayedDocs;
+    setSelectedDocs(visible.map(doc => doc.id));
+  };
   const clearSelectedDocs = () => setSelectedDocs([]);
 
   const moveSelectedDocs = async (folderId: number, retention?: BulkRetention): Promise<boolean> => {

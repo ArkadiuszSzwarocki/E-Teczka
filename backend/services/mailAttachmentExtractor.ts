@@ -6,8 +6,9 @@ import { getLearnedFolderBoosts } from './folderLearningStore';
 import { extractSenderEmail, getSenderFolderRule, isSenderExcluded, saveMailItem, type MailInboxItem } from './mailInboxStore';
 import { extractQuickPdfText } from './pdfQuickText';
 
-const ALLOWED_EXT = new Set(['.pdf', '.png', '.jpg', '.jpeg']);
+const ALLOWED_EXT = new Set(['.pdf', '.png', '.jpg', '.jpeg', '.xml', '.json']);
 const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg']);
+const STRUCTURED_DOC_EXT = new Set(['.xml', '.json']);
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 
 export type AttachmentKind = 'all' | 'documents' | 'images';
@@ -19,8 +20,11 @@ function matchesAttachmentKind(isImage: boolean, kind: AttachmentKind = 'all'): 
 }
 
 function guessMime(ext: string, rawMime?: string): string {
-  if (rawMime && (rawMime.includes('pdf') || rawMime.startsWith('image/'))) return rawMime;
+  const normalized = (rawMime || '').toLowerCase();
+  if (normalized && (normalized.includes('pdf') || normalized.startsWith('image/') || normalized.includes('xml') || normalized.includes('json'))) return rawMime!;
   if (ext === '.pdf') return 'application/pdf';
+  if (ext === '.xml') return 'application/xml';
+  if (ext === '.json') return 'application/json';
   if (ext === '.png') return 'image/png';
   return 'image/jpeg';
 }
@@ -54,14 +58,14 @@ export function hasCandidateAttachment(node: unknown, ctx?: BodyStructureContext
   const rawName = part.dispositionParameters?.filename || part.parameters?.name || '';
   const filename = rawName ? path.basename(rawName) : '';
   const ext = filename ? path.extname(filename).toLowerCase() : '';
-  const isSupportedMime = mime === 'application/pdf' || mime === 'image/png' || mime === 'image/jpeg' || mime === 'image/jpg';
+  const isSupportedMime = mime === 'application/pdf' || mime === 'image/png' || mime === 'image/jpeg' || mime === 'image/jpg' || mime === 'application/xml' || mime === 'text/xml' || mime === 'application/json' || mime === 'text/json';
   const isSupportedExt = Boolean(ext && ALLOWED_EXT.has(ext));
   const isSupportedAttachment = part.disposition?.toLowerCase() === 'attachment' && (!ext || ALLOWED_EXT.has(ext));
   if (!isSupportedMime && !isSupportedExt && !isSupportedAttachment) return false;
   const isImage = mime.startsWith('image/') || IMAGE_EXT.has(ext);
   if (!matchesAttachmentKind(isImage, ctx?.attachmentKind)) return false;
 
-  if (mime !== 'application/pdf' && part.disposition?.toLowerCase() === 'inline' && typeof part.size === 'number' && part.size < 20_000) {
+  if (isImage && part.disposition?.toLowerCase() === 'inline' && typeof part.size === 'number' && part.size < 20_000) {
     return false;
   }
   if (typeof part.size === 'number' && part.size > MAX_ATTACHMENT_BYTES * 1.4) {
@@ -114,7 +118,7 @@ export async function extractAndSaveMessageAttachments({
     if (!ALLOWED_EXT.has(ext) || !att.content || att.content.length === 0 || att.content.length > MAX_ATTACHMENT_BYTES) continue;
     const isImage = IMAGE_EXT.has(ext) || Boolean(att.contentType?.toLowerCase().startsWith('image/'));
     if (!matchesAttachmentKind(isImage, attachmentKind)) continue;
-    if (ext !== '.pdf' && att.contentDisposition === 'inline' && att.content.length < 15_000) continue;
+    if (isImage && att.contentDisposition === 'inline' && att.content.length < 15_000) continue;
 
     const uidKey = `${uid}:${filename.toLowerCase()}`;
     const dedupKey = `${accountId}:${uidKey}`;
@@ -137,8 +141,10 @@ export async function extractAndSaveMessageAttachments({
       }
     }
 
-    const pdfText = ext === '.pdf' ? await extractQuickPdfText(att.content) : '';
-    const extractedText = [from, subject, filename, pdfText].filter(Boolean).join('\n');
+    const contentText = ext === '.pdf'
+      ? await extractQuickPdfText(att.content)
+      : (STRUCTURED_DOC_EXT.has(ext) ? att.content.toString('utf8').slice(0, 4000) : '');
+    const extractedText = [from, subject, filename, contentText].filter(Boolean).join('\n');
     const learnedBoosts = getLearnedFolderBoosts(ownerId, extractedText);
     const classified = classifyDocumentOffline(extractedText, folders, learnedBoosts);
     const top = classified.suggestions[0] || null;

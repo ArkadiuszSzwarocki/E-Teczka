@@ -16,13 +16,13 @@ import { suggestNasHostname } from '../services/webdavCertificate';
 import { createBackupMfaRouter, requireBackupMfa } from './backupMfa';
 import {
   buildBackupArchive,
-  buildEncryptedBackupBuffer,
+  buildEncryptedBackupFile,
   downloadCloudBackup,
   listCloudBackups,
   oauthCallbackUrl,
   oauthConfig,
   refreshOAuthCredentials,
-  uploadEncryptedBackupToCloud,
+  uploadEncryptedBackupFileToCloud,
 } from '../services/cloudBackupTransfer';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 512 * 1024 * 1024 } });
@@ -47,10 +47,14 @@ export async function runScheduledCloudBackup(prisma: PrismaClient, ownerKey: st
   if (destination.provider === 'webdav' && (credentials.purpose !== 'backup-only' || !credentials.username || !credentials.password)) {
     throw new Error('Skonfiguruj osobne konto NAS przeznaczone do automatycznej kopii.');
   }
-  const data = await buildEncryptedBackupBuffer(prisma, ownerIdValue, ownerKey);
-  const response = await uploadEncryptedBackupToCloud(destination, credentials, data);
-  if (!response.ok) throw new Error(`Cloud upload failed (${response.status}).`);
-  return true;
+  const backup = await buildEncryptedBackupFile(prisma, ownerIdValue, ownerKey);
+  try {
+    const response = await uploadEncryptedBackupFileToCloud(destination, credentials, backup.filePath, backup.size);
+    if (!response.ok) throw new Error(`Cloud upload failed (${response.status}).`);
+    return true;
+  } finally {
+    backup.cleanup();
+  }
 }
 
 export function createBackupRouter(prisma: PrismaClient) {
@@ -169,10 +173,14 @@ export function createBackupRouter(prisma: PrismaClient) {
       const credentials = destination.provider === 'webdav'
         ? (isAuto && destination.encryptedCredentials ? JSON.parse(decrypt(destination.encryptedCredentials)) : { username: String(req.body.username), password: String(req.body.password) })
         : await refreshOAuthCredentials(prisma, destination);
-      const data = await buildEncryptedBackupBuffer(prisma, ownerId(res), ocrOwnerKey(res));
-      const response = await uploadEncryptedBackupToCloud(destination, credentials, data);
-      if (!response.ok) return res.status(502).json({ error: response.status === 507 ? 'NAS zgłosił brak dostępnego miejsca (HTTP 507). Sprawdź wolne miejsce, limit konta oraz czy wybrano właściwy folder z prawem zapisu.' : `Serwer ${destination.provider === 'webdav' ? 'NAS/WebDAV' : destination.provider} odrzucił kopię (HTTP ${response.status}). Sprawdź folder i uprawnienia do zapisu.` });
-      res.json({ success: true, provider: destination.provider, uploadedAt: new Date().toISOString() });
+      const backup = await buildEncryptedBackupFile(prisma, ownerId(res), ocrOwnerKey(res));
+      try {
+        const response = await uploadEncryptedBackupFileToCloud(destination, credentials, backup.filePath, backup.size);
+        if (!response.ok) return res.status(502).json({ error: response.status === 507 ? 'NAS zgłosił brak dostępnego miejsca (HTTP 507). Sprawdź wolne miejsce, limit konta oraz czy wybrano właściwy folder z prawem zapisu.' : `Serwer ${destination.provider === 'webdav' ? 'NAS/WebDAV' : destination.provider} odrzucił kopię (HTTP ${response.status}). Sprawdź folder i uprawnienia do zapisu.` });
+        res.json({ success: true, provider: destination.provider, uploadedAt: new Date().toISOString() });
+      } finally {
+        backup.cleanup();
+      }
     } catch (error) { console.error('[backup] cloud upload:', error); res.status(502).json({ error: error instanceof Error && error.message.startsWith('Brak pliku dokumentu') ? error.message : 'Nie udało się utworzyć lub wysłać kopii. Sprawdź log serwera.' }); }
   });
 

@@ -2,7 +2,7 @@ import { profileKey, profileOperation } from './mobileProfile';
 import * as SecureStore from "expo-secure-store";
 import { clearPendingComputerCertificate, commitComputerCertificate, hasComputerCertificate, hasPendingComputerCertificate } from "./localTls";
 
-const CONNECTION_KEY = "eteczka.local-connection.v1";
+const CONNECTION_KEY = "mojateczka.local-connection.v1";
 
 export type LocalConnection = {
   serverUrl: string;
@@ -107,7 +107,7 @@ async function pairLocalComputerImpl(serverUrl: string, pairingCode: string, dev
 
 async function getAuthHeadersImpl() {
   const connection = await getLocalConnection();
-  if (!connection) throw new Error("Najpierw sparuj telefon z komputerem E‑Teczka.");
+  if (!connection) throw new Error("Najpierw sparuj telefon z komputerem MojaTeczka.");
   if (!connection.serverUrl.startsWith('https://')) throw new Error('Stare połączenie HTTP jest niezabezpieczone. Sparuj telefon ponownie przez HTTPS.');
   if (!await hasComputerCertificate(connection.serverUrl)) throw new Error('Sparuj komputer ponownie, aby sprawdzić jego certyfikat.');
   return { Authorization: `Bearer ${connection.accessToken}` };
@@ -115,7 +115,7 @@ async function getAuthHeadersImpl() {
 
 async function getApiUrlImpl(path: string) {
   const connection = await getLocalConnection();
-  if (!connection) throw new Error("Najpierw dodaj komputer E‑Teczka w zakładce Ustawienia.");
+  if (!connection) throw new Error("Najpierw dodaj komputer MojaTeczka w zakładce Ustawienia.");
   if (!connection.serverUrl.startsWith('https://')) throw new Error('Stare połączenie HTTP jest niezabezpieczone. Sparuj telefon ponownie przez HTTPS.');
   if (!await hasComputerCertificate(connection.serverUrl)) throw new Error('Sparuj komputer ponownie, aby sprawdzić jego certyfikat.');
   return `${connection.serverUrl}${path.startsWith("/") ? path : `/${path}`}`;

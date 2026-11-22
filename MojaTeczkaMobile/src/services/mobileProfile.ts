@@ -1,8 +1,8 @@
 import * as SecureStore from 'expo-secure-store';
 import * as FileSystem from 'expo-file-system/legacy';
 
-const LAST='eteczka.mobile.last-profile';
-const OWNER='eteczka.mobile.vault-owner',KNOWN='eteczka.mobile.known-accounts';
+const LAST='mojateczka.mobile.last-profile';
+const OWNER='mojateczka.mobile.vault-owner',KNOWN='mojateczka.mobile.known-accounts';
 let current:string|null=null,namespace='',switching=false,operations=0;
 let changes:Promise<unknown>=Promise.resolve();
 export function currentMobileAccount(){return current;}

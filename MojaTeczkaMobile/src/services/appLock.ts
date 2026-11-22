@@ -1,7 +1,7 @@
 import { profileKey, profileOperation } from './mobileProfile';
 import * as SecureStore from "expo-secure-store";
 
-const AUTO_LOCK_MINUTES = "eteczka.auto-lock-minutes";
+const AUTO_LOCK_MINUTES = "mojateczka.auto-lock-minutes";
 
 async function getAutoLockMinutesImpl() {
   const saved = Number(await SecureStore.getItemAsync(profileKey(AUTO_LOCK_MINUTES)));

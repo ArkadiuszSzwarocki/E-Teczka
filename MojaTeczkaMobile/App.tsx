@@ -16,7 +16,7 @@ import SyncScreen from "./src/screens/SyncScreen";
 import DocumentListScreen from "./src/screens/DocumentListScreen";
 import DocumentViewerScreen from "./src/screens/DocumentViewerScreen";
 import VaultLockScreen from "./src/screens/VaultLockScreen";
-import { hasVault, vaultMode } from "./src/services/offlineVault";
+import { hasVault } from "./src/services/offlineVault";
 import { getApiUrl, getAuthHeaders, getLocalConnection } from "./src/services/localConnection";
 import { getAutoLockMinutes } from "./src/services/appLock";
 import { pruneOfflineCache } from "./src/services/offlineCleanup";
@@ -71,13 +71,13 @@ function AppTabs({ initialTab = "Ustawienia", onLock }: { initialTab?: keyof Mai
         const connection = await getLocalConnection();
         if (!connection) { if (active && attempt === generation) { setIsPaired(false); setComputerOnline(false); } return; }
         if (active) setIsPaired(true);
-        const response = await fetch(`${connection.serverUrl}/api/folders`, { headers: await getAuthHeaders(), signal: request.signal });
+        const response = await fetch(`${connection.serverUrl}/api/health`, { headers: await getAuthHeaders(), signal: request.signal });
         if (active && attempt === generation) setComputerOnline(response.ok);
       } catch { if (active && attempt === generation) setComputerOnline(false); }
       finally { clearTimeout(timeout); }
     };
     void checkComputer();
-    const timer = setInterval(() => void checkComputer(), 5000);
+    const timer = setInterval(() => void checkComputer(), 20_000);
     const subscription = AppState.addEventListener('change', state => {
       foreground = state === 'active';
       if (state === 'active') { setComputerOnline(false); void checkComputer(); }
@@ -109,7 +109,7 @@ function AppTabs({ initialTab = "Ustawienia", onLock }: { initialTab?: keyof Mai
             accessibilityRole={accessibilityRole}
             testID={testID}
             accessibilityState={{ disabled: true }}
-            onPress={() => Alert.alert("Najpierw połącz komputer", "Otwórz Ustawienia i wpisz adres IP oraz kod z E‑Teczki na komputerze.")}
+            onPress={() => Alert.alert("Najpierw połącz komputer", "Otwórz Ustawienia i wpisz adres IP oraz kod z MojejTeczki na komputerze.")}
             style={[style, { opacity: 0.45 }]}
           />
         ) : undefined,
@@ -200,9 +200,9 @@ function AppContent({ initiallyUnlocked = false }: { initiallyUnlocked?: boolean
     void (async () => {
       try {
         const active = await hasVault();
-        const mode = active ? await vaultMode() : null;
+        const paired = Boolean(await getLocalConnection().catch(() => null));
         if (!mounted) return;
-        setInitialTab(mode === "biometric" ? "Kartoteki" : "Ustawienia");
+        setInitialTab(paired ? "Kartoteki" : "Ustawienia");
         setVaultUnlocked(!active || initiallyUnlocked);
       } catch {
         if (!mounted) return;
@@ -223,7 +223,7 @@ function AppContent({ initiallyUnlocked = false }: { initiallyUnlocked?: boolean
     setPendingNotificationDocumentId(null);
     void openNotificationDocument(documentId);
   }, [navigationReady, openNotificationDocument, pendingNotificationDocumentId, vaultChecked, vaultUnlocked]);
-  if (!vaultChecked) return <View style={startupStyles.container}><Text style={startupStyles.text}>Uruchamianie E‑Teczki…</Text></View>;
+  if (!vaultChecked) return <View style={startupStyles.container}><Text style={startupStyles.text}>Uruchamianie MojejTeczki…</Text></View>;
   if (vaultInitializationError) return <View style={startupStyles.container}><Text style={startupStyles.title}>Nie udało się uruchomić sejfu</Text><Text style={startupStyles.text}>{vaultInitializationError}</Text><TouchableOpacity style={startupStyles.button} onPress={() => { setVaultChecked(false); checkVault(); }}><Text style={startupStyles.buttonText}>Spróbuj ponownie</Text></TouchableOpacity></View>;
   if (!vaultUnlocked) return <SafeAreaProvider><StatusBar hidden /><VaultLockScreen onUnlock={() => setVaultUnlocked(true)} /></SafeAreaProvider>;
   return (
