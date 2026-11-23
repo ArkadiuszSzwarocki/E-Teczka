@@ -6,6 +6,7 @@ import type { PrismaClient } from '@prisma/client';
 import { uploadsDir } from '../config/paths';
 import { isDocumentFolder } from '../services/folders';
 import { errorMessage } from '../utils/errors';
+import { buildIdCardCopyPdf } from '../services/idCardCopyService';
 import { hasPremium } from '../middleware/premium';
 import { enqueuePremiumOcr } from '../services/ocrEnqueue';
 import { ocrOwnerKey } from '../services/ocrPremium';
@@ -78,6 +79,22 @@ export function createDocumentRouter(prisma: PrismaClient, ocrQueue?: ReturnType
     }
     return { deleted: records.length, failedFiles };
   };
+  router.post('/id-card-copy', async (req, res) => {
+    try {
+      const frontDataUrl = typeof req.body?.frontDataUrl === 'string' ? req.body.frontDataUrl : '';
+      const backDataUrl = typeof req.body?.backDataUrl === 'string' ? req.body.backDataUrl : null;
+      const recipient = typeof req.body?.recipient === 'string' ? req.body.recipient : '';
+      if (!frontDataUrl || !recipient.trim()) {
+        return res.status(400).json({ error: 'Wymagane jest zdjęcie przodu dokumentu oraz nazwa odbiorcy.' });
+      }
+      const bytes = await buildIdCardCopyPdf({ frontDataUrl, backDataUrl, recipient });
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', 'attachment; filename="MojaTeczka-kopia-dokumentu.pdf"');
+      res.send(Buffer.from(bytes));
+    } catch (error) {
+      res.status(400).json({ error: errorMessage(error, 'Nie udało się wygenerować bezpiecznej kopii A4.') });
+    }
+  });
   router.post('/empty-trash', async (_req, res) => {
     try { res.json(await removeTrashed(ownerId(res))); }
     catch (error: unknown) { console.error('[trash] Błąd opróżniania:', errorMessage(error)); res.status(500).json({ error: 'Nie udało się opróżnić kosza.' }); }

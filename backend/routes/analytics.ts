@@ -5,6 +5,8 @@ import type { PrismaClient } from '@prisma/client';
 import { createAccountantZipArchive } from '../services/accountantExport';
 import { buildAnalyticsSummary } from '../services/analyticsSummary';
 import { getProductPriceHistory } from '../services/priceInflationService';
+import { detectRecurringBillsAndHikes } from '../services/recurringBillsService';
+import { detectPotentialDuplicatePayments } from '../services/semanticDuplicateDetector';
 import { featureTrial, getPlan } from '../services/planLedger';
 import { ocrOwnerKey } from '../services/ocrPremium';
 
@@ -33,6 +35,20 @@ export function createAnalyticsRouter(prisma: PrismaClient) {
       res.status(500).json({ error: 'Nie udało się wyliczyć podsumowania.' });
     }
   });
+  router.get('/recurring-bills', async (_req, res) => {
+    try {
+      const ownerId = Number(res.locals.userId || 1);
+      const [recurringBills, duplicateWarnings] = await Promise.all([
+        detectRecurringBillsAndHikes(prisma, ownerId),
+        detectPotentialDuplicatePayments(prisma, ownerId),
+      ]);
+      res.json({ recurringBills, duplicateWarnings });
+    } catch (error) {
+      console.error('[analytics] recurring-bills:', error);
+      res.status(500).json({ error: 'Nie udało się przeanalizować stałych rachunków i duplikatów.' });
+    }
+  });
+
   router.get('/price-history', async (req, res) => {
     try {
       const ownerId = Number(res.locals.userId || 1);

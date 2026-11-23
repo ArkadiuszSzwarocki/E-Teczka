@@ -115,7 +115,7 @@ app.get('/api/local-ca-info', (req, res) => {
 // Stripe verifies the signature against the original bytes of the request.
 // Register this route before the JSON parser consumes the request body.
 app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), createBillingWebhookHandler(prisma));
-app.use(['/api/documents/upload-base64', '/api/documents/upload-resumable'], express.json({ limit: '50mb' }));
+app.use(['/api/documents/upload-base64', '/api/documents/upload-resumable', '/api/documents/id-card-copy'], express.json({ limit: '50mb' }));
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 

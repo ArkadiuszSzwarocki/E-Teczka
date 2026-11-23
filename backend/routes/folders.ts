@@ -1,6 +1,7 @@
 import express from 'express';
 import type { PrismaClient } from '@prisma/client';
 import { collectFolderBranch } from '../services/folders';
+import { buildFolderHistoryPdf } from '../services/folderHistoryReportService';
 import { applyFolderTemplate, isFolderTemplateId } from '../services/folderTemplates';
 import { canAccessFolder, getAccessibleFolderIds } from '../services/familyAccess';
 import { errorMessage } from '../utils/errors';
@@ -87,6 +88,17 @@ export function createFolderRouter(prisma: PrismaClient) {
       await prisma.$transaction(siblings.map(folder => prisma.folder.update({ where: { id: folder.id }, data: { order: folder.order } })));
       res.json({ success: true });
     } catch (error: unknown) { const details = errorMessage(error); console.error(`[PATCH /api/folders/${req.params.id}/move] Błąd sortowania:`, details); res.status(500).json({ error: 'Błąd sortowania', details }); }
+  });
+  router.get('/:id/history-pdf', async (req, res) => {
+    try {
+      const { bytes, folderName } = await buildFolderHistoryPdf(prisma, ownerId(res), Number(req.params.id));
+      const safeName = folderName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40) || 'kartoteka';
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="MojaTeczka-Historia-${safeName}.pdf"`);
+      res.send(Buffer.from(bytes));
+    } catch (error: unknown) {
+      res.status(500).json({ error: 'Nie udało się wygenerować raportu historii PDF.', details: errorMessage(error) });
+    }
   });
   router.get('/:id/delete-preview', async (req, res) => {
     try {

@@ -8,6 +8,7 @@ import AnalyticsDonutChart from './AnalyticsDonutChart';
 import AnalyticsFileLocationsCard from './AnalyticsFileLocationsCard';
 import PriceInflationCard from './PriceInflationCard';
 import ReceiptInsightsPanel from './ReceiptInsightsPanel';
+import RecurringBillsCard from './RecurringBillsCard';
 
 type Props = {
   apiUrl: string;
@@ -278,6 +279,8 @@ export default function AnalyticsDashboard({
         items={summary.receiptItems}
         onOpenDocument={onOpenDocument}
       />
+
+      <RecurringBillsCard apiUrl={apiUrl} fetcher={fetcher} onOpenDocument={onOpenDocument} />
 
       <PriceInflationCard apiUrl={apiUrl} fetcher={fetcher} />
 

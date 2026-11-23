@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { DocumentRecord } from '../types/domain';
+import { downloadIcsFile } from '../utils/icsCalendar';
 import EmergencyKitCard from './EmergencyKitCard';
 
 type CategoryFilter = 'all' | 'auto' | 'identity' | 'warranty' | 'other';
@@ -111,7 +112,16 @@ export default function ExpiryCalendarView({ apiUrl, fetcher, documents, onOpenD
           <h3 className="text-xl font-bold text-white">🗓️ Kalendarz ważności</h3>
           <p className="mt-1 text-xs text-slate-400">Strażnik polis OC/AC, przeglądów auta, ważności dokumentów i 2-letnich gwarancji. Na telefonie dostajesz przypomnienia 30, 7 i 1 dzień przed końcem.</p>
         </div>
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {items.length > 0 && (
+            <button
+              type="button"
+              onClick={() => downloadIcsFile('MojaTeczka-terminy.ics', items.map(i => ({ uid: `doc-${i.doc.id}`, title: `${i.categoryLabel}: ${i.doc.title}`, date: i.date })))}
+              className="rounded-lg border border-emerald-500/50 bg-emerald-600/20 px-3 py-1.5 text-xs font-bold text-emerald-200 hover:bg-emerald-600/35"
+            >
+              📅 Dodaj do kalendarza (.ics)
+            </button>
+          )}
           {tabs.map(t => (
             <button
               key={t.id}

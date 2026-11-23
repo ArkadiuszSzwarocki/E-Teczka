@@ -206,8 +206,14 @@ function AppContent({ initiallyUnlocked = false }: { initiallyUnlocked?: boolean
   useEffect(() => {
     NavigationBar.setHidden(true);
     const handleScanDeepLink = (url: string | null) => {
-      if (!url || !/^mojateczka:\/\/scan/i.test(url)) return;
-      setInitialTab("Skaner");
+      if (!url) return;
+      if (/^mojateczka:\/\/scan/i.test(url)) {
+        setInitialTab("Skaner");
+        return;
+      }
+      if (/^mojateczka:\/\/folder\/\d+/i.test(url)) {
+        setInitialTab("Kartoteki");
+      }
     };
     void Linking.getInitialURL().then(handleScanDeepLink).catch(() => undefined);
     const linkSub = Linking.addEventListener('url', ({ url }) => handleScanDeepLink(url));

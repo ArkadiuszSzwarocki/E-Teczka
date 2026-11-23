@@ -29,6 +29,7 @@ export interface DocumentRecord {
   retentionUnit: RetentionUnit;
   isArchived?: boolean;
   isDeleted?: boolean;
+  merchantName?: string | null;
   amountCents?: number | null;
   currency?: string;
   dueDate?: string | null;

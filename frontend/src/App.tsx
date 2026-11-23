@@ -9,6 +9,8 @@ import AppOptionsPage from './components/AppOptionsPage';
 import MailInboxView from './components/MailInboxView';
 import KsefSyncPanel from './components/KsefSyncPanel';
 import ExpiryCalendarView from './components/ExpiryCalendarView';
+import CommandPaletteModal from './components/CommandPaletteModal';
+import IdCardCopyModal from './components/IdCardCopyModal';
 import { getAutoMailSyncEnabled } from './services/sensitiveMasking';
 import { useMailSync } from './hooks/useMailSync';
 import BackupModal, { type BackupSection } from './components/BackupModal';
@@ -91,6 +93,8 @@ export default function App() {
   const [isBackupSecurityOpen, setIsBackupSecurityOpen] = useState(false);
   const [isSelfHostGuideOpen, setIsSelfHostGuideOpen] = useState(false);
   const [isEReceiptImportOpen, setIsEReceiptImportOpen] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isIdCardCopyOpen, setIsIdCardCopyOpen] = useState(false);
   const [feedbackDraft, setFeedbackDraft] = useState<{ screenshot: string | null; appVersion?: string; platform?: string } | null>(null);
   const [mailAutoPromptCount, setMailAutoPromptCount] = useState(0);
   const [devPlanNonce, setDevPlanNonce] = useState(0);
@@ -225,6 +229,36 @@ export default function App() {
     apiUrl: API_URL, fetcher: effectiveFetch, activeView, setActiveView, selectedFolderId,
     folders, foldersUnavailable, billingPlan: billing.billingPlan, documentsCount: documents.length, fetchData, showToast,
   });
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsCommandPaletteOpen(v => !v);
+      }
+    };
+    const onPaste = (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      const items = e.clipboardData?.files;
+      if (!items || items.length === 0) return;
+      const accepted = Array.from(items).filter(f => f.type.startsWith('image/') || f.type === 'application/pdf');
+      if (accepted.length === 0) return;
+      e.preventDefault();
+      batchUpload.setFilesToUpload(prev => [
+        ...prev,
+        ...accepted.map(file => ({ file, enabled: false, value: 5, unit: 'years' as const })),
+      ]);
+      setActiveView('upload');
+      showToast(`📋 Wklejono ze schowka (${accepted.length} plik) — wybierz kartotekę i zapisz.`, 'success');
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('paste', onPaste);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('paste', onPaste);
+    };
+  }, [batchUpload, showToast]);
   const actions = useDocumentAndFolderActions({
     apiUrl: API_URL, fetcher: fetch, activeView, setActiveView, setSelectedFolderId,
     selectedDocs, setSelectedDocs, displayedDocs: () => displayedDocsRef.current, billingPlan: billing.billingPlan,
@@ -465,6 +499,21 @@ export default function App() {
           onClose={() => setIsEReceiptImportOpen(false)}
           showToast={showToast}
         />
+      )}
+      <CommandPaletteModal
+        open={isCommandPaletteOpen}
+        documents={documents}
+        folders={folders}
+        billingPlan={billing.billingPlan}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        onOpenDocument={openPreview}
+        onOpenFolder={id => { setSelectedFolderId(id); setActiveView('folder'); }}
+        onNavigate={view => { setIsSettingsMenuOpen(false); setBackupSection(null); setIsBackupSecurityOpen(false); setActiveView(view); }}
+        onOpenScanner={() => void scanner.openWiaScanner()}
+        onOpenIdCardCopy={() => setIsIdCardCopyOpen(true)}
+      />
+      {isIdCardCopyOpen && (
+        <IdCardCopyModal apiUrl={API_URL} fetcher={fetch} onClose={() => setIsIdCardCopyOpen(false)} />
       )}
       {!notificationsInTopBar && (
         <SideNotificationsDrawer

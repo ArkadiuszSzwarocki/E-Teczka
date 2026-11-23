@@ -3,6 +3,7 @@ import AnalyticsDashboard from '../AnalyticsDashboard';
 import ArchiveDesktop from '../ArchiveDesktop';
 import DocumentTableView from '../DocumentTableView';
 import { AppFolderIcon } from '../FolderIconPicker';
+import FolderQrLabelModal from '../FolderQrLabelModal';
 import FolderTemplateOnboardingModal from '../FolderTemplateOnboardingModal';
 import FoldersDesktop from '../FoldersDesktop';
 import TrashDesktop from '../TrashDesktop';
@@ -70,6 +71,30 @@ export function DocumentsWorkspaceSection(props: Props) {
   } = props;
 
   const [templateDismissed, setTemplateDismissed] = useState(() => localStorage.getItem('mojateczka_template_onboarding_dismissed') === '1');
+  const [qrLabelFolder, setQrLabelFolder] = useState<{ id: number; name: string } | null>(null);
+  const [historyBusy, setHistoryBusy] = useState(false);
+
+  const exportFolderHistoryPdf = async (folderId: number, folderName: string) => {
+    setHistoryBusy(true);
+    try {
+      const res = await fetcher(`${apiUrl}/api/folders/${folderId}/history-pdf`);
+      if (!res.ok) throw new Error('Nie udało się wygenerować raportu historii.');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `MojaTeczka-Historia-${folderName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 32)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      showToast('Wygenerowano raport historii PDF.', 'success');
+    } catch (err) {
+      showToast(errorMessage(err, 'Błąd eksportu historii PDF.'), 'error');
+    } finally {
+      setHistoryBusy(false);
+    }
+  };
   const dismissTemplateOnboarding = () => {
     localStorage.setItem('mojateczka_template_onboarding_dismissed', '1');
     setTemplateDismissed(true);
@@ -117,7 +142,24 @@ export function DocumentsWorkspaceSection(props: Props) {
               <button onClick={() => actions.initiateAction('empty_trash', 0, String(displayedDocs.length))} className="rounded-md border border-red-500 px-4 py-2 text-sm font-bold text-red-300 hover:bg-red-900/40">Opróżnij kosz</button>
             )}
             {activeView === 'folder' && selectedFolderId && folders.some(f => f.id === selectedFolderId) && (
-              <button onClick={() => onOpenUploadToFolder(selectedFolderId)} className="rounded-md bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-500">＋ Dodaj dokument</button>
+              <>
+                <button
+                  type="button"
+                  disabled={historyBusy}
+                  onClick={() => { const f = folders.find(item => item.id === selectedFolderId); if (f) void exportFolderHistoryPdf(f.id, f.name); }}
+                  className="rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-slate-700 disabled:opacity-50"
+                >
+                  {historyBusy ? 'PDF…' : '📘 Historia PDF'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { const f = folders.find(item => item.id === selectedFolderId); if (f) setQrLabelFolder({ id: f.id, name: f.name }); }}
+                  className="rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-slate-700"
+                >
+                  🏷️ Etykieta QR
+                </button>
+                <button onClick={() => onOpenUploadToFolder(selectedFolderId)} className="rounded-md bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-500">＋ Dodaj dokument</button>
+              </>
             )}
           </div>
         </div>
@@ -205,6 +247,9 @@ export function DocumentsWorkspaceSection(props: Props) {
           onOpenSecureShare={onOpenSecureShare} onOpenOcr={onOpenOcr}
           onExportPdf={(doc, watermark) => void actions.exportDocumentPdf(doc, watermark)} onPropertiesDoc={onPropertiesDoc} showToast={showToast}
         />
+      )}
+      {qrLabelFolder && (
+        <FolderQrLabelModal folderId={qrLabelFolder.id} folderName={qrLabelFolder.name} onClose={() => setQrLabelFolder(null)} />
       )}
     </div>
   );
