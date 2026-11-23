@@ -213,6 +213,9 @@ export function DocumentsWorkspaceSection(props: Props) {
           onExportPdf={(doc, watermark) => void actions.exportDocumentPdf(doc, watermark)}
           onPropertiesDoc={onPropertiesDoc}
           onEditRetention={doc => actions.setRetentionModal({ isOpen: true, docId: doc.id, value: doc.retentionValue || 5, unit: doc.retentionUnit || 'years', enabled: doc.retentionEnabled !== false })}
+          onExportFolderHistory={(id, name) => void exportFolderHistoryPdf(id, name)}
+          historyBusy={historyBusy}
+          onOpenFolderQrLabel={setQrLabelFolder}
         />
         </>
       ) : activeView === 'archive' && !searchQuery.trim() ? (

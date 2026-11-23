@@ -111,12 +111,11 @@ export default function DesktopTopBar({
           type="button"
           onClick={onOpenCommandPalette}
           title="Szybkie wyszukiwanie dokumentów, kartotek i akcji (Ctrl+K)"
-          className="flex shrink-0 items-center gap-2 rounded-lg border border-slate-600 bg-[#111827] px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:border-cyan-500/60 hover:bg-slate-800 hover:text-white"
+          className="flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-600 bg-[#111827] px-2.5 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:border-cyan-500/60 hover:bg-slate-800 hover:text-white"
         >
           <span aria-hidden="true">🔍</span>
-          <span className="hidden sm:inline">Szukaj lub uruchom akcję…</span>
-          <span className="sm:hidden">Szukaj</span>
-          <kbd className="hidden rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] text-slate-400 md:inline">Ctrl+K</kbd>
+          <span>Szukaj</span>
+          <kbd className="hidden rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] text-slate-400 sm:inline">Ctrl+K</kbd>
         </button>
       )}
     </div>

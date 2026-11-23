@@ -25,6 +25,7 @@ export default function FoldersDesktop({
   onHoverEnter, onHoverLeave,
   onCreateFolder, onDiscardEmptyFolder, onRenameFolder, onDeleteFolder, onReorderFolders, onMoveFolderParent, onMoveDocument, onUploadToFolder,
   onTrashDoc, onShareLink, onShareClassic, onOpenOcr, onExportPdf, onPropertiesDoc, onEditRetention,
+  onExportFolderHistory, historyBusy = false, onOpenFolderQrLabel,
 }: {
   apiUrl: string; fetcher: typeof fetch; plan: 'free' | 'standard' | 'premium' | 'family' | 'business'; accountEmail?: string; folders: FolderRecord[]; documents: DocumentRecord[]; selectedDocs: number[];
   onToggleSelect: (id: number) => void; onSelectAllVisible: (ids: number[]) => void; onClearSelected: () => void; onOpenFolder: (folderId: number) => void; onOpenPreview: (doc: DocumentRecord) => void;
@@ -40,6 +41,9 @@ export default function FoldersDesktop({
   onTrashDoc: (doc: DocumentRecord) => void;
   onShareLink: (doc: DocumentRecord) => void; onShareClassic: (doc: DocumentRecord) => void; onOpenOcr: (doc: DocumentRecord) => void; onExportPdf: (doc: DocumentRecord, watermark?: boolean) => void; onPropertiesDoc: (doc: DocumentRecord) => void;
   onEditRetention: (doc: DocumentRecord) => void;
+  onExportFolderHistory?: (folderId: number, folderName: string) => void;
+  historyBusy?: boolean;
+  onOpenFolderQrLabel?: (folder: { id: number; name: string }) => void;
 }) {
   const [currentFolderId, setCurrentFolderId] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<'icons' | 'list'>(() => (localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'icons'));
@@ -112,6 +116,12 @@ export default function FoldersDesktop({
       {includeFullTable && <button type="button" onClick={() => { setRenamingId(folder.id); setRenameValue(folder.name); setMenuFolderId(null); }} className="w-full px-3 py-2 text-slate-200 hover:bg-slate-700">Zmień nazwę</button>}
       <button type="button" onClick={() => setIconPickerId(iconPickerId === folder.id ? null : folder.id)} className="w-full px-3 py-2 text-blue-300 hover:bg-slate-700">Zmień ikonę</button>
       {iconPickerId === folder.id && <FolderIconPicker plan={plan} onSelect={ic => vault.setFolderIcon(folder.id, ic)} />}
+      {onExportFolderHistory && (
+        <button type="button" disabled={historyBusy} onClick={() => { setMenuFolderId(null); onExportFolderHistory(folder.id, folder.name); }} className="w-full px-3 py-2 text-cyan-300 hover:bg-slate-700 disabled:opacity-50">📘 Historia PDF</button>
+      )}
+      {onOpenFolderQrLabel && (
+        <button type="button" onClick={() => { setMenuFolderId(null); onOpenFolderQrLabel({ id: folder.id, name: folder.name }); }} className="w-full px-3 py-2 text-amber-300 hover:bg-slate-700">🏷️ Etykieta QR</button>
+      )}
       <button type="button" onClick={() => { setMenuFolderId(null); setPropertiesFolder(folder); }} className="w-full px-3 py-2 text-slate-200 hover:bg-slate-700">ℹ️ Właściwości</button>
       <button type="button" onClick={() => { setMenuFolderId(null); onDeleteFolder(folder.id, folder.name); }} className="w-full px-3 py-2 text-red-300 hover:bg-slate-700">Usuń kartotekę</button>
     </div>
@@ -139,11 +149,37 @@ export default function FoldersDesktop({
               {visibleDocs.every(d => selectedDocs.includes(d.id)) ? 'Odznacz wszystkie' : 'Zaznacz wszystkie'}
             </button>
           )}
-          {currentFolderId !== null && (
-            <button type="button" onClick={() => onUploadToFolder(currentFolderId)} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-500">
-              ＋ Dodaj dokumenty
-            </button>
-          )}
+          {currentFolderId !== null && (() => {
+            const activeFolder = folders.find(f => f.id === currentFolderId);
+            return (
+              <>
+                {onExportFolderHistory && activeFolder && (
+                  <button
+                    type="button"
+                    disabled={historyBusy}
+                    onClick={() => onExportFolderHistory(activeFolder.id, activeFolder.name)}
+                    title="Eksportuj raport kosztów i historię dokumentów tej kartoteki jako PDF (np. książka serwisowa auta / teczka mieszkania)"
+                    className="rounded-lg border border-cyan-500/50 bg-cyan-950/40 px-3 py-1.5 text-xs font-bold text-cyan-200 hover:bg-cyan-900/50 disabled:opacity-50"
+                  >
+                    {historyBusy ? 'PDF…' : '📘 Historia PDF'}
+                  </button>
+                )}
+                {onOpenFolderQrLabel && activeFolder && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenFolderQrLabel({ id: activeFolder.id, name: activeFolder.name })}
+                    title="Wydrukuj naklejkę QR na fizyczny segregator dla tej kartoteki"
+                    className="rounded-lg border border-amber-500/50 bg-amber-950/40 px-3 py-1.5 text-xs font-bold text-amber-200 hover:bg-amber-900/50"
+                  >
+                    🏷️ Etykieta QR
+                  </button>
+                )}
+                <button type="button" onClick={() => onUploadToFolder(currentFolderId)} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-500">
+                  ＋ Dodaj dokumenty
+                </button>
+              </>
+            );
+          })()}
           <button type="button" onClick={() => setCreating(v => !v)} className="cyber-btn-primary rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-500">
             + {currentFolderId ? 'Nowa podkartoteka' : 'Nowa kartoteka'}
           </button>
