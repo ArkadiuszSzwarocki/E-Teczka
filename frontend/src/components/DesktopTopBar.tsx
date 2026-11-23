@@ -63,6 +63,7 @@ type Props = {
   onOpenMailInbox?: () => void;
   onStopMailSync?: () => void;
   onResumeMailSync?: () => void;
+  onOpenCommandPalette?: () => void;
 };
 
 /** Search, connection status, notifications and current-user menu. */
@@ -89,6 +90,7 @@ export default function DesktopTopBar({
   onOpenMailInbox,
   onStopMailSync,
   onResumeMailSync,
+  onOpenCommandPalette,
 }: Props) {
   const [reloadingDev, setReloadingDev] = useState(false);
   const [theme, setTheme] = useState<ThemePreference>(getThemePreference);
@@ -104,6 +106,19 @@ export default function DesktopTopBar({
     <div className="flex min-w-0 items-center gap-2 sm:gap-3">
       {onToggleMobileSidebar && <button type="button" onClick={onToggleMobileSidebar} aria-label="Otwórz menu" className="shrink-0 rounded-md border border-slate-600 bg-[#111827] px-2.5 py-1.5 text-base font-bold text-slate-200 hover:bg-slate-700 hover:text-white lg:hidden">☰</button>}
       {activeView === 'folder' && <button onClick={onBack} className="cyber-btn-secondary shrink-0 whitespace-nowrap rounded-md border border-slate-600 bg-[#111827] px-2.5 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-700 hover:text-white sm:px-3 sm:py-2 sm:text-sm">← Cofnij</button>}
+      {onOpenCommandPalette && (
+        <button
+          type="button"
+          onClick={onOpenCommandPalette}
+          title="Szybkie wyszukiwanie dokumentów, kartotek i akcji (Ctrl+K)"
+          className="flex shrink-0 items-center gap-2 rounded-lg border border-slate-600 bg-[#111827] px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:border-cyan-500/60 hover:bg-slate-800 hover:text-white"
+        >
+          <span aria-hidden="true">🔍</span>
+          <span className="hidden sm:inline">Szukaj lub uruchom akcję…</span>
+          <span className="sm:hidden">Szukaj</span>
+          <kbd className="hidden rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] text-slate-400 md:inline">Ctrl+K</kbd>
+        </button>
+      )}
     </div>
     <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
       {!mailSyncing && mailSyncPaused && (

@@ -36,6 +36,8 @@ type Props = {
   onOpenPlans: () => void;
   onRetryFetch: () => void;
   onOpenEReceiptImport?: () => void;
+  onOpenIdCardCopy?: () => void;
+  onPasteFromClipboard?: () => void;
 };
 
 /** Presentational panel for batch document upload, physical location, and PDF merging. */
@@ -45,22 +47,33 @@ export default function UploadPanel({
   filesToUpload, setFilesToUpload, isMergeMode, setIsMergeMode, isUploading,
   mergedTitle, setMergedTitle, mergedRetentionVal, setMergedRetentionVal,
   mergedRetentionUnit, setMergedRetentionUnit, mergedRetentionEnabled, setMergedRetentionEnabled,
-  onFileSelect, onSubmit, onOpenPlans, onRetryFetch, onOpenEReceiptImport,
+  onFileSelect, onSubmit, onOpenPlans, onRetryFetch, onOpenEReceiptImport, onOpenIdCardCopy, onPasteFromClipboard,
 }: Props) {
   const isMobile = isMobileBrowser();
   return (
     <div className="mb-10 h-fit w-full max-w-5xl rounded-lg border border-slate-700 bg-[#1e293b] p-4 shadow-xl sm:p-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 text-xl font-bold text-white">📦 Rejestracja Dokumentów</h2>
-        {onOpenEReceiptImport && (
-          <button
-            type="button"
-            onClick={onOpenEReceiptImport}
-            className="rounded-lg border border-cyan-500/60 bg-cyan-950/40 px-3 py-1.5 text-xs font-semibold text-cyan-200 hover:bg-cyan-900/50"
-          >
-            📲 Importuj e-Paragon (QR / tekst)
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {onOpenIdCardCopy && (
+            <button
+              type="button"
+              onClick={onOpenIdCardCopy}
+              className="rounded-lg border border-indigo-500/60 bg-indigo-950/40 px-3 py-1.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-900/50"
+            >
+              🪪 Kopia dowodu (A4 + znak wodny)
+            </button>
+          )}
+          {onOpenEReceiptImport && (
+            <button
+              type="button"
+              onClick={onOpenEReceiptImport}
+              className="rounded-lg border border-cyan-500/60 bg-cyan-950/40 px-3 py-1.5 text-xs font-semibold text-cyan-200 hover:bg-cyan-900/50"
+            >
+              📲 Importuj e-Paragon (QR / tekst)
+            </button>
+          )}
+        </div>
       </div>
       {uploadUsage && (
         <div className={`mb-5 rounded-lg border px-4 py-3 text-xs leading-5 ${uploadDocsExceeded || uploadMergeExceeded ? 'border-red-500/60 bg-red-950/35 text-red-200' : 'border-slate-600 bg-[#111827]/80 text-slate-300'}`}>
@@ -139,6 +152,16 @@ export default function UploadPanel({
               <div className="text-xs text-slate-500">Obsługiwane: PDF, obrazy (PNG/JPG), faktury KSeF (.xml) oraz e-Paragony (.json)</div>
               <div className="flex flex-wrap items-center justify-center gap-3">
                 <input type="file" multiple accept=".png,.jpg,.jpeg,.webp,.pdf,.xml,.json" onChange={onFileSelect} className="max-w-full cursor-pointer text-sm text-slate-400 file:mr-3 file:rounded-md file:border-0 file:bg-blue-600 file:px-4 file:py-2 file:text-sm file:font-bold file:text-white hover:file:bg-blue-500" />
+                {onPasteFromClipboard && (
+                  <button
+                    type="button"
+                    onClick={onPasteFromClipboard}
+                    title="Wklej zrzut ekranu lub obraz ze schowka (Ctrl+V)"
+                    className="rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-200 hover:border-cyan-500/60 hover:bg-slate-700 hover:text-white"
+                  >
+                    📋 Wklej ze schowka <kbd className="ml-1 rounded border border-slate-600 bg-slate-900 px-1 py-0.5 font-mono text-[10px] text-slate-400">Ctrl+V</kbd>
+                  </button>
+                )}
                 {isMobile && (
                   <label className="cursor-pointer rounded-md bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-500">
                     📷 Zrób zdjęcie

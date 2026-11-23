@@ -354,6 +354,7 @@ export default function App() {
         activeView={activeView} documents={documents} billingPlan={billing.billingPlan} mobileOpen={mobileSidebarOpen} onCloseMobile={() => setMobileSidebarOpen(false)}
         onViewChange={view => { setIsSettingsMenuOpen(false); setBackupSection(null); setIsBackupSecurityOpen(false); if (view === 'developer') setDevSection(null); setActiveView(view); setSearchQuery(''); if (view === 'dashboard') setSelectedFolderId(null); }}
         onOpenScanner={() => { setIsSettingsMenuOpen(false); setBackupSection(null); setIsBackupSecurityOpen(false); void scanner.openWiaScanner(); }}
+        onOpenIdCardCopy={() => setIsIdCardCopyOpen(true)}
         onOpenPairing={() => pairing.setIsPairingGuideOpen(true)}
         onToggleSettings={() => { setBackupSection(null); setIsBackupSecurityOpen(false); setIsSettingsMenuOpen(true); }}
         onOpenBackup={section => { setIsSettingsMenuOpen(false); setIsBackupSecurityOpen(false); setBackupSection(section); }}
@@ -392,6 +393,7 @@ export default function App() {
           mailSyncing={mailSync.mailSyncing} mailSyncPaused={mailSync.mailSyncPaused}
           onOpenMailInbox={() => setActiveView('mail-inbox')} onStopMailSync={() => void mailSync.stopMailSync()}
           onResumeMailSync={() => void mailSync.startMailSync(undefined, 'incremental')}
+          onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
         />
         {!isPremiumTier && <PromotionBanner apiUrl={API_URL} fetcher={apiFetch} currentPlan={billing.billingPlan} onOpenPlans={() => setIsBillingPlansOpen(true)} />}
         {mailAutoPromptCount > 0 && activeView !== 'mail-inbox' && (
@@ -458,6 +460,37 @@ export default function App() {
               onFileSelect={batchUpload.handleFileSelect} onSubmit={batchUpload.handleBatchUpload}
               onOpenPlans={() => setIsBillingPlansOpen(true)} onRetryFetch={() => void fetchData()}
               onOpenEReceiptImport={() => setIsEReceiptImportOpen(true)}
+              onOpenIdCardCopy={() => setIsIdCardCopyOpen(true)}
+              onPasteFromClipboard={() => {
+                void (async () => {
+                  if (!navigator.clipboard?.read) {
+                    showToast('Naciśnij Ctrl+V na klawiaturze, aby wkleić obraz ze schowka.', 'success');
+                    return;
+                  }
+                  try {
+                    const items = await navigator.clipboard.read();
+                    const files: File[] = [];
+                    for (const item of items) {
+                      const imgType = item.types.find(t => t.startsWith('image/'));
+                      if (!imgType) continue;
+                      const blob = await item.getType(imgType);
+                      const ext = imgType.split('/')[1]?.replace('jpeg', 'jpg') || 'png';
+                      files.push(new File([blob], `schowek-${Date.now()}.${ext}`, { type: imgType }));
+                    }
+                    if (!files.length) {
+                      showToast('W schowku nie znaleziono obrazu. Skopiuj zrzut ekranu i kliknij ponownie lub użyj Ctrl+V.', 'error');
+                      return;
+                    }
+                    batchUpload.setFilesToUpload(prev => [
+                      ...prev,
+                      ...files.map(file => ({ file, enabled: false, value: 5, unit: 'years' as const })),
+                    ]);
+                    showToast(`📋 Wklejono ze schowka (${files.length} plik) — wybierz kartotekę i zapisz.`, 'success');
+                  } catch {
+                    showToast('Naciśnij Ctrl+V na klawiaturze, aby wkleić plik ze schowka.', 'success');
+                  }
+                })();
+              }}
             />
           ) : (
             <DocumentsWorkspaceSection
