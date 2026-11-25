@@ -12,6 +12,7 @@ import { getExpiryDate } from '../utils/documentLifecycle';
 type Props = {
   document: DocumentRecord;
   folders?: FolderRecord[];
+  onUpdateDocument?: (id: number, patch: { dueDate?: string | null; paymentStatus?: 'paid' | 'unpaid' | null }) => Promise<void>;
   onClose: () => void;
 };
 
@@ -36,8 +37,27 @@ function formatRetention(doc: DocumentRecord): string {
 }
 
 /** Displays detailed metadata (size, dates, path, MIME type, retention, OCR, tags, RODO status, owner) for a document. */
-export default function DocumentPropertiesModal({ document: doc, folders = [], onClose }: Props) {
+export default function DocumentPropertiesModal({ document: doc, folders = [], onUpdateDocument, onClose }: Props) {
   const [rodoMode, setRodoMode] = useState<RodoDocOverride>(() => getDocumentRodoOverride(doc.id));
+  const [dueDateInput, setDueDateInput] = useState(() => (doc.dueDate ? new Date(doc.dueDate).toISOString().slice(0, 10) : ''));
+  const [paymentStatus, setPaymentStatus] = useState<'paid' | 'unpaid' | ''>(() => doc.paymentStatus || '');
+  const [savingMeta, setSavingMeta] = useState(false);
+  const [savedNotice, setSavedNotice] = useState(false);
+
+  const handleSaveMeta = async () => {
+    if (!onUpdateDocument) return;
+    setSavingMeta(true);
+    setSavedNotice(false);
+    try {
+      await onUpdateDocument(doc.id, {
+        dueDate: dueDateInput ? new Date(`${dueDateInput}T12:00:00.000Z`).toISOString() : null,
+        paymentStatus: paymentStatus === '' ? null : paymentStatus,
+      });
+      setSavedNotice(true);
+    } finally {
+      setSavingMeta(false);
+    }
+  };
   const detectedRodo = detectRodoMatches(`${doc.title}\n${doc.ocrText || ''}`);
   const location = doc.isDeleted
     ? 'Kosz'
@@ -110,6 +130,58 @@ export default function DocumentPropertiesModal({ document: doc, folders = [], o
             <option value="never">Bez ochrony</option>
           </select>
         </div>
+
+        {onUpdateDocument && !doc.readOnly && (
+          <div className="mt-3 space-y-2.5 rounded-xl border border-slate-700 bg-slate-900/50 p-3.5 text-xs">
+            <p className="font-bold text-cyan-300">🗓️ Termin ważności i status płatności</p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <label className="space-y-1">
+                <span className="block text-[11px] font-semibold text-slate-400">Termin (polisa, przegląd, płatność)</span>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="date"
+                    value={dueDateInput}
+                    onChange={e => { setDueDateInput(e.target.value); setSavedNotice(false); }}
+                    className="w-full rounded-lg border border-slate-600 bg-[#111827] px-2.5 py-1.5 text-xs text-white focus:border-blue-500 focus:outline-none"
+                  />
+                  {dueDateInput && (
+                    <button
+                      type="button"
+                      onClick={() => { setDueDateInput(''); setSavedNotice(false); }}
+                      title="Usuń termin"
+                      className="rounded border border-slate-600 px-2 py-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </label>
+              <label className="space-y-1">
+                <span className="block text-[11px] font-semibold text-slate-400">Status płatności</span>
+                <select
+                  value={paymentStatus}
+                  onChange={e => { setPaymentStatus(e.target.value as 'paid' | 'unpaid' | ''); setSavedNotice(false); }}
+                  className="w-full rounded-lg border border-slate-600 bg-[#111827] px-2.5 py-1.5 text-xs text-white focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="">Brak / nie dotyczy</option>
+                  <option value="unpaid">Nieopłacone</option>
+                  <option value="paid">Opłacone</option>
+                </select>
+              </label>
+            </div>
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-[11px] text-emerald-300">{savedNotice ? '✓ Zapisano zmiany' : ''}</span>
+              <button
+                type="button"
+                disabled={savingMeta}
+                onClick={() => void handleSaveMeta()}
+                className="rounded-lg bg-cyan-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-cyan-500 disabled:opacity-50"
+              >
+                {savingMeta ? 'Zapisywanie…' : 'Zapisz termin i status'}
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="mt-5 flex justify-end">
           <button type="button" onClick={onClose} className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-500">Zamknij</button>

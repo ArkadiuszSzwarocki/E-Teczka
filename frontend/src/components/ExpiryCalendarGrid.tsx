@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { DocumentRecord } from '../types/domain';
 import {
   buildMonthGrid,
@@ -13,12 +13,15 @@ type Props = {
   year: number;
   month: number;
   items: ExpiryItem[];
+  allDocuments?: DocumentRecord[];
   selectedDateKey: string | null;
   onSelectDateKey: (dateKey: string) => void;
   onChangeMonth: (year: number, month: number) => void;
   onJumpToday: () => void;
   onJumpNearestEvent: () => void;
   onOpenDocument: (doc: DocumentRecord) => void;
+  onAssignDate?: (docId: number, dateKey: string) => Promise<void>;
+  onMarkPaid?: (docId: number) => Promise<void>;
 };
 
 /** Interactive monthly calendar grid (Mon–Sun) displaying document deadlines with day details. */
@@ -26,13 +29,23 @@ export default function ExpiryCalendarGrid({
   year,
   month,
   items,
+  allDocuments = [],
   selectedDateKey,
   onSelectDateKey,
   onChangeMonth,
   onJumpToday,
   onJumpNearestEvent,
   onOpenDocument,
+  onAssignDate,
+  onMarkPaid,
 }: Props) {
+  const [assignDocId, setAssignDocId] = useState('');
+  const [assignBusy, setAssignBusy] = useState(false);
+  const [payingDocId, setPayingDocId] = useState<number | null>(null);
+  const assignableDocs = useMemo(
+    () => allDocuments.filter(d => !d.isDeleted && !d.isArchived && !d.readOnly),
+    [allDocuments],
+  );
   const cells = useMemo(() => buildMonthGrid(year, month), [year, month]);
 
   const itemsByDate = useMemo(() => {
@@ -151,35 +164,87 @@ export default function ExpiryCalendarGrid({
 
       {selectedDateKey && (
         <div className="rounded-2xl border border-slate-700 bg-[#111c33]/90 p-4">
-          <div className="mb-3 flex items-center justify-between">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h5 className="text-sm font-bold text-white">
               📌 Terminy na dzień: <span className="text-cyan-300">{selectedDateKey.split('-').reverse().join('.')}</span> ({selectedItems.length})
             </h5>
+            {onAssignDate && assignableDocs.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <select
+                  aria-label="Wybierz dokument do przypisania"
+                  value={assignDocId}
+                  onChange={e => setAssignDocId(e.target.value)}
+                  className="max-w-60 rounded-lg border border-slate-600 bg-[#0f172a] px-2.5 py-1.5 text-xs text-slate-200 focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="">＋ Przypisz dokument do tego dnia…</option>
+                  {assignableDocs.map(d => (
+                    <option key={d.id} value={d.id}>{d.title}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  disabled={!assignDocId || assignBusy}
+                  onClick={async () => {
+                    if (!assignDocId) return;
+                    setAssignBusy(true);
+                    try {
+                      await onAssignDate(Number(assignDocId), selectedDateKey);
+                      setAssignDocId('');
+                    } finally {
+                      setAssignBusy(false);
+                    }
+                  }}
+                  className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-500 disabled:opacity-50"
+                >
+                  {assignBusy ? 'Zapisywanie…' : 'Ustaw termin'}
+                </button>
+              </div>
+            )}
           </div>
           {selectedItems.length === 0 ? (
-            <p className="text-xs text-slate-400">Brak wygasających dokumentów w tym dniu.</p>
+            <p className="text-xs text-slate-400">Brak wygasających dokumentów w tym dniu. Możesz przypisać dowolny dokument z listy powyżej.</p>
           ) : (
             <div className="grid gap-2.5 sm:grid-cols-2">
               {selectedItems.map(item => (
-                <button
+                <div
                   key={item.doc.id}
-                  type="button"
-                  onClick={() => onOpenDocument(item.doc)}
-                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-700 bg-[#0f172a]/90 p-3 text-left transition hover:border-blue-400/60"
+                  className="flex items-center justify-between gap-2 rounded-xl border border-slate-700 bg-[#0f172a]/90 p-3 transition hover:border-blue-400/60"
                 >
-                  <div className="min-w-0 flex-1">
+                  <button
+                    type="button"
+                    onClick={() => onOpenDocument(item.doc)}
+                    className="min-w-0 flex-1 text-left"
+                  >
                     <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-semibold text-slate-400">
                       <span>{item.categoryLabel}</span>
                       {item.source === 'retention' && (
                         <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-300">Retencja archiwum</span>
                       )}
+                      {item.doc.paymentStatus === 'paid' && (
+                        <span className="rounded bg-emerald-950/70 px-1.5 py-0.5 text-[10px] text-emerald-300">✓ Opłacone</span>
+                      )}
                     </div>
                     <p className="mt-0.5 truncate text-sm font-bold text-white">{item.doc.title}</p>
+                  </button>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    {onMarkPaid && item.doc.paymentStatus === 'unpaid' && (
+                      <button
+                        type="button"
+                        disabled={payingDocId === item.doc.id}
+                        onClick={async () => {
+                          setPayingDocId(item.doc.id);
+                          try { await onMarkPaid(item.doc.id); } finally { setPayingDocId(null); }
+                        }}
+                        className="rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-emerald-500 disabled:opacity-50"
+                      >
+                        {payingDocId === item.doc.id ? '…' : '✓ Opłacone'}
+                      </button>
+                    )}
+                    <span className={`rounded-full border px-2.5 py-1 text-xs font-extrabold ${urgencyBadgeTone(item.daysLeft)}`}>
+                      {formatDaysLeftLabel(item.daysLeft)}
+                    </span>
                   </div>
-                  <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-extrabold ${urgencyBadgeTone(item.daysLeft)}`}>
-                    {formatDaysLeftLabel(item.daysLeft)}
-                  </span>
-                </button>
+                </div>
               ))}
             </div>
           )}

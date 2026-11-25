@@ -25,14 +25,15 @@ const NATIVE_FETCH: typeof window.fetch = (input, init) => window.fetch(input, i
 type Props = {
   apiUrl: string;
   fetcher: typeof fetch;
-  document: Pick<DocumentRecord, 'title' | 'filePath' | 'mimeType'> & Partial<Pick<DocumentRecord, 'id' | 'ocrText'>>;
+  document: Pick<DocumentRecord, 'title' | 'filePath' | 'mimeType'> & Partial<Pick<DocumentRecord, 'id' | 'ocrText' | 'paymentStatus' | 'amountCents' | 'currency' | 'dueDate'>>;
   zoom: number;
   onZoomChange: (next: number | ((current: number) => number)) => void;
+  onMarkPaid?: (docId: number) => Promise<void>;
   onClose: () => void;
 };
 
 /** A single viewer fills the window. PDFs use their own native zoom controls. */
-export default function DocumentPreviewModal({ apiUrl, fetcher, document, zoom, onZoomChange, onClose }: Props) {
+export default function DocumentPreviewModal({ apiUrl, fetcher, document, zoom, onZoomChange, onMarkPaid, onClose }: Props) {
   const { maskingEnabled, rodoCategories, smartRodoEnabled } = useSensitiveMasking();
   const [liveOcrText, setLiveOcrText] = useState<string | null>(document.ocrText ?? null);
   const needsAsyncRodoOcr = Boolean(document.id && !document.ocrText && maskingEnabled && smartRodoEnabled);
@@ -75,6 +76,19 @@ export default function DocumentPreviewModal({ apiUrl, fetcher, document, zoom, 
   const [rodoLabel, setRodoLabel] = useState('RODO');
   const [regionUnmaskOpen, setRegionUnmaskOpen] = useState(false);
   const [exportingRodo, setExportingRodo] = useState(false);
+  const [markingPaid, setMarkingPaid] = useState(false);
+  const [markedPaidLocal, setMarkedPaidLocal] = useState(false);
+
+  const handleMarkPaid = async () => {
+    if (!document.id || !onMarkPaid || markingPaid) return;
+    setMarkingPaid(true);
+    try {
+      await onMarkPaid(document.id);
+      setMarkedPaidLocal(true);
+    } finally {
+      setMarkingPaid(false);
+    }
+  };
 
   const handleDownloadWithRodo = async () => {
     if (!previewUrl || regions.length === 0 || exportingRodo) return;
@@ -144,6 +158,21 @@ export default function DocumentPreviewModal({ apiUrl, fetcher, document, zoom, 
     <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-700 bg-[#0f172a] px-4 py-2">
       <h3 className="min-w-0 truncate text-base font-bold text-white" title={document.title}>{document.title}</h3>
       <div className="flex shrink-0 items-center gap-2">
+        {document.id && onMarkPaid && document.paymentStatus === 'unpaid' && !markedPaidLocal && (
+          <button
+            type="button"
+            disabled={markingPaid}
+            onClick={() => void handleMarkPaid()}
+            className="rounded bg-emerald-600 px-3 py-1 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-50"
+          >
+            {markingPaid ? 'Zapisywanie…' : '✓ Oznacz jako opłacone'}
+          </button>
+        )}
+        {(markedPaidLocal || document.paymentStatus === 'paid') && (
+          <span className="rounded border border-emerald-500/50 bg-emerald-950/50 px-2.5 py-1 text-xs font-bold text-emerald-300">
+            ✓ Opłacone
+          </span>
+        )}
         {document.id && !isStructuredText && (!protection.protect || unmasked) && previewUrl && (
           <>
             <button

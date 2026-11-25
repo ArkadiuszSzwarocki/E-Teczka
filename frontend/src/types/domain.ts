@@ -47,6 +47,9 @@ export type DocumentPatch = Partial<Pick<
   | 'retentionUnit'
   | 'isArchived'
   | 'isDeleted'
+  | 'dueDate'
+  | 'paymentStatus'
+  | 'amountCents'
 >> & {
   deletedAt?: string | null;
   tagIds?: number[];

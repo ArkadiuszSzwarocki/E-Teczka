@@ -70,6 +70,7 @@ export function AppDocumentModals(p: Props) {
           document={p.previewDoc}
           zoom={p.previewZoom}
           onZoomChange={p.onPreviewZoomChange}
+          onMarkPaid={async id => { await actions.updateDocument(id, { paymentStatus: 'paid' }); }}
           onClose={p.onClosePreview}
         />
       )}
@@ -105,7 +106,14 @@ export function AppDocumentModals(p: Props) {
           onClose={p.onCloseOcr}
         />
       )}
-      {p.propertiesDoc && <DocumentPropertiesModal document={p.propertiesDoc} folders={p.folders} onClose={p.onCloseProperties} />}
+      {p.propertiesDoc && (
+        <DocumentPropertiesModal
+          document={p.propertiesDoc}
+          folders={p.folders}
+          onUpdateDocument={actions.updateDocument}
+          onClose={p.onCloseProperties}
+        />
+      )}
       {hovered && p.hoverAnchor && (
         <HoverDocumentPreview
           document={hovered}

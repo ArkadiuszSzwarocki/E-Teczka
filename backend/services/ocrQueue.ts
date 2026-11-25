@@ -9,6 +9,7 @@ import { extractDocumentText } from './ocrEngine';
 import { extractFinanceFromOcr } from './financeOcrParser';
 import { extractExpiryFromOcr } from './expiryOcrExtractor';
 import { parseReceiptFromOcr } from './receiptOcrParser';
+import { suggestSmartDocumentTitle } from './smartTitleService';
 import { featureTrial } from './planLedger';
 
 type State = 'queued' | 'processing' | 'done' | 'error' | 'paused';
@@ -94,7 +95,7 @@ export function createOcrQueue(prisma: PrismaClient, options: Options) {
           if (text.length > 2_000_000) throw new Error('Dokument przekracza limit 2 milionów znaków tekstu OCR.');
           const extracted = extractFinanceFromOcr(text, document.title);
           const receipt = parseReceiptFromOcr(text);
-          const financePatch: { merchantName?: string; amountCents?: number; currency?: string; dueDate?: Date; paymentStatus?: string } = {};
+          const financePatch: { title?: string; merchantName?: string; amountCents?: number; currency?: string; dueDate?: Date; paymentStatus?: string } = {};
           if (!document.merchantName && receipt.merchantName) financePatch.merchantName = receipt.merchantName;
           const detectedCents = receipt.amountCents ?? extracted.amountCents;
           if (document.amountCents === null && detectedCents !== null) {
@@ -104,11 +105,21 @@ export function createOcrQueue(prisma: PrismaClient, options: Options) {
           } else if (!document.paymentStatus && receipt.paymentStatus) {
             financePatch.paymentStatus = receipt.paymentStatus;
           }
+          const expiryMatch = extractExpiryFromOcr(text, document.title);
           if (document.dueDate === null) {
-            const expiryMatch = extractExpiryFromOcr(text, document.title);
             if (extracted.dueDate !== null) financePatch.dueDate = extracted.dueDate;
             else if (expiryMatch) financePatch.dueDate = expiryMatch.expiryDate;
           }
+          const smartTitle = suggestSmartDocumentTitle({
+            currentTitle: document.title,
+            merchantName: financePatch.merchantName ?? document.merchantName,
+            amountCents: financePatch.amountCents ?? document.amountCents,
+            currency: financePatch.currency ?? 'PLN',
+            dueDate: financePatch.dueDate ?? document.dueDate,
+            expiryLabel: expiryMatch?.label ?? null,
+            ocrText: text,
+          });
+          if (smartTitle) financePatch.title = smartTitle;
           await prisma.$transaction(async tx => {
             const updated = await tx.document.updateMany({ where: { id: document.id, filePath: document.filePath, isDeleted: false }, data: { ocrText: protectOcrText(text), ...financePatch } });
             if (updated.count !== 1) throw new Error('Dokument zmienił się podczas rozpoznawania.');

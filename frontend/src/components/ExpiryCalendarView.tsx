@@ -24,6 +24,7 @@ type Props = {
   documents: DocumentRecord[];
   onOpenDocument: (doc: DocumentRecord) => void;
   onRefreshData?: () => Promise<void>;
+  onUpdateDocument?: (id: number, patch: { dueDate?: string | null; paymentStatus?: 'paid' | 'unpaid' | null }) => Promise<void>;
   showToast?: (message: string, type?: string) => void;
 };
 
@@ -34,6 +35,7 @@ export default function ExpiryCalendarView({
   documents,
   onOpenDocument,
   onRefreshData,
+  onUpdateDocument,
   showToast,
 }: Props) {
   const now = new Date();
@@ -61,6 +63,25 @@ export default function ExpiryCalendarView({
   );
 
   const notifications = useExpiryNotifications(allItems);
+
+  const unpaidDocs = useMemo(
+    () => documents.filter(d => !d.isDeleted && !d.isArchived && d.paymentStatus === 'unpaid'),
+    [documents],
+  );
+  const unpaidTotalCents = useMemo(
+    () => unpaidDocs.reduce((sum, d) => sum + (d.amountCents || 0), 0),
+    [unpaidDocs],
+  );
+
+  const handleAssignDate = async (docId: number, dateKey: string) => {
+    if (!onUpdateDocument) return;
+    await onUpdateDocument(docId, { dueDate: new Date(`${dateKey}T12:00:00.000Z`).toISOString() });
+  };
+
+  const handleMarkPaid = async (docId: number) => {
+    if (!onUpdateDocument) return;
+    await onUpdateDocument(docId, { paymentStatus: 'paid' });
+  };
 
   const overdue = filteredItems.filter(i => i.daysLeft < 0);
   const urgent = filteredItems.filter(i => i.daysLeft >= 0 && i.daysLeft <= 7);
@@ -112,26 +133,38 @@ export default function ExpiryCalendarView({
         <h4 className={`text-xs font-bold uppercase tracking-wider ${toneClass}`}>{heading} ({list.length})</h4>
         <div className="grid gap-2.5 sm:grid-cols-2">
           {list.map(item => (
-            <button
+            <div
               key={item.doc.id}
-              type="button"
-              onClick={() => onOpenDocument(item.doc)}
-              className="flex items-center justify-between gap-3 rounded-xl border border-slate-700 bg-[#111c33]/90 p-3.5 text-left transition hover:border-blue-400/60"
+              className="flex items-center justify-between gap-3 rounded-xl border border-slate-700 bg-[#111c33]/90 p-3.5 transition hover:border-blue-400/60"
             >
-              <div className="min-w-0 flex-1">
+              <button type="button" onClick={() => onOpenDocument(item.doc)} className="min-w-0 flex-1 text-left">
                 <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-semibold text-slate-400">
                   <span>{item.categoryLabel}</span>
                   {item.source === 'retention' && (
                     <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-300">Retencja</span>
                   )}
+                  {item.doc.paymentStatus === 'paid' && (
+                    <span className="rounded bg-emerald-950/70 px-1.5 py-0.5 text-[10px] text-emerald-300">✓ Opłacone</span>
+                  )}
                 </div>
                 <p className="truncate text-sm font-bold text-white">{item.doc.title}</p>
                 <p className="mt-0.5 text-xs text-slate-400">Termin: {item.date.toLocaleDateString('pl-PL')}</p>
+              </button>
+              <div className="flex shrink-0 items-center gap-1.5">
+                {onUpdateDocument && item.doc.paymentStatus === 'unpaid' && (
+                  <button
+                    type="button"
+                    onClick={() => void handleMarkPaid(item.doc.id)}
+                    className="rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-emerald-500"
+                  >
+                    ✓ Opłacone
+                  </button>
+                )}
+                <span className={`rounded-full border px-2.5 py-1 text-xs font-extrabold ${urgencyBadgeTone(item.daysLeft)}`}>
+                  {formatDaysLeftLabel(item.daysLeft)}
+                </span>
               </div>
-              <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-extrabold ${urgencyBadgeTone(item.daysLeft)}`}>
-                {formatDaysLeftLabel(item.daysLeft)}
-              </span>
-            </button>
+            </div>
           ))}
         </div>
       </div>
@@ -142,7 +175,14 @@ export default function ExpiryCalendarView({
     <section className="mx-auto w-full max-w-6xl space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-xl font-bold text-white">🗓️ Kalendarz ważności</h3>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h3 className="text-xl font-bold text-white">🗓️ Kalendarz ważności</h3>
+            {unpaidDocs.length > 0 && (
+              <span className="rounded-full border border-amber-500/50 bg-amber-950/50 px-2.5 py-0.5 text-xs font-bold text-amber-200">
+                💳 Nieopłacone: {unpaidDocs.length}{unpaidTotalCents > 0 ? ` · ${(unpaidTotalCents / 100).toFixed(2).replace('.', ',')} zł` : ''}
+              </span>
+            )}
+          </div>
           <p className="mt-1 text-xs text-slate-400">
             Strażnik polis OC/AC, przeglądów auta, ważności dokumentów, płatności i gwarancji.
           </p>
@@ -254,6 +294,7 @@ export default function ExpiryCalendarView({
           year={year}
           month={month}
           items={filteredItems}
+          allDocuments={documents}
           selectedDateKey={selectedDateKey}
           onSelectDateKey={setSelectedDateKey}
           onChangeMonth={(nextYear, nextMonth) => { setYear(nextYear); setMonth(nextMonth); }}
@@ -265,6 +306,8 @@ export default function ExpiryCalendarView({
           }}
           onJumpNearestEvent={jumpNearestEvent}
           onOpenDocument={onOpenDocument}
+          onAssignDate={onUpdateDocument ? handleAssignDate : undefined}
+          onMarkPaid={onUpdateDocument ? handleMarkPaid : undefined}
         />
       ) : filteredItems.length === 0 ? (
         <div className="rounded-2xl border border-slate-700 bg-[#111c33]/60 p-8 text-center text-sm text-slate-400">
