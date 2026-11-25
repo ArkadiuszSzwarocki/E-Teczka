@@ -100,6 +100,16 @@ export function createDocumentRouter(prisma: PrismaClient, ocrQueue?: ReturnType
     try { res.json(await removeTrashed(ownerId(res))); }
     catch (error: unknown) { console.error('[trash] Błąd opróżniania:', errorMessage(error)); res.status(500).json({ error: 'Nie udało się opróżnić kosza.' }); }
   });
+  router.post('/backfill-expiries', async (_req, res) => {
+    try {
+      const result = await backfillDocumentExpiriesFromOcr(prisma, ownerId(res));
+      res.json(result);
+    } catch (error: unknown) {
+      const details = errorMessage(error);
+      console.error('[POST /api/documents/backfill-expiries]', details);
+      res.status(500).json(safeErrorPayload('Nie udało się przeskanować terminów z OCR.', details));
+    }
+  });
   router.post('/upload-resumable/init', async (req, res) => {
     try {
       const folderId = Number(req.body?.folderId);
@@ -381,17 +391,6 @@ export function createDocumentRouter(prisma: PrismaClient, ocrQueue?: ReturnType
       const details = errorMessage(error);
       console.error('[POST /api/documents/upload-binary]', details);
       return res.status(500).json(safeErrorPayload(process.env.NODE_ENV === 'production' || !details ? 'Błąd wgrywania' : `Błąd wgrywania: ${details}`, details));
-    }
-  });
-
-  router.post('/backfill-expiries', async (_req, res) => {
-    try {
-      const result = await backfillDocumentExpiriesFromOcr(prisma, ownerId(res));
-      res.json(result);
-    } catch (error: unknown) {
-      const details = errorMessage(error);
-      console.error('[POST /api/documents/backfill-expiries]', details);
-      res.status(500).json(safeErrorPayload('Nie udało się przeskanować terminów z OCR.', details));
     }
   });
 
