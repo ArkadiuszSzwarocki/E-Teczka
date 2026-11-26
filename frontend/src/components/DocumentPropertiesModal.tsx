@@ -94,7 +94,7 @@ export default function DocumentPropertiesModal({ document: doc, folders = [], o
         aria-modal="true"
         aria-labelledby="doc-props-title"
         onClick={e => e.stopPropagation()}
-        className="w-full max-w-lg rounded-2xl border border-slate-600 bg-[#0f172a] p-6 text-slate-200 shadow-2xl"
+        className="custom-scrollbar max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-slate-600 bg-[#0f172a] p-6 text-slate-200 shadow-2xl"
       >
         <div className="flex items-start justify-between gap-3 border-b border-slate-700 pb-4">
           <div className="min-w-0">

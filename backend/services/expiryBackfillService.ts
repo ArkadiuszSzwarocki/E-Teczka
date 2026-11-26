@@ -1,6 +1,6 @@
 import type { PrismaClient } from '@prisma/client';
 import { getAccessibleFolderIds } from './familyAccess';
-import { readOcrText } from './ocrText';
+import { safeReadOcrText } from './ocrText';
 import { extractFinanceFromOcr } from './financeOcrParser';
 import { extractExpiryFromOcr } from './expiryOcrExtractor';
 
@@ -31,7 +31,7 @@ export async function backfillDocumentExpiriesFromOcr(
 
   let updated = 0;
   for (const doc of candidates) {
-    const plain = readOcrText(doc.ocrText);
+    const plain = safeReadOcrText(doc.ocrText);
     if (!plain.trim()) continue;
     const finance = extractFinanceFromOcr(plain, doc.title);
     const expiry = extractExpiryFromOcr(plain, doc.title);

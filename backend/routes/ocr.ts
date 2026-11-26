@@ -1,7 +1,7 @@
 import express from 'express';
 import type { PrismaClient } from '@prisma/client';
 import { ocrOwnerKey, hasOcrPremium } from '../services/ocrPremium';
-import { protectOcrText, readOcrText } from '../services/ocrText';
+import { protectOcrText, safeReadOcrText } from '../services/ocrText';
 import { indexDocumentOcrText, searchEncryptedOcrDocuments } from '../services/ocrSearchIndex';
 import type { createOcrQueue } from '../services/ocrQueue';
 import { activeDocumentIds } from '../services/planRestrictions';
@@ -94,7 +94,7 @@ export function createOcrRouter(prisma: PrismaClient, queue: ReturnType<typeof c
     try {
       const document = await prisma.document.findUnique({ where: { id: Number(req.params.id) }, select: { ocrText: true } });
       const status = queue.status(Number(req.params.id), ocrOwnerKey(res));
-      const fullText = document?.ocrText ? readOcrText(document.ocrText) : '';
+      const fullText = document?.ocrText ? safeReadOcrText(document.ocrText) : '';
       const rawOffset = Number(req.query.offset);
       const rawLimit = Number(req.query.limit);
       const offset = Number.isInteger(rawOffset) && rawOffset > 0 ? rawOffset : 0;

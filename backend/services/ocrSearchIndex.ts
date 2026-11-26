@@ -1,5 +1,5 @@
 import type { PrismaClient } from '@prisma/client';
-import { readOcrText } from './ocrText';
+import { safeReadOcrText } from './ocrText';
 
 type OwnerIndex = {
   count: number;
@@ -33,7 +33,7 @@ export async function searchEncryptedOcrDocuments(prisma: PrismaClient, ownerId:
     });
     const entries = new Map<number, string>();
     for (const doc of docs) {
-      entries.set(doc.id, readOcrText(doc.ocrText).toLocaleLowerCase('pl'));
+      entries.set(doc.id, safeReadOcrText(doc.ocrText).toLocaleLowerCase('pl'));
     }
     index = { count: totalWithOcr, entries };
     ownerCache.set(ownerId, index);

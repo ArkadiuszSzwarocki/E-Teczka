@@ -6,6 +6,7 @@ import express from 'express';
 import type { PrismaClient } from '@prisma/client';
 import { centralAccountOrigin, createCentralAccountLinks, verifyCentralSession } from '../services/centralAccountLink';
 import { createSession, DeviceLimitError, passwordHash } from './auth';
+import { activeSessionWhere } from '../services/sessionPolicy';
 import { CentralHandoffError, createCentralHandoffs } from '../services/centralHandoff';
 import { verifyBackupPrimary } from '../services/backupPrimary';
 import { copyDesktopPlanState, getPlan } from '../services/planLedger';
@@ -93,7 +94,7 @@ export function createCentralAccountRouter(prisma: PrismaClient, verify = verify
     try { return res.json(await handoffs.poll(String(req.body?.handle || ''))); }
     catch { return res.status(400).json({ error: 'Logowanie wygasło lub nie udało się połączyć.' }); }
   });
-  const fetchCentralDevices = async (originUrl: string, centralToken: string) => {
+  const fetchCentralDevices = async (originUrl: string, centralToken: string, centralUserId?: string) => {
     const upstream = await fetch(`${originUrl}/devices`, {
       headers: { authorization: `Bearer ${centralToken}` },
       redirect: 'error',
@@ -105,22 +106,44 @@ export function createCentralAccountRouter(prisma: PrismaClient, verify = verify
       deviceLimits?: { desktop?: number | null; mobile?: number | null };
       devices?: Array<{ device_id?: string; kind?: string; name?: string; created_at?: number; last_seen?: number }>;
     };
+    const devices = Array.isArray(data.devices) ? data.devices.map(d => ({
+      deviceId: String(d.device_id || ''),
+      kind: (d.kind === 'mobile' ? 'mobile' : 'desktop') as 'mobile' | 'desktop',
+      name: String(d.name || (d.kind === 'mobile' ? 'Urządzenie mobilne' : 'Komputer')),
+      createdAt: Number(d.created_at || 0),
+      lastSeen: Number(d.last_seen || 0),
+    })) : [];
+    if (centralUserId) {
+      const localId = await links.find(originUrl, centralUserId);
+      if (localId) {
+        const localSessions = await prisma.authSession.findMany({
+          where: { userId: localId, ...activeSessionWhere() },
+          select: { deviceId: true, deviceName: true, createdAt: true },
+        });
+        const seenLocal = new Set<string>();
+        for (const s of localSessions) {
+          if (!s.deviceId || seenLocal.has(s.deviceId)) continue;
+          seenLocal.add(s.deviceId);
+          devices.push({
+            deviceId: `local:${s.deviceId}`,
+            kind: 'desktop',
+            name: `${s.deviceName || 'Sesja na tym komputerze'} (sesja lokalna)`,
+            createdAt: s.createdAt.getTime(),
+            lastSeen: s.createdAt.getTime(),
+          });
+        }
+      }
+    }
     return {
       plan: data.plan || 'free',
       deviceLimits: data.deviceLimits || { desktop: 1, mobile: 1 },
-      devices: Array.isArray(data.devices) ? data.devices.map(d => ({
-        deviceId: String(d.device_id || ''),
-        kind: d.kind === 'mobile' ? 'mobile' : 'desktop',
-        name: String(d.name || (d.kind === 'mobile' ? 'Urządzenie mobilne' : 'Komputer')),
-        createdAt: Number(d.created_at || 0),
-        lastSeen: Number(d.last_seen || 0),
-      })) : [],
+      devices,
     };
   };
   router.post('/handoff/devices', async (req, res) => {
     try {
       const approved = await handoffs.take(String(req.body?.handle || ''));
-      return res.json(await fetchCentralDevices(approved.origin, approved.centralToken));
+      return res.json(await fetchCentralDevices(approved.origin, approved.centralToken, approved.user.id));
     } catch {
       return res.status(400).json({ error: 'Nie udało się pobrać listy zaufanych urządzeń. Zaloguj się ponownie.' });
     }
@@ -130,6 +153,13 @@ export function createCentralAccountRouter(prisma: PrismaClient, verify = verify
     if (!deviceId) return res.status(400).json({ error: 'Brak identyfikatora urządzenia.' });
     try {
       const approved = await handoffs.take(String(req.body?.handle || ''));
+      const localId = await links.find(approved.origin, approved.user.id);
+      if (deviceId.startsWith('local:')) {
+        if (localId) {
+          await prisma.authSession.deleteMany({ where: { userId: localId, deviceId: deviceId.slice(6) } });
+        }
+        return res.json(await fetchCentralDevices(approved.origin, approved.centralToken, approved.user.id));
+      }
       const upstream = await fetch(`${approved.origin}/devices/revoke`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${approved.centralToken}` },
@@ -138,15 +168,20 @@ export function createCentralAccountRouter(prisma: PrismaClient, verify = verify
         signal: AbortSignal.timeout(7000),
       });
       if (!upstream.ok) return res.status(502).json({ error: 'Nie udało się usunąć zaufania urządzenia.' });
-      return res.json(await fetchCentralDevices(approved.origin, approved.centralToken));
+      if (localId) {
+        await prisma.authSession.deleteMany({ where: { userId: localId } });
+      }
+      return res.json(await fetchCentralDevices(approved.origin, approved.centralToken, approved.user.id));
     } catch {
       return res.status(400).json({ error: 'Sesja logowania wygasła. Rozpocznij logowanie ponownie.' });
     }
   });
   router.post('/handoff/finish', async (req, res) => {
+    let approvedForError: Awaited<ReturnType<typeof handoffs.take>> | null = null;
     try {
       const handle = String(req.body?.handle || '');
       const approved = await handoffs.take(handle);
+      approvedForError = approved;
       let localId = await links.find(approved.origin, approved.user.id);
       if (!localId && req.body?.createNew === true) {
         const email = approved.user.email.trim().toLowerCase();
@@ -165,14 +200,23 @@ export function createCentralAccountRouter(prisma: PrismaClient, verify = verify
         await enrollDevice(user.id, approved.origin, approved.user.id, approved.centralToken);
       } catch (enrollError) {
         if (enrollError instanceof Error && enrollError.message === 'CENTRAL_DEVICE_LIMIT') {
-          const deviceData = await fetchCentralDevices(approved.origin, approved.centralToken).catch(() => null);
+          const deviceData = await fetchCentralDevices(approved.origin, approved.centralToken, approved.user.id).catch(() => null);
           return res.status(403).json({ code: 'DEVICE_LIMIT_REACHED', error: 'Osiągnięto limit urządzeń konta. Usuń nieużywane urządzenie poniżej lub zmień plan.', ...(deviceData || {}) });
         }
         throw enrollError;
       }
       const session = await createSession(prisma, user.id, user.email, user.name, req.body); handoffs.finish(handle);
       return res.json(session);
-    } catch (error) { if(error instanceof Error&&error.message==='CENTRAL_DEVICE_LIMIT')return res.status(403).json({code:'DEVICE_LIMIT_REACHED',error:'Osiągnięto limit urządzeń konta. Usuń nieużywane urządzenie poniżej lub zmień plan.'}); if(error instanceof Error&&error.message==='CENTRAL_ENTITLEMENTS_UNAVAILABLE')return res.status(503).json({error:'Serwer kont wymaga aktualizacji lub jest niedostępny. Nie udało się pobrać planu konta.'}); if (error instanceof AccountMfaRequired) return res.status(401).json({code:error.code,error:error.message}); if (error instanceof DeviceLimitError) return res.status(403).json({ code: 'DEVICE_LIMIT_REACHED', error: error.message }); return res.status(401).json({ error: 'Nie udało się potwierdzić sesji.' }); }
+    } catch (error) {
+      if (error instanceof Error && error.message === 'CENTRAL_DEVICE_LIMIT') return res.status(403).json({ code: 'DEVICE_LIMIT_REACHED', error: 'Osiągnięto limit urządzeń konta. Usuń nieużywane urządzenie poniżej lub zmień plan.' });
+      if (error instanceof Error && error.message === 'CENTRAL_ENTITLEMENTS_UNAVAILABLE') return res.status(503).json({ error: 'Serwer kont wymaga aktualizacji lub jest niedostępny. Nie udało się pobrać planu konta.' });
+      if (error instanceof AccountMfaRequired) return res.status(401).json({ code: error.code, error: error.message });
+      if (error instanceof DeviceLimitError) {
+        const deviceData = approvedForError ? await fetchCentralDevices(approvedForError.origin, approvedForError.centralToken, approvedForError.user.id).catch(() => null) : null;
+        return res.status(403).json({ code: 'DEVICE_LIMIT_REACHED', error: error.message, ...(deviceData || {}) });
+      }
+      return res.status(401).json({ error: 'Nie udało się potwierdzić sesji.' });
+    }
   });
   router.post('/handoff/link', async (req, res) => {
     const localId = await links.localUserId(bearer(req)); if (!localId) return res.status(401).json({ error: 'Najpierw zaloguj się na konto lokalne.' });

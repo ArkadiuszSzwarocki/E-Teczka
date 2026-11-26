@@ -11,3 +11,12 @@ export function readOcrText(value: string | null | undefined, key?: Buffer): str
   if (value.startsWith(legacyPrefix)) return decrypt(value.slice(legacyPrefix.length), key);
   return value;
 }
+
+/** Safely reads OCR text, returning an empty string when a legacy record uses a rotated/unreadable key. */
+export function safeReadOcrText(value: string | null | undefined, key?: Buffer): string {
+  try {
+    return readOcrText(value, key);
+  } catch {
+    return '';
+  }
+}
